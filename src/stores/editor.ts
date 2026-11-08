@@ -39,6 +39,18 @@ export const useEditorStore = defineStore('editor', () => {
    * 用完即清；由 focusActiveEditor 在 cursorPos 之前消费。
    */
   const pendingSelectionRange = ref<{ from: number; to: number } | null>(null)
+
+  /**
+   * 表格块「渲染态单击某格 → 激活后把光标落回该格」的交接位。
+   *
+   * 渲染态与编辑态在 `Block/index.vue` 里是两个 `<component>` 分支，激活会把 TableBlock
+   * **重新挂载**（实测栈：`focusActiveEditor` → flushPostFlushCbs → onMounted），
+   * 组件内的 ref 活不过去。而挂载时默认 `focusFirstCell()`，全靠随后的
+   * `focusAtCoords` 二次兜底才回到正确格 —— 坐标一旦落空（点在格线上/表格留白里/
+   * mousedown 被 preventDefault 而没记坐标），就表现为「点最后一行，光标跳到第一行」。
+   * 所以坐标必须经由 store 交给新挂载的那一份。用完即清。
+   */
+  const pendingTableCellFocus = ref<{ blockId: string; row: number; col: number } | null>(null)
   
   /** 当前活跃的编辑器实例 */
   const activeEditor = shallowRef<Editor | null>(null)
@@ -123,6 +135,45 @@ export const useEditorStore = defineStore('editor', () => {
     const range = pendingSelectionRange.value
     pendingSelectionRange.value = null
     return range
+  }
+
+  /** 设置表格块激活后要聚焦的格（由 TableBlock 渲染态单击写入） */
+  function setTableCellFocus(target: { blockId: string; row: number; col: number } | null) {
+    pendingTableCellFocus.value = target
+  }
+
+  /** 消费并清除待聚焦格；blockId 不符时丢弃（不让坐标落到别的表格块上） */
+  function consumeTableCellFocus(blockId: string | undefined) {
+    const target = pendingTableCellFocus.value
+    if (!target) return null
+    pendingTableCellFocus.value = null
+    return blockId && target.blockId === blockId ? target : null
+  }
+
+  /**
+   * 表格块激活瞬间的滚动位置交接。
+   *
+   * 激活会把 TableBlock 重挂载成编辑态，而编辑态首帧每一格都是 `rows="1"` 的一行高（高度全靠
+   * JS 量，见 `fitRowHeights`）。块高因此在首帧从「内容实际高度」塌到「行数 × 一行高」，
+   * 滚动祖先的内容高度跟着缩水，浏览器把 `scrollTop` 钳到塌陷后的上限 —— 长表格底部点一下，
+   * 页面直接跳上去（实测 16 行表格：1218 → 45）。高度随后虽被重量回来，`scrollTop` 不会自己回来。
+   * 所以在渲染态卸载前记下 `scrollTop`，编辑态量完高度后原样写回。用完即清。
+   */
+  const pendingTableScroll = ref<{ blockId: string; scrollTop: number; at: number } | null>(null)
+
+  /** 设置表格块激活前要还原的滚动位置（由 TableBlock 渲染态卸载前写入） */
+  function setTableScroll(blockId: string, scrollTop: number) {
+    if (!blockId) return
+    pendingTableScroll.value = { blockId, scrollTop, at: Date.now() }
+  }
+
+  /** 消费并清除待还原的滚动位置；blockId 不符或早已不是同一次激活（>1s）即丢弃 */
+  function consumeTableScroll(blockId: string | undefined): number | null {
+    const pending = pendingTableScroll.value
+    pendingTableScroll.value = null
+    if (!pending || !blockId || pending.blockId !== blockId) return null
+    if (Date.now() - pending.at > 1000) return null
+    return pending.scrollTop
   }
 
   /** 设置当前编辑器实例 */
@@ -367,6 +418,7 @@ export const useEditorStore = defineStore('editor', () => {
     pendingClickCoords,
     pendingArrowFocus,
     pendingSelectionRange,
+    pendingTableCellFocus,
     activeEditor,
     slashCommand,
     activateBlock,
@@ -379,6 +431,10 @@ export const useEditorStore = defineStore('editor', () => {
     consumeArrowFocus,
     setSelectionRange,
     consumeSelectionRange,
+    setTableCellFocus,
+    consumeTableCellFocus,
+    setTableScroll,
+    consumeTableScroll,
     setActiveEditor,
     registerContentFlusher,
     flushActiveContent,

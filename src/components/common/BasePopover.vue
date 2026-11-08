@@ -27,12 +27,22 @@ const props = withDefaults(
     anchorEl?: HTMLElement | (() => HTMLElement | null) | null
     /** 首选放置侧，默认 'bottom'；空间不足时自动翻到对侧。仅 anchorEl 模式生效。 */
     placement?: 'bottom' | 'top' | 'left' | 'right'
+    /** 是否模态：true（默认）铺一层全屏 overlay 接住「点空白关闭」；
+     *  false 时不铺 overlay，改为在 document 上监听 mousedown 判「点在面板外」。
+     *  选区工具条这类不该挡住页面交互的浮层必须用 false——overlay 会把整页指针事件吃掉。 */
+    modal?: boolean
+    /** 非模态模式下的「外部点击」豁免选择器。
+     *  二级浮层（下拉 / 子菜单）Teleport 到 body 后是独立节点，但语义上仍属于本浮层；
+     *  不豁免的话，点它的第一下就把外层关掉了。 */
+    ignoreOutsideSelector?: string
   }>(),
   {
     position: () => ({ x: 0, y: 0 }),
     closeOnOverlay: true,
     placement: 'bottom',
     anchorEl: null,
+    modal: true,
+    ignoreOutsideSelector: '',
   },
 )
 
@@ -134,20 +144,49 @@ function detachListeners() {
   onScroll = null
 }
 
+// ── 非模态：点面板外关闭 ─────────────────────────────────────────
+// 模态模式靠全屏 overlay 接住空白点击；非模态没有 overlay，就得自己判「点在面板外」。
+// 用 capture 阶段，保证在页面自身把这次点击当交互处理之前先关掉浮层。
+let onDocMouseDown: ((e: MouseEvent) => void) | null = null
+
+function attachNonModalCloser() {
+  if (onDocMouseDown || props.modal || !props.closeOnOverlay) return
+  onDocMouseDown = (e: MouseEvent) => {
+    if (!props.visible) return
+    const target = e.target as (Node & Element) | null
+    if (!target) return
+    if (panelEl.value?.contains(target)) return
+    if (resolveAnchorEl()?.contains(target)) return
+    if (props.ignoreOutsideSelector && target.closest?.(props.ignoreOutsideSelector)) return
+    emit('close')
+  }
+  document.addEventListener('mousedown', onDocMouseDown, true)
+}
+
+function detachNonModalCloser() {
+  if (!onDocMouseDown) return
+  document.removeEventListener('mousedown', onDocMouseDown, true)
+  onDocMouseDown = null
+}
+
 // 显示/锚点/方位变化后（重新）测量面板、同步锚点盒子、挂接 ResizeObserver 与 scroll/resize 监听；
 // 关闭时拆除监听与测量，避免泄漏（ADR-0038 实时重定位）。
 watch(
-  () => [props.visible, props.position, props.anchorEl, props.placement],
+  () => [props.visible, props.position, props.anchorEl, props.placement, props.modal, props.ignoreOutsideSelector],
   () => {
     if (props.visible) {
       nextTick(() => {
         observe()
         updateAnchorRect()
         attachListeners()
+        // 先拆再挂：豁免选择器可能在本监听已挂载后变化
+        detachNonModalCloser()
+        attachNonModalCloser()
       })
     } else {
       disconnectRO()
       detachListeners()
+      detachNonModalCloser()
     }
   },
   { deep: true, immediate: true },
@@ -268,6 +307,7 @@ function onKeyDown(e: KeyboardEvent) {
 onMounted(() => document.addEventListener('keydown', onKeyDown, true))
 onBeforeUnmount(() => {
   document.removeEventListener('keydown', onKeyDown, true)
+  detachNonModalCloser()
   disconnectRO()
   detachListeners()
 })
@@ -277,7 +317,7 @@ onBeforeUnmount(() => {
   <Teleport to="body">
     <Transition name="base-popover-fade">
       <div
-        v-if="visible"
+        v-if="visible && modal"
         class="base-popover-overlay"
         data-testid="base-popover-overlay"
         @click.self="onOverlayClick"
@@ -292,6 +332,17 @@ onBeforeUnmount(() => {
         >
           <slot />
         </div>
+      </div>
+      <!-- 非模态：不铺 overlay，面板自己 fixed 定位，页面其余部分照常可交互 -->
+      <div
+        v-else-if="visible"
+        ref="panelEl"
+        class="base-popover"
+        role="dialog"
+        data-testid="base-popover"
+        :style="panelStyle"
+      >
+        <slot />
       </div>
     </Transition>
   </Teleport>

@@ -17,6 +17,18 @@
   // （列表行 / 详情面板用 muted；胶囊这类需要更明显填充的控件用 subtle）
   --surface-muted: #{$color-stone-50};
   --surface-subtle: #{$color-stone-100};
+  // 强填充面：需要比 subtle 再沉一档、能在表格 / 浮层上自立的控件（如行列操作入口条）
+  --surface-strong: #{$color-stone-300};
+
+  // 表格：表头/悬停底色需与格子线（--border）区分，避免暗色下三档灰混同
+  --table-header-bg: #{$color-stone-100};
+  --table-hover-bg: #{$color-stone-200};
+
+  // 表格行列操作条：基座（块 hover）与悬停段两档，与单元格底色分开取色，
+  // 避免复用 --surface-subtle 后被将来的面板调色误伤。
+  // 基座不能取 stone-100：条与表头贴死后会与 --table-header-bg 同色，两段并成一条。
+  --table-strip-bg: #{$color-stone-200};
+  --table-strip-active-bg: #{$color-stone-300};
 
   // 文字层级（适用于浅色背景）
   --text-primary: #{$color-stone-900};
@@ -235,6 +247,16 @@
   // 暗色两级弱底：muted 自 --bg-base 上浮一档，subtle 接近 --bg-hover
   --surface-muted: #1F1F22;
   --surface-subtle: #2A2A2E;
+  // 暗色「沉一档」：比 subtle 更暗，浮在表头 / 行带上方时形成内凹的实底
+  --surface-strong: #232327;
+
+  // 表格：--border 为 #2E2E32，表头/悬停需明显高于它才不与格子线混同
+  --table-header-bg: #3C3C44;
+  --table-hover-bg: #4A4A52;
+
+  // 条基座压在 --bg-base 上要能看见，但不能亮到抢焦点；悬停段再抬一档
+  --table-strip-bg: #2A2A2E;
+  --table-strip-active-bg: #4A4A52;
 
   --text-primary: #E4E4E7;
   --text-secondary: #A1A1AA;

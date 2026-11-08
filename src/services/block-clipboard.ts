@@ -8,7 +8,8 @@
  * - 只负责「内部格式」；外部源（text/html、text/plain）解析属 External Paste Parser（ADR-0026）。
  * - 序列化依赖注入 children / properties 解析器 → 纯函数，无需挂载 store 即可单测。
  */
-import type { Block, BlockClipPayload, BlockClipboardPayload } from '../types/block'
+import type { Block, BlockClipboardPayload,BlockClipPayload } from '../types/block'
+import { readTableData, serializeTableTsv } from './table-model'
 
 /** 内部剪贴板格式 MIME（ADR-0025 D5）：唯一来源，其他模块从此转发。 */
 export const COMIND_BLOCK_MIME = 'application/x-comind-block'
@@ -44,12 +45,29 @@ export function payloadToPlainText(payload: BlockClipboardPayload): string {
   const parts: string[] = []
   const walk = (nodes: BlockClipPayload[], depth: number): void => {
     for (const node of nodes) {
+      if (node.type === 'table') {
+        // 表格块复制到外部 → TSV（保留尺寸与表头结构）
+        parts.push('  '.repeat(depth) + serializeTableTsv(readTableData(node.format)))
+        continue
+      }
       parts.push('  '.repeat(depth) + node.content)
       walk(node.children, depth + 1)
     }
   }
   walk(payload.blocks, 0)
   return parts.join('\n')
+}
+
+/** execCommand 兜底（Tauri / 无剪贴板权限环境）：每个落盘路径的最后一级 */
+function copyViaExecCommand(text: string): void {
+  const textarea = document.createElement('textarea')
+  textarea.value = text
+  textarea.style.position = 'fixed'
+  textarea.style.opacity = '0'
+  document.body.appendChild(textarea)
+  textarea.select()
+  document.execCommand('copy')
+  document.body.removeChild(textarea)
 }
 
 /** 落盘：自定义 MIME（JSON 载荷）+ text/plain 兜底，失败逐级降级。 */
@@ -72,14 +90,19 @@ export async function writeClipboardPayload(payload: BlockClipboardPayload): Pro
       // 降级 2：execCommand 兜底
     }
   }
-  const textarea = document.createElement('textarea')
-  textarea.value = text
-  textarea.style.position = 'fixed'
-  textarea.style.opacity = '0'
-  document.body.appendChild(textarea)
-  textarea.select()
-  document.execCommand('copy')
-  document.body.removeChild(textarea)
+  copyViaExecCommand(text)
+}
+
+/** 纯文本落盘：navigator.clipboard 优先，失败降级 execCommand（Tauri / 无权限环境）。
+ *  表格范围复制用它把 TSV 送到系统剪贴板，与块复制的降级链保持一致。 */
+export async function writePlainTextToClipboard(text: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(text)
+    return
+  } catch {
+    // 降级：execCommand 兜底
+  }
+  copyViaExecCommand(text)
 }
 
 /** 内部 MIME JSON → 载荷森林；JSON 损坏或形状不符 → null（调用方回退外部解析）。 */

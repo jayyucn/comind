@@ -63,13 +63,20 @@ export function serializeBlockTree(blocks: Block[], rootBlockId: string): Templa
     return { type: 'bullet', content: block.content }
   }
 
-  const build = (block: Block): TemplateBlock => {
+  const build = (block: Block): TemplateBlock | null => {
+    // 表格块不进入模板：跳过整棵表格节点（含其不存在的子块），并提示内容未被包含
+    if (block.type === 'table') {
+      console.warn('[serializeBlockTree] Table blocks are not supported in templates, skipping')
+      return null
+    }
+
     const tmpl = serialize(block)
 
     const children = childrenOf.get(block.id) ?? []
     const childTmpls: TemplateBlock[] = []
     for (const child of children) {
-      childTmpls.push(build(child))
+      const childTmpl = build(child)
+      if (childTmpl) childTmpls.push(childTmpl)
     }
     if (childTmpls.length > 0) {
       tmpl.children = childTmpls

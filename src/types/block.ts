@@ -5,7 +5,7 @@ export interface Block {
   pos: number  // 排序位置（Gap 排序，初始间隔 1000）
   content: string
   format: Record<string, unknown>
-  type: 'bullet' | 'property' | 'query' | 'embed' | 'code' | 'image'
+  type: 'bullet' | 'property' | 'query' | 'embed' | 'code' | 'image' | 'table'
   /** Pre-computed render segments from Rust (S10). Array of structured instructions
    *  for rendering content. Empty for code/image/embed/query types. */
   renderSegments?: import('../wasm/types').RenderSegment[]

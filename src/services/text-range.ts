@@ -1,5 +1,7 @@
 import type { Block } from '../types/block'
 import { renderedOffsetToEncodedOffset } from './render-text'
+import { cellRangeHasContent } from './table-cell-range'
+import { readTableData, serializeTableTsv } from './table-model'
 
 /**
  * 文本选区纯计算模块（ADR-0035 D3/D5 的无 DOM 地基）。
@@ -123,6 +125,10 @@ export function normalizeTextRange(blocks: Block[], range: TextRange): Normalize
  * 端点 offset 来自界面渲染文本（含隐藏了类型名/target 的内联标记），
  * 而本函数切的是存储原文（encoded）——先经 `renderedOffsetToEncodedOffset`
  * 换算，否则含标记的块上会错位（#93 / ADR-0035 开放问题 #1）。
+ *
+ * 表格是原子块：内部文本没有可切分的语义（见 selection-geometry 的
+ * `ATOMIC_BLOCK_SELECTOR`），一律整表输出 TSV，忽略端点偏移——否则按偏移切
+ * `content`（恒为空）会复制出空串。
  */
 export function textRangeToText(blocks: Block[], range: TextRange): string {
   const { start, end, middleBlockIds } = normalizeTextRange(blocks, range)
@@ -131,23 +137,40 @@ export function textRangeToText(blocks: Block[], range: TextRange): string {
   const endBlock = byId.get(end.blockId)
   if (!startBlock || !endBlock) return ''
 
-  // 换算内部已按 content 长度钳制
-  const lo = renderedOffsetToEncodedOffset(startBlock.content, startBlock.renderSegments, start.offset)
-  const hi = renderedOffsetToEncodedOffset(endBlock.content, endBlock.renderSegments, end.offset)
-
   if (start.blockId === end.blockId) {
     // normalizeTextRange 已保证 start.offset <= end.offset，换算保持单调
-    return startBlock.content.slice(lo, hi)
+    return sliceBlockText(startBlock, start.offset, end.offset)
   }
 
   const parts: string[] = []
-  parts.push(startBlock.content.slice(lo))
+  parts.push(sliceBlockText(startBlock, start.offset, null))
   for (const id of middleBlockIds) {
     const b = byId.get(id)
-    if (b) parts.push(b.content)
+    if (b) parts.push(sliceBlockText(b, null, null))
   }
-  parts.push(endBlock.content.slice(0, hi))
+  parts.push(sliceBlockText(endBlock, null, end.offset))
   return parts.join('\n')
+}
+
+/** 表格块的整表文本（TSV）；整表为空时不产出（避免选到空表却粘出一堆制表符） */
+function tableBlockText(block: Block): string {
+  const data = readTableData(block.format)
+  const range = { row1: 0, col1: 0, row2: data.rows.length - 1, col2: (data.rows[0]?.length ?? 1) - 1 }
+  if (!cellRangeHasContent(data, range)) return ''
+  return serializeTableTsv(data)
+}
+
+/**
+ * 单块取文。`from` / `to` 为渲染文本偏移，null 表示取该侧到块边界。
+ * 表格块忽略偏移（原子不可切分），直接给整表。
+ */
+function sliceBlockText(block: Block, from: number | null, to: number | null): string {
+  if (block.type === 'table') return tableBlockText(block)
+  const lo = from === null ? 0 : renderedOffsetToEncodedOffset(block.content, block.renderSegments, from)
+  const hi = to === null
+    ? block.content.length
+    : renderedOffsetToEncodedOffset(block.content, block.renderSegments, to)
+  return block.content.slice(lo, hi)
 }
 
 /**

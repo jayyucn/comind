@@ -1,13 +1,15 @@
-import { TASK_PRIORITY_ICONS, TASK_STATUS_ICONS } from '../components/Icons'
 import type { Editor } from '@tiptap/vue-3'
-import type { Command, CommandProps } from '../types/command'
+
+import { TASK_PRIORITY_ICONS, TASK_STATUS_ICONS } from '../components/Icons'
+import { createTableData } from '../services/table-model'
+import { TemplateRenderer } from '../services/template-renderer'
 import { useBlockStore } from '../stores/blocks'
 import { useEditorStore } from '../stores/editor'
 import { usePageStore } from '../stores/pages'
-import { useTemplateRegistry } from './useTemplateRegistry'
-import { TemplateRenderer } from '../services/template-renderer'
-import { openImageFileDialog } from '../utils/imagePicker'
+import type { Command, CommandProps } from '../types/command'
 import { assetStorage } from '../utils/asset'
+import { openImageFileDialog } from '../utils/imagePicker'
+import { useTemplateRegistry } from './useTemplateRegistry'
 
 /**
  * 格式化日期为 YYYY-MM-DD
@@ -182,6 +184,57 @@ async function insertImage({ editor, range, blockId }: CommandProps) {
   await blockStore.updateBlockType(blockId, 'image')
   await blockStore.updateBlockContent(blockId, content)
   editorStore.deactivateBlock()
+}
+
+/**
+ * 插入表格块（P0）
+ *
+ * - 空内容且无子块：就地转换当前块为 table（斜杠文本已由菜单清除）
+ * - 其余情况：保留文本与子块，在完整子树之后插入兄弟表格块
+ * - 根块（页面根 / BlockModal 根）不能有兄弟：新表作为其子块
+ */
+async function insertTable({ editor, blockId }: CommandProps) {
+  if (!blockId) return
+
+  const blockStore = useBlockStore()
+  const editorStore = useEditorStore()
+  const anchor = blockStore.getBlock(blockId)
+  if (!anchor) return
+
+  const text = editor.getText().trim()
+  const hasChildren = blockStore.getChildren(blockId).length > 0
+  const tableFormat = { table: createTableData() }
+
+  if (text === '' && !hasChildren) {
+    await blockStore.updateBlockContent(blockId, '')
+    await blockStore.updateBlockType(blockId, 'table')
+    await blockStore.updateBlockFormat(blockId, tableFormat)
+    editorStore.activateBlock(blockId)
+    return
+  }
+
+  const isRoot = anchor.parentId === null || anchor.id === editorStore.blockModalBlockId
+  if (isRoot) {
+    await blockStore.createBlock({
+      pageId: anchor.pageId,
+      parentId: anchor.id,
+      content: '',
+      type: 'table',
+      format: tableFormat,
+    })
+    return
+  }
+
+  const created = await blockStore.insertAtPosition(
+    anchor.pageId,
+    anchor.parentId,
+    '',
+    anchor,
+    [],
+    false,
+    tableFormat,
+  )
+  await blockStore.updateBlockType(created.id, 'table')
 }
 
 /**
@@ -473,6 +526,14 @@ export const commands: Command[] = [
     icon: '🖼️',
     action: insertImage,
     convertBlockType: 'image'
+  },
+  {
+    id: 'table',
+    name: 'Table',
+    alias: ['table', '表格', 'tbl'],
+    group: '文本格式',
+    icon: '▦',
+    action: insertTable
   },
   {
     id: 'embed',

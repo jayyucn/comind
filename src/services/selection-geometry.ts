@@ -51,7 +51,9 @@ export function blockOffsetFromPoint(x: number, y: number): BlockOffset | null {
     return { blockId, offset: 0 }
   }
 
-  return { blockId, offset: textNodeOffsetInRoot(contentRoot(blockEl), range.startContainer, range.startOffset) }
+  const offset = textNodeOffsetInRoot(contentRoot(blockEl), range.startContainer, range.startOffset)
+  // 命中点不在本块可切分的文本里（如表格格间空白）：本次无有效端点，交由调用方忽略
+  return offset === null ? null : { blockId, offset }
 }
 
 /**
@@ -76,7 +78,8 @@ export function caretBlockOffsetFromDomSelection(): BlockOffset | null {
   const root = contentRoot(blockEl)
   // bullet 列 / 属性区不作为文本选区起点（与内容区拖拽的命中面一致）
   if (!root.contains(node)) return null
-  return { blockId, offset: textNodeOffsetInRoot(root, node, sel.anchorOffset) }
+  const offset = textNodeOffsetInRoot(root, node, sel.anchorOffset)
+  return offset === null ? null : { blockId, offset }
 }
 
 /** 遍历 root 下所有文本节点；回调返回 false 提前终止 */
@@ -89,18 +92,39 @@ function walkTextNodes(root: Node, fn: (node: Text) => false | void): void {
   }
 }
 
-/** 累加 root 下各文本节点长度，定位 container 处偏移在 textContent 中的绝对偏移 */
-function textNodeOffsetInRoot(root: HTMLElement, container: Node, offset: number): number {
+/**
+ * 累加 root 下各文本节点长度，定位 container 处偏移在 textContent 中的绝对偏移。
+ *
+ * 返回 null 表示「这个点不在本块可切分的文本里」，调用方必须当作本次定位无效：
+ * 旧实现把找不到容器的情形退化成「全部文本长度」，于是任何一次落空的光标（拖到
+ * 单元格之间的空白、拖出表格、拖到块外留白）都会把选区端点直接甩到块末——表格里
+ * 表现为「从 A 格往下拖一点，B 格凭空入选」。
+ *
+ * 元素容器（caretRangeFromPoint 在元素边界常返回元素 + 子节点下标）不是落空：
+ * 用 Range 量出该点之前的文本长度，与文本节点路径同一坐标系。
+ */
+function textNodeOffsetInRoot(root: HTMLElement, container: Node, offset: number): number | null {
   let total = 0
+  let found = false
   walkTextNodes(root, (node) => {
     if (node === container) {
+      found = true
       total += Math.min(offset, node.length)
       return false
     }
     total += node.length
   })
-  // container 非文本节点（元素容器）：截至当前累计长度
-  return total
+  if (found) return total
+  if (!root.contains(container)) return null
+  try {
+    const probe = document.createRange()
+    probe.setStart(root, 0)
+    probe.setEnd(container, offset)
+    return probe.toString().length
+  } catch {
+    // offset 越界（元素容器的子节点下标非法）：不猜，按落空处理
+    return null
+  }
 }
 
 /** 取 root 下最后一个**非空**文本节点（offset 越界时用于钳制） */
@@ -151,6 +175,20 @@ function blockElement(blockId: string, scope?: HTMLElement | null): HTMLElement 
 const ATOMIC_UNIT_SELECTOR = '.block-tag, .date-ref, .block-link, .rel-type-label'
 
 /**
+ * 「整块作为选区最小单元」的标记（表格块）。
+ *
+ * 表格的文本是**所有单元格按行优先拼接**出来的，字符偏移跨格没有任何语义：从 A 格拖到
+ * A 下方的格，在偏移坐标里已经越过整行后面的 B 格。且表格数据存在 `format.table`、
+ * 块 `content` 为空，切出来的片段既复制不出内容也回写不了。故表格整块进出选区：
+ * 高亮画整块色带，复制输出整表 TSV。
+ */
+const ATOMIC_BLOCK_SELECTOR = '[data-text-atomic]'
+
+function isAtomicTextBlock(blockEl: HTMLElement): boolean {
+  return blockEl.hasAttribute('data-text-atomic') || !!blockEl.querySelector(ATOMIC_BLOCK_SELECTOR)
+}
+
+/**
  * 量出某 block 内容区内全部内联原子单元的**渲染文本偏移区间** [start, end)。
  *
  * 为什么不复用 `renderSegments`：文本选区的端点是由 DOM 量出来的渲染偏移
@@ -164,6 +202,12 @@ export function atomicUnitSpans(blockId: string): RenderedUnitSpan[] {
   const blockEl = blockElement(blockId)
   if (!blockEl) return []
   const root = contentRoot(blockEl)
+  // 原子块（表格）：整块就是一个单元，内部不允许被切出半格
+  if (isAtomicTextBlock(blockEl)) {
+    const last = lastTextNode(root)
+    const total = last ? textNodeOffsetInRoot(root, last, last.length) : 0
+    return total !== null && total > 0 ? [{ start: 0, end: total }] : []
+  }
   const spans: RenderedUnitSpan[] = []
   for (const el of Array.from(root.querySelectorAll<HTMLElement>(ATOMIC_UNIT_SELECTOR))) {
     const first = firstTextNode(el)
@@ -171,6 +215,7 @@ export function atomicUnitSpans(blockId: string): RenderedUnitSpan[] {
     if (!first || !last) continue
     const start = textNodeOffsetInRoot(root, first, 0)
     const end = textNodeOffsetInRoot(root, last, last.length)
+    if (start === null || end === null) continue
     if (end > start) spans.push({ start, end })
   }
   return spans
@@ -400,6 +445,18 @@ export function selectionClientRects(anchor: BlockOffset, head: BlockOffset, sco
     if (!blockId) continue
 
     const root = contentRoot(el)
+    // 原子块（表格）：内部不可切分，整块入选 —— 高亮取内容区整块色带，
+    // 与图片块同款兜底（表格有文本节点，走下面的 Range 路径会只画出首末两格的字形）
+    if (isAtomicTextBlock(el)) {
+      const box = root.getBoundingClientRect()
+      if (box.width > 0 && box.height > 0) {
+        perBlock.push({
+          root,
+          rects: [{ left: box.left, top: box.top, width: box.width, height: box.height }],
+        })
+      }
+      continue
+    }
     const first = firstTextNode(root)
     const last = lastTextNode(root)
     if (!first || !last) {

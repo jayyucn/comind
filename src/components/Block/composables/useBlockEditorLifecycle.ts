@@ -400,6 +400,11 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
     const target = e.target as HTMLElement
     // 仅响应左键（右键/中键留给上下文菜单等，避免误启动选区/激活）
     if (e.button !== 0) return
+    // 表格块自带格选区（TableBlock 内实现）：内部拖拽不得进入跨块文本选区。
+    // 表格的字符偏移是「所有单元格按行优先拼接」，跨格没有语义——从 A 格往下拖到
+    // A 下方的格，在偏移坐标里已经越过整行后面的 B 格，于是 B 凭空入选；
+    // 且两套选区并存会互相覆盖，表格内还会退化成「能高亮、复制为空」。
+    const isTableBlock = blockStore.getBlock(blockId.value)?.type === 'table'
     // .block-link 与 .rel-type-label 与 .date-ref 与 .block-tag 都由 handleContentClick 处理点击，
     // 不要让 mousedown 触发激活导致 BulletRender 被替换、
     // 进而让后续 click 事件落在新挂载的 Editor 上。
@@ -429,7 +434,7 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
     // DOM selection 往往已被 PM 从原光标延伸到点击处——caretBlockOffsetFromDomSelection
     // 取 anchor（= 原光标位）即为此设计；起选后立即失活编辑器，维持「PM 挂载与
     // comind 文本选区不并存」不变量。
-    if (e.shiftKey && selection) {
+    if (e.shiftKey && selection && !isTableBlock) {
       const head = blockOffsetFromPoint(e.clientX, e.clientY)
       if (selection.textRange.value) {
         if (head) {
@@ -456,7 +461,7 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
       editorStore.setClickCoords(e.clientX, e.clientY)
     }
 
-    if (selection) {
+    if (selection && !isTableBlock) {
       // 内容区 mousedown 启动文本选区拖拽（ADR-0035 D1）：定位起始字符偏移。
       //
       // 已激活块同样走这里（旧实现提前 return）：否则起始于激活块内时 ProseMirror

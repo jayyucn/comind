@@ -27,14 +27,31 @@ import { useBlockRelationshipCleanup } from './useBlockRelationshipCleanup'
 // 内部剪贴板格式 MIME 单一来源（ADR-0025 D5）；此处仅转发供既有导入方使用
 export { COMIND_BLOCK_MIME }
 import { atomicUnitSpans } from '../services/selection-geometry'
+import type { CellRange, CellRef } from '../services/table-cell-range'
+import {
+  cellRangeHasContent,
+  cellRangeToTsv,
+  clearCellRange,
+  isWithinTable,
+  normalizeCellRange,
+} from '../services/table-cell-range'
+import { readTableData } from '../services/table-model'
 import type { BlockOffset, TextRange } from '../services/text-range'
 import { snapTextRangeToUnits, textRangeToText } from '../services/text-range'
 
-/** 选区状态（判别联合）：块选区与文本选区互斥由此结构保证 */
+/** 格选区：表格内两个格坐标张成的矩形（行列都含端点） */
+export interface CellSelection {
+  blockId: string
+  anchor: CellRef
+  head: CellRef
+}
+
+/** 选区状态（判别联合）：块选区、文本选区与格选区三者互斥，由结构保证 */
 type SelectionState =
   | { kind: 'none' }
   | { kind: 'block'; ids: Set<string>; phase: 'tracking' | 'committed' }
   | { kind: 'text'; range: TextRange }
+  | { kind: 'cells'; sel: CellSelection }
 
 /**
  * 块 id 视图：只读部分保持 Set 习惯（size / has / 迭代），写方法只留消费方实际用到的
@@ -103,6 +120,11 @@ export function useCrossBlockSelection() {
   const textRange = computed<TextRange | null>(() => {
     const s = state.value
     return s.kind === 'text' ? s.range : null
+  })
+  /** 格选区（只读视图）：表格内拖拽出格时由 TableBlock 写入 */
+  const cellSelection = computed<CellSelection | null>(() => {
+    const s = state.value
+    return s.kind === 'cells' ? s.sel : null
   })
 
   function clearSelection() {
@@ -337,10 +359,15 @@ export function useCrossBlockSelection() {
     if (!textRange.value) return
     const text = textRangeToText(blockStore.getBlocksByPage(pageId), snapTextRange(textRange.value))
     if (!text) return
+    await writePlainText(text)
+  }
+
+  /** 纯文本落剪贴板：navigator.clipboard 优先，失败降级 execCommand（Tauri/无权限环境） */
+  async function writePlainText(text: string) {
     try {
       await navigator.clipboard.writeText(text)
+      return
     } catch {
-      // 降级：execCommand 兜底
       const textarea = document.createElement('textarea')
       textarea.value = text
       textarea.style.position = 'fixed'
@@ -350,6 +377,70 @@ export function useCrossBlockSelection() {
       document.execCommand('copy')
       document.body.removeChild(textarea)
     }
+  }
+
+  // ── 格选区（表格）────────────────────────────────────────────────
+  // 表格的字符偏移跨格没有语义，因此表格内拖拽不走文本选区：
+  // 光标留在起点格内 = 该格内的原生文本选择；光标出格 = 整格矩形选区。
+  // 这里只持有「哪几格被选中」，几何与手势归 TableBlock（只有它知道格坐标）。
+
+  /** 写入格选区（手势在 TableBlock，本函数是唯一写入口） */
+  function setCellSelection(sel: CellSelection) {
+    transition({ kind: 'cells', sel })
+  }
+
+  function clearCellSelection() {
+    if (state.value.kind === 'cells') transition({ kind: 'none' })
+  }
+
+  /** 取格选区对应的归一化矩形；块缺失或坐标越界时返回 null（DOM 缓存的陈旧坐标） */
+  function resolveCellRange(pageId: string): { blockId: string; range: CellRange; rows: string[][] } | null {
+    const sel = cellSelection.value
+    if (!sel) return null
+    const block = blockStore.getBlock(sel.blockId)
+    if (!block || block.pageId !== pageId) return null
+    const data = readTableData(block.format)
+    const range = normalizeCellRange(sel.anchor, sel.head)
+    if (!isWithinTable(data, range)) return null
+    return { blockId: block.id, range, rows: data.rows }
+  }
+
+  /** 复制格选区为 TSV（Excel / 表格软件可直接粘贴） */
+  async function copyCellSelectionToClipboard(pageId: string) {
+    const sel = cellSelection.value
+    if (!sel) return
+    const block = blockStore.getBlock(sel.blockId)
+    if (!block || block.pageId !== pageId) return
+    const data = readTableData(block.format)
+    const range = normalizeCellRange(sel.anchor, sel.head)
+    if (!isWithinTable(data, range)) return
+    const tsv = cellRangeToTsv(data, range)
+    if (!tsv) return
+    await writePlainText(tsv)
+  }
+
+  /**
+   * 清空格选区内容（表结构不变）。
+   *
+   * 与文本/块删除同一口径：先判「有没有可删的」，全空时不写库——避免制造一条
+   * 无内容变更的保存（会刷新 updatedAt 并触发落库）。
+   */
+  async function deleteCellSelection(pageId: string): Promise<boolean> {
+    const target = resolveCellRange(pageId)
+    if (!target) {
+      clearCellSelection()
+      return false
+    }
+    const block = blockStore.getBlock(target.blockId)
+    if (!block) return false
+    const data = readTableData(block.format)
+    if (!cellRangeHasContent(data, target.range)) {
+      clearCellSelection()
+      return false
+    }
+    await blockStore.updateBlockFormat(block.id, { table: clearCellRange(data, target.range) })
+    clearCellSelection()
+    return true
   }
 
   /**
@@ -485,7 +576,12 @@ export function useCrossBlockSelection() {
     clearTextTracking,
     clearTextSelection,
     copyTextToClipboard,
-    deleteTextSelection
+    deleteTextSelection,
+    cellSelection,
+    setCellSelection,
+    clearCellSelection,
+    copyCellSelectionToClipboard,
+    deleteCellSelection
   }
 }
 

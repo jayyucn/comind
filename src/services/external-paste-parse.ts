@@ -13,9 +13,13 @@
  * - 嵌套（D5）：仅列表嵌套保留，其余容器展平
  * - 纯文本（D6）：按 \n 拆分、trim、跳过空行
  * - properties 恒为 null（外部无 Property 表数据）
+ *
+ * ADR-0061 追加：表格不再展平为逐格 bullet。HTML `<table>`、GFM 管道表格、
+ * TSV 三种来源都转成 `table` 块载荷（见 table-paste-parse）。
  */
 import type { BlockClipPayload } from '../types/block'
 import { COMIND_BLOCK_MIME, deserializeClipboardBlocks } from './block-clipboard'
+import { parseGfmTable, parseHtmlTableData, parseTsvTable, tablePayload } from './table-paste-parse'
 
 // 内部剪贴板格式 MIME 的唯一来源在 block-clipboard（ADR-0025 D5）；此处转发供既有导入方使用
 export { COMIND_BLOCK_MIME }
@@ -26,13 +30,29 @@ function bullet(content: string, children: BlockClipPayload[] = []): BlockClipPa
 
 // ── 纯文本路径（D6） ──────────────────────────────────────────────
 
-/** text/plain 按 \n 切分、每行 trim、跳过空行，每行一个 bullet */
+/**
+ * text/plain：先试 TSV 整段成表，再逐行扫描 GFM 表格段，其余行拆 bullet。
+ * 段边界规则见 table-paste-parse（ADR-0061 D6）。
+ */
 function parsePlainText(text: string): BlockClipPayload[] {
-  return text
-    .split('\n')
-    .map(line => line.trim())
-    .filter(line => line.length > 0)
-    .map(line => bullet(line))
+  const tsv = parseTsvTable(text)
+  if (tsv) return [tablePayload(tsv)]
+
+  const lines = text.split('\n')
+  const out: BlockClipPayload[] = []
+  let index = 0
+  while (index < lines.length) {
+    const gfm = parseGfmTable(lines, index)
+    if (gfm) {
+      out.push(tablePayload(gfm.data))
+      index += gfm.consumed
+      continue
+    }
+    const line = lines[index]!.trim()
+    if (line) out.push(bullet(line))
+    index++
+  }
+  return out
 }
 
 // ── HTML 路径（D3/D4/D5） ─────────────────────────────────────────
@@ -45,7 +65,11 @@ const SKIP_TAGS = new Set([
 
 const LIST_TAGS = new Set(['UL', 'OL'])
 
-/** 块级容器选择器：命中则展平其子节点（D5：非列表嵌套不保留层级） */
+/**
+ * 块级容器选择器：命中则展平其子节点（D5：非列表嵌套不保留层级）。
+ * `table`/`tr` 仍在这里 —— 布局表格（有效列数 < 2）要走展平，
+ * 真表格在 mapElement 的 TABLE 分支就已转成 table 载荷，到不了这层。
+ */
 const BLOCK_LEVEL_SELECTOR = [
   'p', 'div', 'section', 'article', 'header', 'footer', 'main', 'nav', 'aside',
   'ul', 'ol', 'table', 'tr', 'blockquote', 'figure', 'dl', 'form',
@@ -79,6 +103,13 @@ function mapElement(el: Element): BlockClipPayload[] {
   if (SKIP_TAGS.has(tag)) return []
   if (tag === 'IMG') return []  // v1 忽略外部图片（D4）
   if (tag === 'BR') return []
+
+  // 表格（ADR-0061 D2）：有效列数 ≥2 → table 块载荷；
+  // 否则视为布局容器（网页排版表格普遍单列），沿用旧展平
+  if (tag === 'TABLE') {
+    const data = parseHtmlTableData(el)
+    return data ? [tablePayload(data)] : mapChildren(el)
+  }
 
   // 列表：li → bullet，嵌套列表进 children（D5）
   if (LIST_TAGS.has(tag)) return mapList(el)

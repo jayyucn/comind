@@ -69,6 +69,26 @@ $date-ref-overdue-bg: rgba(220, 38, 38, 0.08);
   // 否则一点 status 图标激活 block，优先级底色就被糊掉。两者用途不同，不可共用一个变量。
   --selection-bg: rgba(66, 133, 244, 0.15);
   --block-active-bg: rgba(66, 133, 244, 0.10);
+  // 表格整格选区：整格面积远大于一行文字，沿用 ::selection 的浓度会在暗色下把格内文字
+  // 和格线一起糊掉，故单独一档——够看得见是「选中了几格」，又不盖住内容。
+  --table-cell-select-bg: rgba(66, 133, 244, 0.12);
+
+  // 表格格左下角热区的自定义光标：三横、无底盘、**按主题分两版单色**（暗色版见 [data-theme="dark"]）。
+  // 为什么是三横而不是三点（Ellipsis）：Comind 里「三横 = menu」已有既定语义
+  // （Icon.vue: icon-menu → lucide Menu），而三点在形状上贴近 GripVertical（拖拽握把，
+  // 两列点）——表格行本来就能拖拽，用三点会被读成「拖这一行」。
+  // 为什么没有白底盘：24px 的白块压在 34px 高的格子上会遮住下半部文字，而光标每次悬停都出现。
+  // 为什么不做「一套双色描边走天下」（黑芯 + 白轮廓）：浅色底上白轮廓融进背景、只剩一根黑线；
+  // 深色底上白轮廓反过来比黑芯厚，读成「白色胶囊中间一道黑缝」而不是三条线（两版都实测过）。
+  // 既然 `.cell-corner` 只存在于格子内、背景恒为格子底色，就不必为未知背景折中，
+  // 按主题各用一版单色：浅色底深色线、深色底浅色线，两套都是干净的三条线。
+  // 尺寸：线长 12、间距 6、粗 2 → 视觉 14×14；默认箭头约 12×19，体量相当。
+  // 20px 画布是下限：再小三条线会在 1x 屏上粘连。
+  // hotspot 取图形左下侧（4 17）而不是正中：热区贴在格子左下角，图向右上铺进格内，
+  // 不压相邻格与表格边框。
+  // data URI 是 token 规则的唯一例外：cursor 图里没有 CSS 变量上下文，颜色只能写死，
+  // 且 `#` 必须编码成 `%23`。图最大 32×32（超过浏览器直接忽略、回退成后端值）。
+  --cursor-cell-menu: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20'%3E%3Cpath d='M4 4h12M4 10h12M4 16h12' stroke='%2318181B' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E") 4 17, default;
 
   // 滚动条
   --scrollbar-size: 6px;
@@ -106,6 +126,12 @@ $date-ref-overdue-bg: rgba(220, 38, 38, 0.08);
 
   --selection-bg: rgba(129, 140, 248, 0.55);
   --block-active-bg: rgba(129, 140, 248, 0.20);
+  // 整格选区同档降低：0.55 铺满一整片格子会让格内文字发灰、格线消失
+  --table-cell-select-bg: rgba(129, 140, 248, 0.22);
+
+  // 格左下角光标 · 暗色版：同一几何，线色换成浅色（换色不换形，hotspot 与尺寸必须一致，
+  // 否则同一块热区在两套主题下的"手感"会不同）。
+  --cursor-cell-menu: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20'%3E%3Cpath d='M4 4h12M4 10h12M4 16h12' stroke='%23F4F4F5' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E") 4 17, default;
 
   // DateRef 专属色（暗色模式略调亮）
   --date-ref-schedule-text: #38BDF8;

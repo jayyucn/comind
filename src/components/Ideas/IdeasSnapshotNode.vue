@@ -19,6 +19,7 @@ import { getFieldDefinition } from '../../types/field-definition'
 import type { FieldValue } from '../../types/field-value'
 import { decodeFieldValueData } from '../../utils/field-value-codec'
 import BulletRender from '../Block/handlers/bullet/BulletRender.vue'
+import TableBlock from '../Block/handlers/table/TableBlock.vue'
 import { Icon } from '../Icons'
 import IdeasSnapshotImage from './IdeasSnapshotImage.vue'
 import {
@@ -215,11 +216,17 @@ function openDetail() {
             </span>
           </span>
 
-          <!-- 内容区：image 走只读图片；其余统一复用 BulletRender -->
+          <!-- 内容区：image 走只读图片；table 走只读表格；其余统一复用 BulletRender -->
           <div class="block-content">
             <IdeasSnapshotImage
               v-if="node.block.type === 'image'"
               :block="node.block"
+            />
+            <TableBlock
+              v-else-if="node.block.type === 'table'"
+              :content="node.block.content"
+              :block-format="node.block.format"
+              readonly
             />
             <BulletRender
               v-else

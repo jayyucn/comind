@@ -116,6 +116,22 @@ describe('payloadToPlainText — text/plain 缩进兜底', () => {
     const empty: BlockClipboardPayload = { version: 1, kind: 'blocks', blocks: [] }
     expect(payloadToPlainText(empty)).toBe('')
   })
+
+  test('表格块 → TSV（保留尺寸与表头行）', () => {
+    const payload = serializeBlocks(
+      [mk('t', '', { type: 'table', format: { table: { rows: [['A', 'B'], ['1', '2']], header: true } } })],
+      resolvers()
+    )
+    expect(payloadToPlainText(payload)).toBe('A\tB\n1\t2')
+  })
+
+  test('表格块内部剪贴板保留 type 与 format（可整表粘贴）', () => {
+    const format = { table: { rows: [['A', 'B'], ['1', '2']], header: true } }
+    const payload = serializeBlocks([mk('t', '', { type: 'table', format })], resolvers())
+    const blocks = deserializeClipboardBlocks(JSON.stringify(payload))
+    expect(blocks?.[0].type).toBe('table')
+    expect(blocks?.[0].format).toEqual(format)
+  })
 })
 
 describe('deserializeClipboardBlocks — 内部 MIME 反序列化', () => {

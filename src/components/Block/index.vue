@@ -18,6 +18,7 @@ import './handlers/bullet'
 import './handlers/code'
 import './handlers/embed'
 import './handlers/image'
+import './handlers/table'
 
 import type { EditorView } from '@codemirror/view'
 import type { Editor } from '@tiptap/core'
@@ -557,6 +558,16 @@ async function onLanguageChange(lang: string) {
 /** bullet dot 点击：打开单块子树编辑弹窗；弹窗内（inBlockModal）为 no-op（ADR-0039） */
 function onBulletClick() {
   if (inBlockModal) return
+  // 表格块不能作为 BlockModal 根：点击圆点直接聚焦首格
+  if (block.value.type === 'table') {
+    if (editorStore.activeBlockId === blockId.value) {
+      // 点击本身会让 textarea 失焦，等浏览器完成这次 click 的焦点处理后再聚焦首格
+      requestAnimationFrame(() => editorRef.value?.focus('start'))
+    } else {
+      editorStore.activateBlock(blockId.value)
+    }
+    return
+  }
   editorStore.openBlockModal(blockId.value)
 }
 
@@ -645,6 +656,7 @@ watch(isActive, (active) => {
               ref="editorRef"
               :block-id="blockId"
               :content="editContent"
+              :block-format="block.format"
               :show-full-placeholder="isSingleEmptyBlock"
               :field-values="getBlockFieldValuesMap()"
               :language="getBlockFieldValue('language')"
@@ -669,6 +681,7 @@ watch(isActive, (active) => {
               v-else-if="handler"
               :block-id="blockId"
               :content="block.content"
+              :block-format="block.format"
               :field-values="getBlockFieldValuesMap()"
               :language="getBlockFieldValue('language')"
               :show-placeholder="isSingleEmptyBlock"

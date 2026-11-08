@@ -335,6 +335,7 @@ describe('useCrossBlockSelection', () => {
       const kinds: string[] = []
       if (selection.anchorIds.size > 0 || selection.selectedIds.size > 0) kinds.push('block')
       if (selection.textRange.value) kinds.push('text')
+      if (selection.cellSelection.value) kinds.push('cells')
       return kinds
     }
 
@@ -379,6 +380,12 @@ describe('useCrossBlockSelection', () => {
         ['clearTextTracking', () => selection.clearTextTracking()],
         ['clearTracking', () => selection.clearTracking()],
         ['clearTextSelection', () => selection.clearTextSelection()],
+        ['格选区（setCellSelection）', () => selection.setCellSelection({
+          blockId: b1.id,
+          anchor: { row: 0, col: 0 },
+          head: { row: 1, col: 1 },
+        })],
+        ['clearCellSelection', () => selection.clearCellSelection()],
         ['clearSelection', () => selection.clearSelection()],
       ]
 
@@ -387,6 +394,7 @@ describe('useCrossBlockSelection', () => {
         selection.clearTracking()
         selection.clearTextSelection()
         selection.clearTextTracking()
+        selection.clearCellSelection()
       }
 
       for (const [name1, action1] of actions) {
@@ -1093,6 +1101,166 @@ describe('useCrossBlockSelection', () => {
 
       expect(selection.anchorIds.size).toBe(0)
       expect(selection.selectedIds.size).toBe(0)
+    })
+  })
+
+  /**
+   * 格选区（表格两段式选择的后半段）。
+   *
+   * 手势与几何归 TableBlock（只有它知道格坐标），本组合式只持有「哪几格被选中」，
+   * 并把复制 / 删除收口成两处纯数据操作——因此可以完全脱开 DOM 验收。
+   */
+  describe('格选区（表格 cells selection）', () => {
+    let writeTextMock: ReturnType<typeof vi.fn>
+
+    beforeEach(() => {
+      writeTextMock = vi.fn().mockResolvedValue(undefined)
+      vi.stubGlobal('navigator', { clipboard: { write: vi.fn(), writeText: writeTextMock } })
+    })
+
+    afterEach(() => {
+      vi.unstubAllGlobals()
+    })
+
+    async function createTable(pageId: string, rows: string[][]): Promise<string> {
+      const block = await blockStore.createBlock({
+        pageId,
+        content: '',
+        type: 'table',
+        format: { table: { rows, header: true, headerAlign: 'left' } },
+      })
+      return block.id
+    }
+
+    function rowsOf(blockId: string): string[][] {
+      const format = blockStore.getBlock(blockId)?.format as
+        | { table?: { rows?: string[][] } }
+        | undefined
+      return format?.table?.rows ?? []
+    }
+
+    test('写入矩形后 cellSelection 可读，清空后归零（同一种选区的唯一写入口）', async () => {
+      const selection = useCrossBlockSelection()
+      const blockId = await createTable('page-1', [['a', 'b'], ['c', 'd']])
+
+      selection.setCellSelection({ blockId, anchor: { row: 0, col: 0 }, head: { row: 1, col: 1 } })
+      expect(selection.cellSelection.value).toEqual({
+        blockId,
+        anchor: { row: 0, col: 0 },
+        head: { row: 1, col: 1 },
+      })
+
+      selection.clearCellSelection()
+      expect(selection.cellSelection.value).toBeNull()
+    })
+
+    test('与文本选区、块选区两两互斥（判别联合保证至多一种）', async () => {
+      const selection = useCrossBlockSelection()
+      const pageId = 'page-1'
+      const b1 = await blockStore.createBlock({ pageId, content: 'Block 1' })
+      const blockId = await createTable(pageId, [['a']])
+
+      selection.startTextTracking({ blockId: b1.id, offset: 0 }, { x: 0, y: 0 })
+      selection.updateTextDrag({ blockId: b1.id, offset: 2 })
+      selection.setCellSelection({ blockId, anchor: { row: 0, col: 0 }, head: { row: 0, col: 0 } })
+
+      expect(selection.cellSelection.value?.blockId).toBe(blockId)
+      expect(selection.textRange.value).toBeNull()
+
+      selection.selectAll(pageId)
+
+      expect(selection.anchorIds.size).toBeGreaterThan(0)
+      expect(selection.cellSelection.value).toBeNull()
+    })
+
+    test('复制输出 TSV：矩形含端点，反方向拖拽先归一', async () => {
+      const selection = useCrossBlockSelection()
+      const blockId = await createTable('page-1', [
+        ['h1', 'h2', 'h3'],
+        ['a', 'b', 'c'],
+        ['d', 'e', 'f'],
+      ])
+
+      // 从 (2,2) 反向拖到 (1,0)：归一为 rows 1-2 × cols 0-2
+      selection.setCellSelection({ blockId, anchor: { row: 2, col: 2 }, head: { row: 1, col: 0 } })
+      await selection.copyCellSelectionToClipboard('page-1')
+
+      expect(writeTextMock).toHaveBeenCalledWith('a\tb\tc\nd\te\tf')
+    })
+
+    test('复制单格：无分隔符，行内制表符不会多出空列', async () => {
+      const selection = useCrossBlockSelection()
+      const blockId = await createTable('page-1', [['h'], ['solo']])
+
+      selection.setCellSelection({ blockId, anchor: { row: 1, col: 0 }, head: { row: 1, col: 0 } })
+      await selection.copyCellSelectionToClipboard('page-1')
+
+      expect(writeTextMock).toHaveBeenCalledWith('solo')
+    })
+
+    test('删除只清所选格内容：其余格、行列数与表头不变', async () => {
+      const selection = useCrossBlockSelection()
+      const blockId = await createTable('page-1', [
+        ['h1', 'h2'],
+        ['a', 'b'],
+        ['c', 'd'],
+      ])
+
+      selection.setCellSelection({ blockId, anchor: { row: 1, col: 0 }, head: { row: 1, col: 1 } })
+      const removed = await selection.deleteCellSelection('page-1')
+
+      expect(removed).toBe(true)
+      expect(rowsOf(blockId)).toEqual([['h1', 'h2'], ['', ''], ['c', 'd']])
+      // 删除后选区让位：格坐标已随内容变化，继续挂着只会误导下一次复制
+      expect(selection.cellSelection.value).toBeNull()
+    })
+
+    test('所选格全空时不写库（避免制造一次无内容变更的保存）', async () => {
+      const selection = useCrossBlockSelection()
+      const blockId = await createTable('page-1', [['h'], ['']])
+      const updateSpy = vi.spyOn(blockStore, 'updateBlockFormat')
+
+      selection.setCellSelection({ blockId, anchor: { row: 1, col: 0 }, head: { row: 1, col: 0 } })
+      const removed = await selection.deleteCellSelection('page-1')
+
+      expect(removed).toBe(false)
+      expect(updateSpy).not.toHaveBeenCalled()
+      expect(selection.cellSelection.value).toBeNull()
+    })
+
+    test('坐标越界（DOM 缓存陈旧）：复制静默不出内容、删除返回 false', async () => {
+      const selection = useCrossBlockSelection()
+      const blockId = await createTable('page-1', [['a']])
+
+      selection.setCellSelection({ blockId, anchor: { row: 0, col: 0 }, head: { row: 5, col: 5 } })
+
+      await selection.copyCellSelectionToClipboard('page-1')
+      expect(writeTextMock).not.toHaveBeenCalled()
+      expect(await selection.deleteCellSelection('page-1')).toBe(false)
+    })
+
+    test('块已不在（切页 / 被删）：复制与删除都安静地失败', async () => {
+      const selection = useCrossBlockSelection()
+      selection.setCellSelection({
+        blockId: 'ghost',
+        anchor: { row: 0, col: 0 },
+        head: { row: 0, col: 0 },
+      })
+
+      await selection.copyCellSelectionToClipboard('page-1')
+      expect(writeTextMock).not.toHaveBeenCalled()
+      expect(await selection.deleteCellSelection('page-1')).toBe(false)
+    })
+
+    test('跨页守卫：块属于别的页时不出内容', async () => {
+      const selection = useCrossBlockSelection()
+      const blockId = await createTable('page-other', [['a']])
+
+      selection.setCellSelection({ blockId, anchor: { row: 0, col: 0 }, head: { row: 0, col: 0 } })
+      await selection.copyCellSelectionToClipboard('page-1')
+
+      expect(writeTextMock).not.toHaveBeenCalled()
+      expect(await selection.deleteCellSelection('page-1')).toBe(false)
     })
   })
 })

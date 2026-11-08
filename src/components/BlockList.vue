@@ -388,10 +388,14 @@ async function handleDocKeyDown(e: KeyboardEvent) {
   // Ctrl/Cmd+X（不带 Shift/Alt）：剪切的字面授权只有这一 chord，其余组合交还原生行为
   const isCutKey = (e.key === 'x' || e.key === 'X') && (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey
   if (e.key === 'Backspace' || e.key === 'Delete' || isCutKey) {
-    // 键盘删除/剪切分派表：{Backspace, Delete, Ctrl+X} × {文本选区, 块选区}（#95 / #96）。
-    // 两类选区语义一致：选中即被支配。文本选区优先——与 Ctrl+C 同一口径（互斥，只会命中其一）。
-    // 剪切 = 先复制后删除：复制函数在首个 await 前同步快照选区内容，先于删除的落库变更。
-    // 无选区时不接管（preventDefault 都不做），保留编辑器/浏览器原生命中剪切。
+    // 键盘删除/剪切分派表：{Backspace, Delete, Ctrl+X} × {格选区, 文本选区, 块选区}（#95 / #96）。
+    // 格选区最具体，先判——表格是原子块，选中即清空格内容（表结构不变）。
+    if (selection.cellSelection.value) {
+      e.preventDefault()
+      if (isCutKey) await selection.copyCellSelectionToClipboard(props.pageId)
+      await selection.deleteCellSelection(props.pageId)
+      return
+    }
     if (isCutKey) copySelectionToClipboard()
     if (selection.textRange.value) {
       e.preventDefault()
@@ -412,6 +416,15 @@ async function handleDocKeyDown(e: KeyboardEvent) {
     requestAnimationFrame(collapseResidualNativeSelection)
   }
   if (e.key === 'Escape') {
+    // 格选区（表格原子块）：先撤选区，并把仍处编辑态的表格退回渲染态。
+    // 出格那刻格内 textarea 已失焦（否则输入法工具栏会一直闪），格内 Esc 收不到，
+    // 退出编辑只能在这里收口，与格内 Esc 同口径。
+    if (selection.cellSelection.value) {
+      const { blockId } = selection.cellSelection.value
+      selection.clearCellSelection()
+      if (editorStore.activeBlockId === blockId) editorStore.deactivateBlock()
+      return
+    }
     selection.clearSelection()
     selection.clearTextSelection()
     return
@@ -448,7 +461,12 @@ async function handleDocKeyDown(e: KeyboardEvent) {
     }
   }
   if ((e.key === 'c' || e.key === 'C') && (e.ctrlKey || e.metaKey)) {
-    // 文本选区优先于块选区（互斥，只会命中其一）
+    // 格选区优先（表格原子块 → TSV），其次文本选区、块选区（三者互斥，只会命中其一）
+    if (selection.cellSelection.value) {
+      e.preventDefault()
+      void selection.copyCellSelectionToClipboard(props.pageId)
+      return
+    }
     if (selection.textRange.value || selection.anchorIds.size > 0) {
       e.preventDefault()
       copySelectionToClipboard()
@@ -758,6 +776,27 @@ async function handleDocPaste(e: ClipboardEvent) {
   if (!hasInternal && selection.anchorIds.size === 0 && isInlineCaretContext(e)) {
     void ensurePages.then(({ created }) => notifyCreatedPages(created, editorStore.showToast))
     return
+  }
+
+  // 空块就地转表（ADR-0061 D4）：整段只产出一个表格 + 无块选区 + 活动块是空 bullet
+  // → 口径同 useSlashCommands.insertTable，不新增块、不留空壳
+  if (!hasInternal && forest.length === 1 && forest[0]!.type === 'table' && selection.anchorIds.size === 0) {
+    const targetId = editorStore.activeBlockId
+    const target = targetId ? blockStore.getBlock(targetId) : null
+    if (
+      target
+      && target.pageId === props.pageId
+      && target.type === 'bullet'
+      && target.content.trim() === ''
+      && blockStore.getChildren(target.id).length === 0
+    ) {
+      e.preventDefault()
+      await blockStore.updateBlockContent(target.id, '')
+      await blockStore.updateBlockType(target.id, 'table')
+      await blockStore.updateBlockFormat(target.id, forest[0]!.format ?? {})
+      editorStore.activateBlock(target.id)
+      return
+    }
   }
 
   e.preventDefault()

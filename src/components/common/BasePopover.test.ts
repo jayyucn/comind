@@ -220,3 +220,84 @@ describe('BasePopover 并发实例隔离（模块级共享状态校验）', () =
     b.unmount()
   })
 })
+
+describe('BasePopover 非模态（modal=false）', () => {
+  afterEach(() => {
+    document.body.querySelectorAll('[data-testid="base-popover"]').forEach((n) => n.remove())
+  })
+
+  it('不铺 overlay；点面板内不关闭，点面板外关闭', async () => {
+    const w = mount(BasePopover, {
+      props: { visible: true, modal: false, position: { x: 10, y: 10 } },
+      slots: { default: '<button type="button">内</button>' },
+      attachTo: document.body,
+    })
+    // watch(immediate) → nextTick 链里才挂 document mousedown
+    await w.vm.$nextTick()
+    await w.vm.$nextTick()
+
+    expect(document.body.querySelector('[data-testid="base-popover-overlay"]')).toBeNull()
+    const panel = document.body.querySelector('[data-testid="base-popover"]') as HTMLElement
+    expect(panel).not.toBeNull()
+
+    panel.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    await w.vm.$nextTick()
+    expect(w.emitted('close')).toBeUndefined()
+
+    document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    await w.vm.$nextTick()
+    expect(w.emitted('close')).toHaveLength(1)
+
+    w.unmount()
+  })
+
+  it('移除：卸载后 document 上不再有 mousedown 监听', async () => {
+    const w = mount(BasePopover, {
+      props: { visible: true, modal: false, position: { x: 10, y: 10 } },
+      attachTo: document.body,
+    })
+    await w.vm.$nextTick()
+    await w.vm.$nextTick()
+    const removeSpy = vi.spyOn(document, 'removeEventListener')
+    w.unmount()
+    const removed = removeSpy.mock.calls.filter(c => c[0] === 'mousedown').length
+    expect(removed).toBeGreaterThanOrEqual(1)
+    removeSpy.mockRestore()
+  })
+})
+
+describe('BasePopover 非模态（modal=false）', () => {
+  afterEach(() => {
+    document.body.querySelectorAll('[data-testid="base-popover"]').forEach((n) => n.remove())
+    document.body.querySelectorAll('.test-submenu').forEach((n) => n.remove())
+  })
+
+  it('豁免选择器内的元素算作「面板内部」：点它不关闭', async () => {
+    const submenu = document.createElement('div')
+    submenu.className = 'test-submenu'
+    document.body.appendChild(submenu)
+
+    const w = mount(BasePopover, {
+      props: {
+        visible: true,
+        modal: false,
+        position: { x: 10, y: 10 },
+        ignoreOutsideSelector: '.test-submenu',
+      },
+      attachTo: document.body,
+    })
+    await w.vm.$nextTick()
+    await w.vm.$nextTick()
+
+    submenu.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    await w.vm.$nextTick()
+    expect(w.emitted('close')).toBeUndefined()
+
+    // 豁免只对选择器内的元素成立，外部仍然关闭
+    document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    await w.vm.$nextTick()
+    expect(w.emitted('close')).toHaveLength(1)
+
+    w.unmount()
+  })
+})
