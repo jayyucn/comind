@@ -178,6 +178,22 @@
   }
 }
 
+// 表格块（编辑态，行/列操作条已渲染）：左侧 20px gutter 被条带占用（TableBlock 的
+// --table-gutter 用负 margin 把盒子铺进 bullet 这块空间），条带 [内容左缘-10, 内容左缘]
+// 与 bullet dot（[内容左缘-13, -7]）重叠且带 z-index: $z-sticky —— 不抬层的话鼠标落在
+// dot 上命中的是行条（点 dot 变成打开行菜单），dot 也被条带吃掉一半。
+// 容器让位：抬层后 20px 宽的容器会整段盖住 10px 宽的条带，条带就点不到了；只让
+// dot / chevron 这两个子元素恢复指针。限定到条带存在时，渲染态不受影响。
+// 只限表格块：图片块的左中缩放把手同样贴在本区域中线，全局抬层会把它盖掉。
+.block-row:has(.table-block):has(.strip) .block-bullet {
+  z-index: $z-block-chrome;
+  pointer-events: none;
+
+  > * {
+    pointer-events: auto;
+  }
+}
+
 // Hover 效果：chevron 仅当 hover 整个 block（含内容、不含子 block）时显现。
 // 用 .block-row:hover 而非 .block:hover —— 后者会随子块 hover 向上冒泡，
 // 导致父块 chevron 在 hover 子块时也亮起（ADR-0039 折叠手势语义）。

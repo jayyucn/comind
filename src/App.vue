@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Plus } from 'lucide-vue-next'
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 
 import { useEmbedSelector } from './app/useEmbedSelector'
@@ -47,6 +47,7 @@ import { useRelationshipTypes } from './composables/useRelationshipTypes'
 import { reconcilePanels } from './composables/useRightSidebar'
 import { useSidebar } from './composables/useSidebar'
 import { runUndoOrRedo } from './composables/useUndoRestore'
+import { emitLayoutChange, observeLayoutRoot } from './services/layout-change'
 import { useEditorStore } from './stores/editor'
 import { usePageStore } from './stores/pages'
 import { currentView, usePanesStore } from './stores/panes'
@@ -117,6 +118,9 @@ const contentBodyEl = ref<HTMLElement | null>(null)
 const pageMainContentEl = ref<HTMLElement | null>(null)
 provideLayoutShell({ sidebarEl, contentBodyEl, pageMainContentEl })
 
+/** 布局根（.content-body）尺寸观察器：尺寸变化即广播布局变更（见 onMounted） */
+let stopLayoutObserver: (() => void) | null = null
+
 /** 分隔条拖拽：实时写 splitRatio（夹取 0.1~0.9）；按布局方向取对应轴；关闭 pane 走头部 ✕ 按钮 */
 function onDividerMousedown(e: MouseEvent) {
   if (e.button !== 0) return
@@ -130,10 +134,13 @@ function onDividerMousedown(e: MouseEvent) {
       ? (ev.clientY - rect.top) / rect.height
       : (ev.clientX - rect.left) / rect.width
     panesStore.setSplitRatio(ratio)
+    // pane 宽度变了但 .content-body 盒子没变（RO 观察不到），浮层与覆盖层同样会停在旧坐标
+    void nextTick(emitLayoutChange)
   }
   const onUp = () => {
     document.removeEventListener('mousemove', onMove)
     document.removeEventListener('mouseup', onUp)
+    void nextTick(emitLayoutChange)
   }
   document.addEventListener('mousemove', onMove)
   document.addEventListener('mouseup', onUp)
@@ -202,6 +209,9 @@ const absolute = computed(() => route.meta.absolute === true)
 const showRightSidebarToggle = computed(() => route.meta.hideRightSidebarToggle !== true)
 
 onMounted(async () => {
+  // 布局变更广播：.content-body 尺寸变化（折叠侧栏 ctrl+b / 右侧栏开合）→ 缓存视口矩形
+  // 的浮层与覆盖层重测（见 services/layout-change.ts）。阅读器窗口同样有布局壳，一并装。
+  stopLayoutObserver = observeLayoutRoot(contentBodyEl.value)
   // 阅读器窗口不做主窗口初始化（页面预载/图谱预取/Ctrl+A 兜底：
   // 阅读器正文允许浏览器默认全选，为后续高亮选区铺路）
   if (isReaderWindow) return
@@ -222,6 +232,8 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  stopLayoutObserver?.()
+  stopLayoutObserver = null
   document.removeEventListener('keydown', handleGlobalKeydownCapture, true)
   document.removeEventListener('keydown', handleGlobalUndoRedoKeyDown, true)
   document.removeEventListener('keydown', handlePaneNavKeydown)

@@ -146,6 +146,7 @@ $ease-spring: cubic-bezier(0.2, 0.8, 0.2, 1); // 弹入缓动（浮层/卡片入
 // Z-index 层级（自底向上，设计依据见 docs/adr/0032-z-index-layering.md）
 $z-base:       0;                    // 内容层（0-2 微叠层豁免 token 化）
 $z-sticky:     10;                   // 吸附 chrome：导航栏、拖拽柄、代码按钮、表头
+$z-block-chrome: $z-sticky + 2;      // 块级 chrome（bullet / chevron）：块内容在左侧 20px gutter 里画的浮层条（表格行列条 = $z-sticky，激活段 +1）不得盖住它
 $z-scrollbar:  50;                   // 系统装饰：浮层滚动条（高于 sticky、低于一切浮层表面）
 $z-sidebar:    100;                  // 侧栏浮层：移动端侧栏、FilterPanel、drop-indicator
 $z-dropdown:   300;                  // 下拉菜单：SlashCommand、通知、lang-menu、SyncStatusBar

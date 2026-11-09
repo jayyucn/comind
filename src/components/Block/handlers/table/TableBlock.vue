@@ -36,6 +36,7 @@ import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } fr
 import type { CrossBlockSelection } from '../../../../composables/useCrossBlockSelection'
 import { runUndoOrRedo } from '../../../../composables/useUndoRestore'
 import { writePlainTextToClipboard } from '../../../../services/block-clipboard'
+import { onLayoutChange } from '../../../../services/layout-change'
 import {
   applyAlignToRange,
   type CellRange,
@@ -887,16 +888,23 @@ function dismissAlignMenu() {
   alignSubmenuOpen.value = false
 }
 
+let offAlignLayoutChange: (() => void) | null = null
+
 function attachAlignMenuListeners() {
   window.addEventListener('keydown', onAlignMenuKeyDown, true)
   window.addEventListener('scroll', dismissAlignMenu, true)
   window.addEventListener('resize', dismissAlignMenu)
+  // 折叠侧栏 → 工具条跟着锚点格平移（BasePopover 重锚），二级浮层存的是**绝对矩形**，
+  // 跟着走要重算一次锚点；直接收起更省事，也与 scroll/resize 的口径一致。
+  offAlignLayoutChange = onLayoutChange(dismissAlignMenu)
 }
 
 function detachAlignMenuListeners() {
   window.removeEventListener('keydown', onAlignMenuKeyDown, true)
   window.removeEventListener('scroll', dismissAlignMenu, true)
   window.removeEventListener('resize', dismissAlignMenu)
+  offAlignLayoutChange?.()
+  offAlignLayoutChange = null
 }
 
 watch(alignSubmenuOpen, (open) => {
@@ -2445,12 +2453,16 @@ defineExpose({
   width: 22px;
   height: 14px;
   opacity: 0;
+  /* 不可见时不吃指针：本按钮的左端伸进 bullet 那 20px（left: -12px），
+     opacity 0 仍可点击等于在 dot 附近埋了个隐形热区。 */
+  pointer-events: none;
   transition: opacity var(--dur-fast) var(--ease-out) 240ms;
 }
 
 .table-block:hover .table-entry,
 .table-entry:hover {
   opacity: 1;
+  pointer-events: auto;
   transition-delay: 0s;
 }
 

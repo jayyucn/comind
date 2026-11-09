@@ -23,6 +23,7 @@ import { UNDO_FLASH_MS, useRestoreFlash } from '../composables/useRestoreFlash'
 import { ensureStack } from '../composables/useUndoHistory'
 import { runUndoOrRedo } from '../composables/useUndoRestore'
 import { COMIND_BLOCK_MIME, resolveClipboardForest } from '../services/external-paste-parse'
+import { onLayoutChange } from '../services/layout-change'
 import { ensureWikiLinkTargets, notifyCreatedPages } from '../services/paste-ensure-wiki-targets'
 import { blockOffsetFromPoint, selectionClientRects, type SelectionRect } from '../services/selection-geometry'
 import { useBlockStore } from '../stores/blocks'
@@ -844,6 +845,9 @@ function handleViewportChange() {
   refreshFlashRects()
 }
 
+/** 布局变更（折叠侧栏 / 侧栏开合 / 拖 pane 分隔条）：不派发 window resize，但视口矩形已失效 */
+let offLayoutChange: (() => void) | null = null
+
 watch(() => selection.textRange.value, () => refreshTextHighlight())
 
 // ── 拖放指示器（模块级共享状态，渲染一次） ──
@@ -905,6 +909,8 @@ onMounted(() => {
   // 文本选区覆盖层高亮需随滚动/缩放重绘（视口矩形会失效）
   document.addEventListener('scroll', handleViewportChange, true)
   window.addEventListener('resize', handleViewportChange)
+  // 折叠侧栏只改内容容器宽度，不派发 resize：不订阅就是「高亮整段留在旧坐标」（见 layout-change.ts）
+  offLayoutChange = onLayoutChange(handleViewportChange)
 })
 
 onBeforeUnmount(() => {
@@ -916,6 +922,8 @@ onBeforeUnmount(() => {
   document.removeEventListener('paste', handleDocPaste, true)
   document.removeEventListener('scroll', handleViewportChange, true)
   window.removeEventListener('resize', handleViewportChange)
+  offLayoutChange?.()
+  offLayoutChange = null
 })
 </script>
 

@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
+import { onLayoutChange } from '../../services/layout-change'
+
 /** 通用弹层原语（ADR-0009 D8，避让扩展见 ADR-0038）。
  *
  * 封装现有多个弹层重复的样板：Teleport to body + fixed overlay（点击空白关闭）
@@ -66,6 +68,7 @@ const anchorRect = ref<DOMRect | null>(null)
 let resizeObserver: ResizeObserver | null = null
 let scrollTargets: Array<Window | HTMLElement> = []
 let onScroll: (() => void) | null = null
+let offLayoutChange: (() => void) | null = null
 
 function measure() {
   const el = panelEl.value
@@ -134,9 +137,15 @@ function attachListeners() {
   }
   scrollTargets.forEach((t) => t.addEventListener('scroll', onScroll!, true))
   window.addEventListener('resize', onScroll)
+  // 折叠侧栏 / 开合右侧栏 / 拖 pane 分隔条只改内容容器宽度，不派发 window resize：
+  // 锚点元素跟着布局平移了，浮层却留在旧坐标（表格范围工具条「不跟手」即此）。
+  // 遗留点模式（position）没有可跟随的锚点，收到信号也只是重读一次空锚点。
+  offLayoutChange = onLayoutChange(onScroll)
 }
 
 function detachListeners() {
+  offLayoutChange?.()
+  offLayoutChange = null
   if (!onScroll) return
   scrollTargets.forEach((t) => t.removeEventListener('scroll', onScroll!, true))
   window.removeEventListener('resize', onScroll)

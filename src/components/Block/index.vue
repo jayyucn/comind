@@ -130,8 +130,11 @@ const editContent = computed(() => {
   return text
 })
 
-/** 空 block：无内容且非标题（如 '# ' 开头） */
+/** 空 block：无内容且非标题（如 '# ' 开头）。表格块的内容在 format.table 里、正文恒为空，
+    视觉上并不空 —— 判空会让它的 bullet dot 挂在 hide-empty-bullet 上，只能靠 hover 显现，
+    而编辑态左侧那段被行/列操作条压着，hover 命中的是条带，dot 就等于永远不出现。 */
 const isEmptyBlock = computed(() => {
+  if (block.value.type === 'table') return false
   const c = block.value.content ?? ''
   return !/^#{1,6}\s+/.test(c) && c.trim() === ''
 })
