@@ -2574,9 +2574,14 @@ defineExpose({
   transform: translateX(12px);
 }
 
+/* 表格外框与圆角都挂在滚动容器上：overflow 非 visible 时 border-radius 会裁剪内容，
+   四角随圆弧裁掉；外框用 box-shadow 而不是 border —— 边框会占布局宽度，
+   超宽表本就在溢出临界点上，多 2px 就等于凭空多出一条横向滚动条。 */
 .table-scroll {
   overflow-x: auto;
   max-width: 100%;
+  border-radius: var(--radius-sm);
+  box-shadow: 0 0 0 1px var(--border);
 }
 
 /* 格选区色块：整格底色，比 ::selection（--selection-bg）浅一档（--table-cell-select-bg），
@@ -2612,19 +2617,34 @@ defineExpose({
   cursor: grabbing;
 }
 
+/* 必须是 separate 而不是 collapse：collapse 模式下 td 的 border-radius 不生效，
+   四角要圆就只能让格子各自持边框。相邻格边框叠成 2px 的问题见 .table-cell 的逐边分配。 */
 .block-table {
   width: 100%;
   table-layout: fixed;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   font-size: var(--text-sm);
 }
 
 .table-cell {
   position: relative;
   padding: 0;
-  border: 1px solid var(--border);
+  border: 0;
   vertical-align: top;
   background: var(--bg-base);
+}
+
+/* 网格线只画「上 + 左」：separate 下左右相邻两格各画一条会叠成 2px 粗线。
+   判定用 data-row / data-col（视觉行列号），不用 :first-child / :last-child ——
+   合并区的被覆盖格没有 DOM，首尾判断会错位到别的列上。
+   最上行 / 最左列不画，外框由 .table-scroll 的 box-shadow 提供。 */
+.table-cell[data-row]:not([data-row='0']) {
+  border-top: 1px solid var(--border);
+}
+
+.table-cell[data-col]:not([data-col='0']) {
+  border-left: 1px solid var(--border);
 }
 
 /* 表头行与内容区用背景区分：--table-header-bg 在暗色下明显高于格子线（--border） */
