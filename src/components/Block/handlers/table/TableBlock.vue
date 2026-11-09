@@ -951,7 +951,6 @@ function isPlusHot(kind: EntryKind, index: number): boolean {
  * 于是永远点不到。这里用条几何（已含 root 相对坐标）直接算光标到「+」圆心的距离。
  */
 function onRootMouseMove(e: MouseEvent) {
-  if (props.readonly) return
   // 拖滚动滑块时鼠标必然贴着行条末端滑过，别让「+」热区被误触发
   if (hDrag) {
     if (plusHot.value) plusHot.value = null
@@ -1539,7 +1538,8 @@ function measureStrips() {
   measureHScroll(rootRect, tableRect)
   // 格选区色块同理：拖拽发生在渲染态（readonly），早退之后测就永远画不出来
   measureCellSelection()
-  if (props.readonly) return
+  // 行列条与菜单入口两态一致（渲染态 hover 同样要出条），因此这里不再区分 readonly：
+  // 渲染态的 td 同样带 data-row/data-col，几何口径完全一样。
   // 一切几何都以表格边框盒为唯一基准：滚动容器的盒子比表格宽（含左侧 gutter 与右侧余量），
   // 用它算出来的条会左溢 / 悬空 / 右超。
   tableBox.value = {
@@ -1719,7 +1719,6 @@ const rowGuideStyle = computed(() => {
 
 /** 在第 index 行下方插入一行，保持当前单元格焦点（行号按插入位置顺移） */
 function insertRowAt(index: number) {
-  if (props.readonly) return
   const insertAt = index + 1
   aligns.value = addRowToAligns(aligns.value, insertAt)
   merges.value = addRowToMerges(merges.value, insertAt)
@@ -1727,12 +1726,18 @@ function insertRowAt(index: number) {
   const cell = activeCell.value
   persist()
   clearActive()
+  // 渲染态没有输入框可聚焦：插入后激活块，由 store 交接坐标把光标落到新行首格
+  if (props.readonly) {
+    if (!props.blockId) return
+    editorStore.setTableCellFocus({ blockId: props.blockId, row: insertAt, col: 0 })
+    editorStore.activateBlock(props.blockId)
+    return
+  }
   if (cell) focusCell(cell.row >= insertAt ? cell.row + 1 : cell.row, cell.col, 'end')
 }
 
 /** 在第 index 列右侧插入一列，保持当前单元格焦点（列号按插入位置顺移） */
 function insertColumnAt(index: number) {
-  if (props.readonly) return
   const insertAt = index + 1
   aligns.value = addColumnToAligns(aligns.value, insertAt)
   merges.value = addColumnToMerges(merges.value, insertAt)
@@ -1740,6 +1745,14 @@ function insertColumnAt(index: number) {
   const cell = activeCell.value
   persist()
   clearActive()
+  if (props.readonly) {
+    if (!props.blockId) return
+    // 渲染态没有输入框可聚焦：落点取首个表体行（纯表头表则退到第 0 行），再激活块
+    const row = Math.min(bodyStart.value, Math.max(0, rows.value.length - 1))
+    editorStore.setTableCellFocus({ blockId: props.blockId, row, col: insertAt })
+    editorStore.activateBlock(props.blockId)
+    return
+  }
   if (cell) focusCell(cell.row, cell.col >= insertAt ? cell.col + 1 : cell.col, 'end')
 }
 
@@ -1867,11 +1880,9 @@ defineExpose({
     @mousemove="onRootMouseMove"
     @mouseleave="clearActive"
   >
-    <!-- 左上角入口：浮在表格左侧 gutter，点击才弹出悬浮菜单 -->
-    <div
-      v-if="!readonly"
-      class="table-entry"
-    >
+    <!-- 左上角入口：浮在表格左侧 gutter，点击才弹出悬浮菜单。
+         渲染态同样渲染：未激活的表格块 hover 时也要看得见入口与行列条，两态表现一致。 -->
+    <div class="table-entry">
       <button
         ref="entryEl"
         type="button"
@@ -1879,7 +1890,7 @@ defineExpose({
         title="表格菜单"
         aria-label="表格菜单"
         @mousedown.prevent
-        @click="toggleMenu"
+        @click.stop="toggleMenu"
       >
         <TableProperties
           :size="12"
@@ -1889,7 +1900,6 @@ defineExpose({
     </div>
 
     <BasePopover
-      v-if="!readonly"
       :visible="menuOpen"
       :anchor-el="entryEl"
       placement="bottom"
@@ -1987,94 +1997,92 @@ defineExpose({
     </BasePopover>
 
     <!-- 行 / 列操作条：贴表格外缘。块 hover 出基座，压在某段上升档（菜单入口），
-         压在该段端点才浮出「+」（一键插入） -->
-    <template v-if="!readonly">
-      <button
-        v-for="strip in renderedColStrips"
-        :key="`cs-${strip.index}`"
-        type="button"
-        class="strip strip--col"
-        :class="{
-          'is-active': isColActive(strip.index),
-          'is-plus': isPlusHot('col', strip.index),
-          'is-first': strip.first,
-          'is-last': strip.last,
-        }"
-        aria-label="列操作"
-        :style="{
-          left: `${strip.left}px`,
-          top: `${strip.top}px`,
-          width: `${strip.width}px`,
-          height: `${strip.height}px`,
-        }"
+         压在该段端点才浮出「+」（一键插入）。两态一致：渲染态 hover 同样出条。 -->
+    <button
+      v-for="strip in renderedColStrips"
+      :key="`cs-${strip.index}`"
+      type="button"
+      class="strip strip--col"
+      :class="{
+        'is-active': isColActive(strip.index),
+        'is-plus': isPlusHot('col', strip.index),
+        'is-first': strip.first,
+        'is-last': strip.last,
+      }"
+      aria-label="列操作"
+      :style="{
+        left: `${strip.left}px`,
+        top: `${strip.top}px`,
+        width: `${strip.width}px`,
+        height: `${strip.height}px`,
+      }"
+      @mousedown.prevent
+      @mouseenter="setActiveCol(strip.index)"
+      @mouseleave="clearActiveCol"
+      @click.stop="openStripMenu($event, 'col', strip.index)"
+    >
+      <span
+        v-if="!strip.clipped"
+        class="strip-plus"
+        role="button"
+        aria-label="插入列"
         @mousedown.prevent
-        @mouseenter="setActiveCol(strip.index)"
-        @mouseleave="clearActiveCol"
-        @click="openStripMenu($event, 'col', strip.index)"
+        @click.stop="insertColumnAt(strip.index)"
       >
-        <span
-          v-if="!strip.clipped"
-          class="strip-plus"
-          role="button"
-          aria-label="插入列"
-          @mousedown.prevent
-          @click.stop="insertColumnAt(strip.index)"
-        >
-          <Plus
-            :size="11"
-            :stroke-width="2.5"
-          />
-          <span class="strip-tip strip-tip--above">插入列</span>
-        </span>
-      </button>
-      <button
-        v-for="strip in rowStrips"
-        :key="`rs-${strip.index}`"
-        type="button"
-        class="strip strip--row"
-        :class="{
-          'is-active': isRowActive(strip.index),
-          'is-plus': isPlusHot('row', strip.index),
-          'is-first': strip.index === 0,
-          'is-last': strip.index === rowStrips.length - 1,
-        }"
-        aria-label="行操作"
-        :style="{
-          left: `${strip.left}px`,
-          top: `${strip.top}px`,
-          width: `${strip.width}px`,
-          height: `${strip.height}px`,
-        }"
+        <Plus
+          :size="11"
+          :stroke-width="2.5"
+        />
+        <span class="strip-tip strip-tip--above">插入列</span>
+      </span>
+    </button>
+    <button
+      v-for="strip in rowStrips"
+      :key="`rs-${strip.index}`"
+      type="button"
+      class="strip strip--row"
+      :class="{
+        'is-active': isRowActive(strip.index),
+        'is-plus': isPlusHot('row', strip.index),
+        'is-first': strip.index === 0,
+        'is-last': strip.index === rowStrips.length - 1,
+      }"
+      aria-label="行操作"
+      :style="{
+        left: `${strip.left}px`,
+        top: `${strip.top}px`,
+        width: `${strip.width}px`,
+        height: `${strip.height}px`,
+      }"
+      @mousedown.prevent
+      @mouseenter="setActiveRow(strip.index)"
+      @mouseleave="clearActiveRow"
+      @click.stop="openStripMenu($event, 'row', strip.index)"
+    >
+      <span
+        v-if="strip.index >= bodyStart"
+        class="strip-plus"
+        role="button"
+        aria-label="插入行"
         @mousedown.prevent
-        @mouseenter="setActiveRow(strip.index)"
-        @mouseleave="clearActiveRow"
-        @click="openStripMenu($event, 'row', strip.index)"
+        @click.stop="insertRowAt(strip.index)"
       >
-        <span
-          v-if="strip.index >= bodyStart"
-          class="strip-plus"
-          role="button"
-          aria-label="插入行"
-          @mousedown.prevent
-          @click.stop="insertRowAt(strip.index)"
-        >
-          <Plus
-            :size="11"
-            :stroke-width="2.5"
-          />
-          <span class="strip-tip strip-tip--below">插入行</span>
-        </span>
-      </button>
-    </template>
+        <Plus
+          :size="11"
+          :stroke-width="2.5"
+        />
+        <span class="strip-tip strip-tip--below">插入行</span>
+      </span>
+    </button>
 
     <!-- 引导线：与「+」同显隐，只预告「将插在哪」，1px 中性色 -->
     <div
-      v-if="!readonly && plusHot?.kind === 'col'"
+      v-if="plusHot?.kind === 'col'"
       class="strip-guide strip-guide--col"
       :style="colGuideStyle"
     />
     <div
-      v-if="!readonly && plusHot?.kind === 'row'"
+      v-if="plusHot?.kind === 'row'"
       class="strip-guide strip-guide--row"
       :style="rowGuideStyle"
     />
