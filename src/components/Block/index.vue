@@ -36,8 +36,9 @@ import { useFieldValueStore } from '../../stores/fieldValue'
 import { usePageStore } from '../../stores/pages'
 import type { TreeNode } from '../../types/block'
 import type { BlockSetupContext, BlockTypeEditorExposed, BlockTypeHooks } from '../../types/block-type'
+import { mapInlineMarkOffsets, readInlineMarks } from '../../utils/inline-marks'
 import {
-  decodeRelationshipContent,
+  decodeRelationshipContentWithMeta,
   setRelationshipSnapshot,
 } from '../../utils/relationship-content'
 import BlockFieldZone from './BlockFieldZone.vue'
@@ -123,11 +124,22 @@ const isSelected = computed(() => {
 })
 const handler = computed(() => getHandler(block.value.type))
 
-const editContent = computed(() => {
+const decodedContent = computed(() => {
   // 编辑态显示中文 label：存储 type → 显示 label（decode）
-  const { text, snapshot } = decodeRelationshipContent(block.value.content ?? '')
+  return decodeRelationshipContentWithMeta(block.value.content ?? '')
+})
+
+const editContent = computed(() => {
+  const { text, snapshot } = decodedContent.value
   setRelationshipSnapshot(blockId.value, snapshot)
   return text
+})
+
+/** format.inlineMarks 存的是 content 坐标；编辑态正文是 decode 后的文本，需同步换算偏移 */
+const editInlineMarks = computed(() => {
+  const { text, spans } = decodedContent.value
+  const marks = readInlineMarks(block.value.format, (block.value.content ?? '').length)
+  return mapInlineMarkOffsets(marks, spans, 'toNew', text.length)
 })
 
 /** 空 block：无内容且非标题（如 '# ' 开头）。表格块的内容在 format.table 里、正文恒为空，
@@ -659,6 +671,7 @@ watch(isActive, (active) => {
               ref="editorRef"
               :block-id="blockId"
               :content="editContent"
+              :inline-marks="editInlineMarks"
               :block-format="block.format"
               :show-full-placeholder="isSingleEmptyBlock"
               :field-values="getBlockFieldValuesMap()"

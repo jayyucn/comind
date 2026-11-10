@@ -1,14 +1,18 @@
 <script setup lang="ts">
-import { computed } from 'vue';
-import { parseHeading, useContentRenderer } from '../../../../composables/useContentRenderer';
-import { useBlockStore } from '../../../../stores/blocks';
-import { useTagsStore } from '../../../../stores/tags';
-import SaveErrorBadge from './SaveErrorBadge.vue';
+import { computed } from 'vue'
+
+import { parseHeading, useContentRenderer } from '../../../../composables/useContentRenderer'
+import { useBlockStore } from '../../../../stores/blocks'
+import { useTagsStore } from '../../../../stores/tags'
+import { readInlineMarks } from '../../../../utils/inline-marks'
+import SaveErrorBadge from './SaveErrorBadge.vue'
 
 const props = defineProps<{
   content: string
   showPlaceholder?: boolean
   blockId?: string
+  /** block.format：行内格式存于 `format.inlineMarks` */
+  blockFormat?: Record<string, unknown>
 }>()
 
 const emit = defineEmits<{
@@ -56,10 +60,21 @@ function resolveTagColor(tagId: string, title: string): string | undefined {
   return byTitle?.color ?? ''
 }
 
+const inlineMarks = computed(() => readInlineMarks(props.blockFormat, props.content.length))
+
 const headingContent = computed(() => {
   if (!heading.value) return ''
   const segs = segments.value
-  const input = { content: heading.value.title, blockId: props.blockId ?? '', resolveTagColor }
+  // 标题渲染传入的是去掉 `# ` 前缀的 title，而 marks 偏移相对完整 content：
+  // 用负偏移把 marks 对齐到 title 坐标系。
+  const markOffset = heading.value.title.length - props.content.length
+  const input = {
+    content: heading.value.title,
+    blockId: props.blockId ?? '',
+    resolveTagColor,
+    inlineMarks: inlineMarks.value,
+    markOffset,
+  }
   return segs ? renderContentToHtml({ ...input, segments: segs })
               : renderContentToHtml({ ...input, segments: [] })
 })
@@ -67,7 +82,12 @@ const headingContent = computed(() => {
 const normalContent = computed(() => {
   if (heading.value) return ''
   const segs = segments.value
-  const input = { content: props.content, blockId: props.blockId ?? '', resolveTagColor }
+  const input = {
+    content: props.content,
+    blockId: props.blockId ?? '',
+    resolveTagColor,
+    inlineMarks: inlineMarks.value,
+  }
   return segs ? renderContentToHtml({ ...input, segments: segs })
               : renderContentToHtml({ ...input, segments: [] })
 })

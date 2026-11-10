@@ -1,4 +1,6 @@
 import { resolveRelationshipLabel, WIKI_LINK_REGEX, wikiLinkDisplay } from '../services/render-text'
+import type { InlineMarkRange } from '../utils/inline-marks'
+import { mergeMarkAttrs, wrapInlineHtml } from '../utils/inline-marks'
 import { tagChipStyle } from '../utils/tag-color'
 import type { RenderInput } from '../wasm/types'
 
@@ -83,19 +85,74 @@ function renderTextSegmentWithTags(text: string): string {
 }
 
 /**
+ * 在 [start, end) 文本片段内按行内格式切段并包裹。
+ * `markOffset` 用于把 content 坐标系的 marks 平移到当前渲染坐标系（标题去掉 `# ` 前缀时用）。
+ */
+function renderTextWithMarks(
+  text: string,
+  start: number,
+  end: number,
+  marks: InlineMarkRange[] | undefined,
+  markOffset: number,
+): string {
+  if (!marks || marks.length === 0 || end <= start) return renderTextSegmentWithTags(text)
+
+  const relevant = marks
+    .map(mark => ({ ...mark, start: mark.start + markOffset, end: mark.end + markOffset }))
+    .filter(mark => mark.end > start && mark.start < end)
+  if (relevant.length === 0) return renderTextSegmentWithTags(text)
+
+  const points = new Set<number>([start, end])
+  for (const mark of relevant) {
+    points.add(Math.max(start, mark.start))
+    points.add(Math.min(end, mark.end))
+  }
+  const ordered = Array.from(points).sort((a, b) => a - b)
+
+  let html = ''
+  for (let i = 0; i < ordered.length - 1; i++) {
+    const from = ordered[i]
+    const to = ordered[i + 1]
+    if (to <= from) continue
+    const attrs = mergeMarkAttrs(relevant.filter(mark => mark.start <= from && mark.end >= to))
+    const piece = renderTextSegmentWithTags(text.slice(from - start, to - start))
+    html += attrs ? wrapInlineHtml(piece, attrs) : piece
+  }
+  return html
+}
+
+/** 非文本段整体被格式覆盖时，用格式包裹其结构化 HTML。 */
+function wrapSegmentWithMarks(
+  html: string,
+  start: number,
+  end: number,
+  marks: InlineMarkRange[] | undefined,
+  markOffset: number,
+): string {
+  if (!marks || marks.length === 0 || end <= start) return html
+  const covering = marks
+    .map(mark => ({ ...mark, start: mark.start + markOffset, end: mark.end + markOffset }))
+    .filter(mark => mark.end > start && mark.start < end)
+  const attrs = mergeMarkAttrs(covering)
+  return attrs ? wrapInlineHtml(html, attrs) : html
+}
+
+/**
  * Render block content to HTML using structured `RenderSegment[]` from Rust.
  *
  * The segments cover `content[start..end]` for every character,
  * with no gaps. We iterate in order: text segments get HTML-escaped
  * (with #tag rendering), typed segments get appropriate `<span>` wrappers.
  *
- * @param input   RenderInput { content, segments, blockId } — single object interface
+ * @param input   RenderInput { content, segments, blockId, inlineMarks? } — single object interface
  */
 function renderContentToHtml(input: RenderInput): string {
   const { content, segments, blockId = '' } = input
+  const marks = input.inlineMarks
+  const markOffset = input.markOffset ?? 0
   if (!segments || segments.length === 0) {
     // Fallback: no structured data available — use plain escaped text
-    return renderTextSegmentWithTags(content)
+    return renderTextWithMarks(content, 0, content.length, marks, markOffset)
   }
 
   const parts: string[] = []
@@ -103,18 +160,18 @@ function renderContentToHtml(input: RenderInput): string {
     switch (seg.type) {
       case 'text': {
         const slice = content.slice(seg.start, seg.end)
-        parts.push(renderTextSegmentWithTags(slice))
+        parts.push(renderTextWithMarks(slice, seg.start, seg.end, marks, markOffset))
         break
       }
 
       case 'link': {
         const target = escapeHtmlEntities(seg.target_page_title)
         const display = escapeHtmlEntities(seg.display_text)
-        parts.push(
+        const html =
           `<span class="${CSS_CLASSES.blockLink}" data-page="${target}">` +
           `<span class="wiki-bracket">[[</span>${display}<span class="wiki-bracket">]]</span>` +
           `</span>`
-        )
+        parts.push(wrapSegmentWithMarks(html, seg.start, seg.end, marks, markOffset))
         break
       }
 
@@ -127,7 +184,7 @@ function renderContentToHtml(input: RenderInput): string {
         const display = escapeHtmlEntities(seg.display_text)
         const safeBlockId = escapeHtmlEntities(blockId)
 
-        parts.push(
+        parts.push(wrapSegmentWithMarks(
           `<span class="relationship-bracket">((<span class="${CSS_CLASSES.relTypeLabel}" ` +
           `data-rel-type="${relType}" ` +
           `data-block-id="${safeBlockId}" ` +
@@ -135,16 +192,24 @@ function renderContentToHtml(input: RenderInput): string {
           `data-typed-to="${seg.end}" ` +
           `style="--rel-color:${color}">${label}</span>))</span>`
           +
-          `<span class="${CSS_CLASSES.blockLink}" data-page="${target}"><span class="wiki-bracket">[[</span>${display}<span class="wiki-bracket">]]</span></span>`
-        )
+          `<span class="${CSS_CLASSES.blockLink}" data-page="${target}"><span class="wiki-bracket">[[</span>${display}<span class="wiki-bracket">]]</span></span>`,
+          seg.start,
+          seg.end,
+          marks,
+          markOffset,
+        ))
         break
       }
 
       case 'external_link': {
         const url = escapeHtmlEntities(seg.url)
-        parts.push(
-          `<span class="${CSS_CLASSES.blockLink} external" data-external="${url}">${url}</span>`
-        )
+        parts.push(wrapSegmentWithMarks(
+          `<span class="${CSS_CLASSES.blockLink} external" data-external="${url}">${url}</span>`,
+          seg.start,
+          seg.end,
+          marks,
+          markOffset,
+        ))
         break
       }
 
@@ -165,10 +230,14 @@ function renderContentToHtml(input: RenderInput): string {
         // Rust 侧拒写颜色，故 `.block-tag--system` 的中性色不会被覆盖。
         const resolved = input.resolveTagColor?.(seg.tag_id, seg.title)
         const color = resolved !== undefined ? resolved : seg.color
-        parts.push(
+        parts.push(wrapSegmentWithMarks(
           `<span class="${CSS_CLASSES.blockTag}${systemCls}"` +
-          `${tagId}${tagStyleAttr(color)} data-tag-title="${title}">${body}</span>`
-        )
+          `${tagId}${tagStyleAttr(color)} data-tag-title="${title}">${body}</span>`,
+          seg.start,
+          seg.end,
+          marks,
+          markOffset,
+        ))
         break
       }
 
@@ -191,14 +260,18 @@ function renderContentToHtml(input: RenderInput): string {
         const overdue = seg.is_overdue ? 'overdue' : ''
         const classes = [CSS_CLASSES.dateRef, kind, overdue].filter(Boolean).join(' ')
 
-        parts.push(
+        parts.push(wrapSegmentWithMarks(
           `<span class="${classes}" ` +
           `data-kind="${kind}" ` +
           `data-iso="${iso}" ` +
           `data-recurrence="${recurrence}" ` +
           `data-lead-minutes="${seg.lead_minutes}" ` +
-          `data-raw="${display}">${escapeHtmlEntities(trimmed)}</span>${trailingWs}`
-        )
+          `data-raw="${display}">${escapeHtmlEntities(trimmed)}</span>${trailingWs}`,
+          seg.start,
+          seg.end,
+          marks,
+          markOffset,
+        ))
         break
       }
     }

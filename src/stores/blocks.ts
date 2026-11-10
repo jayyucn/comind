@@ -23,6 +23,15 @@ import {
 import { debounce } from '../utils/debounce'
 import { decodeFieldValueData } from '../utils/field-value-codec'
 import { generateUUID } from '../utils/id'
+import type { InlineMarkRange } from '../utils/inline-marks'
+import {
+  normalizeInlineMarks,
+  readInlineMarks,
+  sameInlineMarks,
+  shiftInlineMarks,
+  sliceInlineMarks,
+  writeInlineMarks,
+} from '../utils/inline-marks'
 import type { CoreClient } from '../wasm/client'
 import { initCoreClient, isTauriEnvironment, triggerSync } from '../wasm/client'
 import { useBlockCardStore } from './blockCard'
@@ -41,10 +50,12 @@ export interface TextRangeDeletionPlan {
   mergedAwayBlockId: string | null
   /** 存活但内容被裁的块 → 操作后的最终内容（清理的存活检查与 apply 的落库共用） */
   contentAfter: Record<string, string>
+  /** 裁剪后的行内格式（与 contentAfter 同键；缺省 = 清空格式） */
+  contentAfterMarks?: Record<string, InlineMarkRange[]>
   /** 部分消失的文本片段（清理的目标提取输入，与宿主块存亡无关） */
   vanishedFragments: Array<{ blockId: string; text: string }>
   /** 应用阶段的结构合并（source 并入 target：target 存活、source 消失）；null = 纯裁剪/切片 */
-  merge: { targetId: string; sourceId: string; mergedContent: string } | null
+  merge: { targetId: string; sourceId: string; mergedContent: string; inlineMarks?: InlineMarkRange[] } | null
   /** 删除后的光标落点（ProseMirror position 口径 = 文本偏移 + 1） */
   cursor: { id: string; cursorPos: number }
 }
@@ -791,8 +802,14 @@ export const useBlockStore = defineStore('blocks', () => {
           }
         }
 
+        // 行内格式随正文一起在切点处劈开：前半留在原块，后半平移后挂到新块。
+        const sourceMarks = readInlineMarks(block.format, contentLen)
+        const leftMarks = sliceInlineMarks(sourceMarks, 0, textOffset)
+        const rightMarks = sliceInlineMarks(sourceMarks, textOffset, contentLen)
+
         // 更新当前节点的内容（前半部分）
         block.content = before
+        block.format = writeInlineMarks(block.format, leftMarks)
         block.updatedAt = Date.now()
         // 旧块紧接着失活 → BulletRender 读 renderSegments。此处**同步**裁剪出 before 的段而非置
         // undefined：undefined 会走纯文本回退，`((type))` 关系语法裸显（`[[x]]` / `#tag` 尚能自救，
@@ -810,7 +827,10 @@ export const useBlockStore = defineStore('blocks', () => {
         _scheduleSave(block)
 
         // 在指定位置插入新节点（后半部分）
-        newBlock = await insertAtPosition(block.pageId, newParentId, after, block, childBlocks, hasExpandedChildren, blockFormat)
+        const newBlockFormat = rightMarks.length > 0
+          ? { ...(blockFormat ?? {}), inlineMarks: rightMarks }
+          : blockFormat
+        newBlock = await insertAtPosition(block.pageId, newParentId, after, block, childBlocks, hasExpandedChildren, newBlockFormat)
 
         // 新块同样按 after 裁剪出平移后的段：新块先以编辑态呈现（编辑器渲染原文、不吃 segments），
         // 但失活后会走 BulletRender，缺 segments 会重演同一裸显。
@@ -1105,7 +1125,8 @@ export const useBlockStore = defineStore('blocks', () => {
     targetId: string,
     sourceId: string,
     mergedContent: string,
-    cursorPos: number
+    cursorPos: number,
+    inlineMarks?: InlineMarkRange[],
   ) {
     if (targetId === sourceId) return null
     const target = blocks.value.find(b => b.id === targetId)
@@ -1113,6 +1134,8 @@ export const useBlockStore = defineStore('blocks', () => {
     if (!target || !source) return null
 
     target.content = mergedContent
+    // 合并后的正文格式由调用方给出（拼接/裁剪已换算偏移）；缺省则清空，避免旧偏移错位。
+    target.format = writeInlineMarks(target.format, inlineMarks ?? [])
     target.updatedAt = Date.now()
     // 内容变更后清除过时的 renderSegments（同 updateBlockContent 逻辑）
     target.renderSegments = undefined
@@ -1168,11 +1191,22 @@ export const useBlockStore = defineStore('blocks', () => {
     const mergeTarget = findPreviousVisibleBlock(blockId)
     if (!mergeTarget) return
 
+    const targetMarks = readInlineMarks(mergeTarget.format, mergeTarget.content.length)
+    const sourceMarks = shiftInlineMarks(
+      readInlineMarks(block.format, block.content.length),
+      mergeTarget.content.length,
+    )
+    const mergedMarks = normalizeInlineMarks(
+      [...targetMarks, ...sourceMarks],
+      mergeTarget.content.length + block.content.length,
+    )
+
     return mergeBlockInto(
       mergeTarget.id,
       blockId,
       mergeTarget.content + block.content,
-      mergeTarget.content.length + 1
+      mergeTarget.content.length + 1,
+      mergedMarks,
     )
   }
 
@@ -1203,10 +1237,18 @@ export const useBlockStore = defineStore('blocks', () => {
     if (!startIsText && !endIsText) return null
 
     if (start.blockId === end.blockId) {
+      const content = startBlock.content.slice(0, lo) + startBlock.content.slice(hi)
+      const marks = readInlineMarks(startBlock.format, startBlock.content.length)
       return {
         middleBlockIds: [],
         mergedAwayBlockId: null,
-        contentAfter: { [startBlock.id]: startBlock.content.slice(0, lo) + startBlock.content.slice(hi) },
+        contentAfter: { [startBlock.id]: content },
+        contentAfterMarks: {
+          [startBlock.id]: normalizeInlineMarks(
+            [...sliceInlineMarks(marks, 0, lo), ...sliceInlineMarks(marks, hi, startBlock.content.length)],
+            content.length,
+          ),
+        },
         vanishedFragments: [{ blockId: startBlock.id, text: startBlock.content.slice(lo, hi) }],
         merge: null,
         cursor: { id: startBlock.id, cursorPos: caret(lo) },
@@ -1215,20 +1257,34 @@ export const useBlockStore = defineStore('blocks', () => {
 
     // 端点落在非文本块上：该块原样保留，只裁剪另一端的文本块
     if (!startIsText) {
+      const content = endBlock.content.slice(hi)
       return {
         middleBlockIds,
         mergedAwayBlockId: null,
-        contentAfter: { [endBlock.id]: endBlock.content.slice(hi) },
+        contentAfter: { [endBlock.id]: content },
+        contentAfterMarks: {
+          [endBlock.id]: normalizeInlineMarks(
+            sliceInlineMarks(readInlineMarks(endBlock.format, endBlock.content.length), hi, endBlock.content.length),
+            content.length,
+          ),
+        },
         vanishedFragments: [{ blockId: endBlock.id, text: endBlock.content.slice(0, hi) }],
         merge: null,
         cursor: { id: endBlock.id, cursorPos: caret(0) },
       }
     }
     if (!endIsText) {
+      const content = startBlock.content.slice(0, lo)
       return {
         middleBlockIds,
         mergedAwayBlockId: null,
-        contentAfter: { [startBlock.id]: startBlock.content.slice(0, lo) },
+        contentAfter: { [startBlock.id]: content },
+        contentAfterMarks: {
+          [startBlock.id]: normalizeInlineMarks(
+            sliceInlineMarks(readInlineMarks(startBlock.format, startBlock.content.length), 0, lo),
+            content.length,
+          ),
+        },
         vanishedFragments: [{ blockId: startBlock.id, text: startBlock.content.slice(lo) }],
         merge: null,
         cursor: { id: startBlock.id, cursorPos: caret(lo) },
@@ -1238,10 +1294,18 @@ export const useBlockStore = defineStore('blocks', () => {
     // 合并后生存块内容：apply 落库（mergeBlockInto）与清理的存活检查（contentAfter）
     // 两个消费方共用同一值，必须一致
     const mergedContent = startBlock.content.slice(0, lo) + endBlock.content.slice(hi)
+    const mergedMarks = normalizeInlineMarks(
+      [
+        ...sliceInlineMarks(readInlineMarks(startBlock.format, startBlock.content.length), 0, lo),
+        ...sliceInlineMarks(readInlineMarks(endBlock.format, endBlock.content.length), hi, endBlock.content.length),
+      ],
+      mergedContent.length,
+    )
     return {
       middleBlockIds,
       mergedAwayBlockId: endBlock.id,
       contentAfter: { [startBlock.id]: mergedContent },
+      contentAfterMarks: { [startBlock.id]: mergedMarks },
       vanishedFragments: [
         { blockId: startBlock.id, text: startBlock.content.slice(lo) },
         { blockId: endBlock.id, text: endBlock.content.slice(0, hi) },
@@ -1250,6 +1314,7 @@ export const useBlockStore = defineStore('blocks', () => {
         targetId: startBlock.id,
         sourceId: endBlock.id,
         mergedContent,
+        inlineMarks: mergedMarks,
       },
       cursor: { id: startBlock.id, cursorPos: caret(lo) },
     }
@@ -1258,11 +1323,17 @@ export const useBlockStore = defineStore('blocks', () => {
   /** 应用删除计划：纯裁剪/切片走 updateBlockContent；合并走 mergeBlockInto（含 source 删除与子块迁移） */
   async function applyTextRangeDeletion(plan: TextRangeDeletionPlan): Promise<{ id: string; cursorPos: number } | null> {
     if (plan.merge) {
-      const merged = await mergeBlockInto(plan.merge.targetId, plan.merge.sourceId, plan.merge.mergedContent, plan.cursor.cursorPos)
+      const merged = await mergeBlockInto(
+        plan.merge.targetId,
+        plan.merge.sourceId,
+        plan.merge.mergedContent,
+        plan.cursor.cursorPos,
+        plan.merge.inlineMarks,
+      )
       return merged ?? { id: plan.cursor.id, cursorPos: plan.cursor.cursorPos }
     }
     for (const [blockId, content] of Object.entries(plan.contentAfter)) {
-      await updateBlockContent(blockId, content)
+      await updateBlockContent(blockId, content, { inlineMarks: plan.contentAfterMarks?.[blockId] })
     }
     return { id: plan.cursor.id, cursorPos: plan.cursor.cursorPos }
   }
@@ -1447,7 +1518,11 @@ export const useBlockStore = defineStore('blocks', () => {
    * 防抖打字保存 —— 否则 `#f`、`#fo` 这类中间前缀会各建一个垃圾标签，与
    * `[[page]]` 不建中间页同一道理。
    */
-  async function updateBlockContent(blockId: string, content: string, opts?: { commitTags?: boolean }) {
+  async function updateBlockContent(
+    blockId: string,
+    content: string,
+    opts?: { commitTags?: boolean; inlineMarks?: InlineMarkRange[] },
+  ) {
     const block = blocks.value.find(b => b.id === blockId)
     if (!block) return
 
@@ -1456,13 +1531,32 @@ export const useBlockStore = defineStore('blocks', () => {
       pendingCommitTags.add(blockId)
     }
 
+    const contentChanged = block.content !== content
+    const marksProvided = opts?.inlineMarks !== undefined
+    // 未显式提供格式时视为「格式未知」：内容若变化则清空，避免旧偏移套到新正文上错位着色。
+    const nextMarks = marksProvided
+      ? normalizeInlineMarks(opts?.inlineMarks, content.length)
+      : []
+    const marksChanged = marksProvided
+      ? !sameInlineMarks(readInlineMarks(block.format, block.content.length), nextMarks)
+      // 格式未知：只有正文也变了才需要处理（清空），正文未变一律保留既有格式
+      : contentChanged && readInlineMarks(block.format, block.content.length).length > 0
+
     // 内容无变化守卫：编辑器 blur/unmount 等路径会无条件提交当前文本（handleSave），
     // 若与已存内容相同仍继续会重打 updatedAt 并触发落库（Rust update 无条件
     // updated_at=now + version+1）——只点进点出不改字也会刷新「更新时间」。
     // 相同内容直接返回：不重打时间戳、不调度保存（flushSave 无 pending 即空转）。
-    // 例外：commit 且上一轮落库跳过了建签 —— 存量 content 里的新 tag 还没建，
+    // 例外 1：commit 且上一轮落库跳过了建签 —— 存量 content 里的新 tag 还没建，
     // 必须补一次 commit 保存（仅此一次，落库后 lastSaveSkippedCreation 翻回 false）。
-    if (block.content === content) {
+    // 例外 2：仅行内格式变化（正文不动）—— 只更新 format 并调度保存。
+    if (!contentChanged) {
+      if (marksChanged) {
+        block.format = writeInlineMarks(block.format, nextMarks)
+        block.updatedAt = Date.now()
+        _scheduleSave(block)
+        useBlockCardStore().invalidate(blockId)
+        return
+      }
       if (commitTags && lastSaveSkippedCreation.get(blockId) === true) {
         // 存量 content 里的新 tag 还没建：补一次 commit 保存（保持置位由 _doSave 消费）；
         // 记账立即翻回 false —— 无论这次保存成败，不再重复补（防每次 blur 都补）。
@@ -1480,6 +1574,7 @@ export const useBlockStore = defineStore('blocks', () => {
     lastSaveSkippedCreation.set(blockId, !commitTags)
 
     block.content = content
+    block.format = writeInlineMarks(block.format, nextMarks)
     block.updatedAt = Date.now()
     // renderSegments 是由 Rust 在 save_block_tree 时重新构建并随返回结果返回的。
     // 内容变更后 segments 的 start/end 索引已过时，先清空避免渲染错误。

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { Node as PMNode } from '@tiptap/pm/model'
 import type { EditorView } from '@tiptap/pm/view'
 import StarterKit from '@tiptap/starter-kit'
 import { EditorContent, useEditor } from '@tiptap/vue-3'
@@ -16,6 +17,7 @@ import { DateRefExtension } from '../extensions/DateRefExtension'
 import { DateRefTriggerExtension } from '../extensions/DateRefTriggerExtension'
 import EnterAsBlockExtension from '../extensions/EnterAsBlockExtension'
 import { HeadingPreviewExtension } from '../extensions/HeadingPreviewExtension'
+import { InlineBackgroundColor, InlineTextColor } from '../extensions/InlineColorMarks'
 import { InlineTagExtension } from '../extensions/InlineTagExtension'
 import { closeTagMenuByEditor, findTagAtCursor, InlineTagTriggerExtension, notifyTagMenuSelect } from '../extensions/InlineTagTriggerExtension'
 import { RelationshipTriggerExtension } from '../extensions/RelationshipTriggerExtension'
@@ -26,15 +28,21 @@ import { usePageStore } from '../stores/pages'
 import { useTagsStore } from '../stores/tags'
 import type { DateRefKind } from '../utils/date-ref'
 import { debounce } from '../utils/debounce'
+import type { InlineMarkAttrs, InlineMarkRange } from '../utils/inline-marks'
+import { inlineMarksToHtml, normalizeInlineMarks, sameInlineMarks } from '../utils/inline-marks'
 import { padUnitForDoc } from '../utils/inline-unit-pad'
+import { isTagColorToken } from '../utils/tag-color'
 import { createEditorEvents } from './Block/editorEvents'
 import DateRefKindSelector from './DateRefKindSelector.vue'
+import InlineFormatToolbar from './InlineFormatToolbar.vue'
 import PageLinkMenu from './PageLinkMenu.vue'
 import TagMenu from './TagMenu.vue'
 
 const props = defineProps<{
   blockId: string
   content: string
+  /** 行内格式（加粗/斜体/下划线/删除线/文字色/背景色），偏移相对 content */
+  inlineMarks?: InlineMarkRange[]
   showFullPlaceholder?: boolean
   readonly?: boolean
 }>()
@@ -43,8 +51,10 @@ const emit = defineEmits<{
   /**
    * `commitTags`：本次保存是否为提交动作（blur/unmount = true，防抖打字 = false）。
    * 打字中间态（#f、#fo）不得建标签 —— 与 [[page]] 的创建语义对齐（ADR-0050）。
+   * `flush`：是否立即等待落库（默认 true）；与 Block 的 handleSave 形参顺序一致。
+   * `marks`：编辑器当前的行内格式（偏移相对本次 content）。
    */
-  (e: 'save', content: string, commitTags?: boolean): void
+  (e: 'save', content: string, commitTags?: boolean, flush?: boolean, marks?: InlineMarkRange[]): void
   (e: 'split', cursorPos: number): void
   (e: 'merge'): void
   (e: 'delete'): void
@@ -84,7 +94,10 @@ let savedFromOutside = false
 // 避免用 deleteRange 那一刻捕获的旧正文（无 `#任务`）把挂载结果覆盖掉，导致任务 tag 被摘、
 // 四象限视图不显示（回归：输入 /midium 后 #任务 闪烁且任务不进象限）。
 const debouncedEmitSave = debounce(() => {
-  if (editor.value) emit('save', editor.value.getText(), false)
+  if (editor.value) {
+    const payload = getContentPayload()
+    emit('save', payload.text, false, true, payload.marks)
+  }
 }, 300)
 
 function cancelDebouncedSave() {
@@ -92,6 +105,8 @@ function cancelDebouncedSave() {
 }
 
 const hasContent = ref(!!props.content)
+/** 选区/文档版本号：驱动浮出格式工具条重算激活态与位置（TipTap 状态非响应式） */
+const selectionRevision = ref(0)
 const menuVisible = ref(false)
 const menuPosition = ref({ x: 0, y: 0 })
 const menuRange = ref({ from: 0, to: 0 })
@@ -159,15 +174,19 @@ const editor = shallowRef(useEditor({
     RelationshipTriggerExtension,
     BracketPairExtension,
     HeadingPreviewExtension,
+    InlineTextColor,
+    InlineBackgroundColor,
     DateRefExtension,
     DateRefTriggerExtension,
   ],
-  content: textToHtml(props.content),
+  content: textToHtml(props.content, props.inlineMarks),
   parseOptions: PARSE_PRESERVE_WS,
   autofocus: false,
   editable: !props.readonly,
   onBlur: () => {
     if (syncing) return
+    // 失焦隐藏选区工具条；revision 变化让工具条重算 visible
+    selectionRevision.value++
     if (savedFromOutside) {
       savedFromOutside = false
       return
@@ -196,7 +215,8 @@ const editor = shallowRef(useEditor({
       }
       try {
         // blur = 提交动作：允许把打字期间攒下的 #tag 建出来（ADR-0050 建签门）
-        emit('save', editor.value.getText(), true)
+        const payload = getContentPayload()
+        emit('save', payload.text, true, true, payload.marks)
       } catch {
         // schema 可能在卸载阶段已为 null，跳过保存
       }
@@ -206,10 +226,21 @@ const editor = shallowRef(useEditor({
     if (props.readonly) return
     if (editor.value && !settingContent) {
       hasContent.value = !!editor.value.getText()
+      selectionRevision.value++
       const { from } = editor.value.state.selection
       emit('cursor-change', from)
       debouncedEmitSave()
     }
+  },
+  onSelectionUpdate: () => {
+    if (syncing || settingContent) return
+    selectionRevision.value++
+  },
+  onFocus: () => {
+    if (syncing || settingContent) return
+    // 双击选词等场景的首次选区更新可能早于 focus 到达，工具条会按「未聚焦」算成不可见；
+    // 聚焦后再补一次，保证选中文字时浮出
+    selectionRevision.value++
   },
   /**
    * 选区上报：一次事务一次，带 `docChanged` 让下游区分「移动光标」与「改正文」。
@@ -347,6 +378,7 @@ const events = createEditorEvents({
   // 在此边界处适配，工厂内部仍保持 (event:string,...args:unknown[]) 的安全签名。
   emit: emit as unknown as (event: string, ...args: unknown[]) => void,
   getEditor: () => editor.value,
+  getContentPayload,
   props: { blockId: props.blockId },
   menuVisible,
   menuPosition,
@@ -417,11 +449,36 @@ watch(
     if (editor.value.getText() !== newContent) {
       syncing = true
       settingContent = true
-      editor.value.commands.setContent(textToHtml(newContent), { parseOptions: PARSE_PRESERVE_WS })
+      editor.value.commands.setContent(textToHtml(newContent, props.inlineMarks), { parseOptions: PARSE_PRESERVE_WS })
       settingContent = false
       syncing = false
     }
   }
+)
+
+/**
+ * 外部格式变更（撤销/重做恢复 format、剪贴板粘贴等）时同步编辑态。
+ * 仅当编辑器正文尚未偏离 props.content（即没有未落库的本地输入）才写回，
+ * 避免用旧格式覆盖用户正在输入的内容；内容与格式都相同时跳过，避免 setContent 抖选区。
+ */
+watch(
+  () => props.inlineMarks,
+  (marks) => {
+    if (!editor.value || syncing || settingContent) return
+    const normalized = normalizeInlineMarks(marks, props.content.length)
+    const current = getContentPayload()
+    if (current.text !== props.content) return
+    if (sameInlineMarks(current.marks, normalized)) return
+    const { from, to } = editor.value.state.selection
+    syncing = true
+    settingContent = true
+    editor.value.commands.setContent(inlineMarksToHtml(props.content, normalized), { parseOptions: PARSE_PRESERVE_WS })
+    const f = clampDocPos(from)
+    editor.value.commands.setTextSelection({ from: f, to: Math.max(f, clampDocPos(to)) })
+    settingContent = false
+    syncing = false
+  },
+  { deep: true }
 )
 
 onBeforeUnmount(() => {
@@ -430,9 +487,9 @@ onBeforeUnmount(() => {
   // 2. 如果有未保存内容，立即同步保存（卸载 = 提交动作，允许建签）
   if (editor.value && !savedFromOutside) {
     try {
-      const text = editor.value.getText()
-      if (text) {
-        emit('save', text, true)
+      const payload = getContentPayload()
+      if (payload.text) {
+        emit('save', payload.text, true, true, payload.marks)
       }
     } catch {
       // schema 可能在卸载阶段已为 null，跳过保存
@@ -448,12 +505,55 @@ onBeforeUnmount(() => {
   }
 })
 
-function textToHtml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/\n/g, '<br>')
+function textToHtml(text: string, marks?: InlineMarkRange[]): string {
+  return inlineMarksToHtml(text, marks ?? [])
+}
+
+/** 把 ProseMirror 全部文本节点上的 marks 序列化为相对正文的区间。 */
+function serializeMarks(doc: PMNode): InlineMarkRange[] {
+  let length = 0
+  const raw: InlineMarkRange[] = []
+  doc.descendants((node) => {
+    if (!node.isText) return
+    const text = node.text ?? ''
+    const attrs: InlineMarkAttrs = {}
+    for (const mark of node.marks) {
+      switch (mark.type.name) {
+        case 'bold':
+          attrs.bold = true
+          break
+        case 'italic':
+          attrs.italic = true
+          break
+        case 'underline':
+          attrs.underline = true
+          break
+        case 'strike':
+          attrs.strike = true
+          break
+        case 'inlineTextColor':
+          if (isTagColorToken(mark.attrs.color)) attrs.color = mark.attrs.color
+          break
+        case 'inlineBackgroundColor':
+          if (isTagColorToken(mark.attrs.color)) attrs.background = mark.attrs.color
+          break
+      }
+    }
+    if (Object.keys(attrs).length > 0) {
+      raw.push({ start: length, end: length + text.length, ...attrs })
+    }
+    length += text.length
+  })
+  return normalizeInlineMarks(raw, length)
+}
+
+/** 读取编辑器正文 + 行内格式（硬换行不进入正文，与既有 getText 口径一致）。 */
+function getContentPayload(): { text: string; marks: InlineMarkRange[] } {
+  const instance = editor.value
+  if (!instance) return { text: '', marks: [] }
+  const marks = serializeMarks(instance.state.doc)
+  const text = instance.state.doc.textBetween(0, instance.state.doc.content.size, '')
+  return { text, marks: normalizeInlineMarks(marks, text.length) }
 }
 
 function syncContent(content: string, cursorPos?: number) {
@@ -534,7 +634,17 @@ function getEditor() {
   return editor.value
 }
 
-defineExpose({ syncContent, focus, focusRange, focusAtCoords, getText: () => editor.value?.getText() ?? '', markSaved, getEditor, cancelDebouncedSave })
+defineExpose({
+  syncContent,
+  focus,
+  focusRange,
+  focusAtCoords,
+  getText: () => editor.value?.getText() ?? '',
+  getContent: () => getContentPayload(),
+  markSaved,
+  getEditor,
+  cancelDebouncedSave,
+})
 </script>
 
 <template>
@@ -571,6 +681,10 @@ defineExpose({ syncContent, focus, focusRange, focusAtCoords, getText: () => edi
       :position="kindSelectorPosition"
       @select="handleKindSelect"
       @cancel="handleKindSelectCancel"
+    />
+    <InlineFormatToolbar
+      :editor="editor"
+      :revision="selectionRevision"
     />
   </div>
 </template>

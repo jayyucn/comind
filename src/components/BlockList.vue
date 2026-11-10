@@ -25,12 +25,25 @@ import { runUndoOrRedo } from '../composables/useUndoRestore'
 import { COMIND_BLOCK_MIME, resolveClipboardForest } from '../services/external-paste-parse'
 import { onLayoutChange } from '../services/layout-change'
 import { ensureWikiLinkTargets, notifyCreatedPages } from '../services/paste-ensure-wiki-targets'
+import { renderedOffsetToEncodedOffset } from '../services/render-text'
 import { blockOffsetFromPoint, selectionClientRects, type SelectionRect } from '../services/selection-geometry'
+import { normalizeTextRange } from '../services/text-range'
 import { useBlockStore } from '../stores/blocks'
 import { useEditorStore } from '../stores/editor'
 import { usePageStore } from '../stores/pages'
-import type { TreeNode } from '../types/block'
+import type { Block, TreeNode } from '../types/block'
 import { sortByDocumentOrderIds } from '../utils/block-helpers'
+import {
+  clearInlineMarkRange,
+  type InlineMarkAttrs,
+  type InlineMarkKey,
+  type InlineMarkRange,
+  rangeColorToken,
+  rangeHasAttr,
+  readInlineMarks,
+  sameInlineMarks,
+  setInlineMarkRange,
+} from '../utils/inline-marks'
 import { resolveUndoScopeBlockPage, takeOverUndoRedo } from '../utils/undo-chord'
 import BlockDraggableList from './Block/components/BlockDraggableList.vue'
 import BlockDropIndicator from './Block/components/BlockDropIndicator.vue'
@@ -39,6 +52,7 @@ import type { DragEndIntent } from './Block/composables/useBlockDragDrop'
 import { applyDropTarget, useSharedDropIndicator } from './Block/composables/useBlockDragDrop'
 import { useParentTaskStatusSync } from './Block/composables/useParentTaskStatusSync'
 import { useChildTaskProgress } from './Block/composables/useTaskProgress'
+import InlineFormatToolbar from './InlineFormatToolbar.vue'
 
 const props = defineProps<{
   /** 页面 ID，用于过滤 Block */
@@ -170,6 +184,12 @@ function isInSelectedArea(target: HTMLElement): boolean {
 }
 
 function handleDocMouseUp(e: MouseEvent) {
+  // 行内格式工具条（Teleport 到 body）上的交互不改写选区：否则按钮的 mouseup 会被
+  // 当成「点击选区外」而清掉文本选区，工具条/调色板在 click 触发前就消失。
+  const toolbarTarget = e.target as HTMLElement | null
+  if (toolbarTarget && typeof toolbarTarget.closest === 'function' && toolbarTarget.closest('.inline-format-toolbar')) {
+    return
+  }
   // 记录最近点击交互（供 Ctrl+Shift+A 焦点丢失到 body 时回退判断上下文）
   const mouseTarget = e.target as HTMLElement | null
   if (mouseTarget && typeof mouseTarget.closest === 'function') {
@@ -850,6 +870,120 @@ let offLayoutChange: (() => void) | null = null
 
 watch(() => selection.textRange.value, () => refreshTextHighlight())
 
+// ── 跨块文本选区工具条（ADR-0035 D4 的配套能力）──
+// 内容区拖拽超过阈值后编辑器已失活，TipTap 的工具条无从出现；这里按选区覆盖的
+// 每个块切出本地偏移，直接读写 block.format.inlineMarks（正文不动）。
+interface RangeSegment {
+  block: Block
+  /** 本地偏移，encoded 口径（与 format.inlineMarks 同源） */
+  from: number
+  to: number
+}
+
+const rangeSegments = computed<RangeSegment[]>(() => {
+  const tr = selection.textRange.value
+  if (!tr) return []
+  const blocks = blockStore.getBlocksByPage(props.pageId)
+  const byId = new Map(blocks.map(b => [b.id, b]))
+  const { start, end, middleBlockIds } = normalizeTextRange(blocks, tr)
+
+  const segments: RangeSegment[] = []
+  const push = (block: Block | undefined, from: number, to: number) => {
+    // 表格等原子块 content 为空，没有可着色的正文
+    if (!block || block.type === 'table' || block.content.length === 0) return
+    const lo = Math.max(0, Math.min(block.content.length, Math.trunc(from)))
+    const hi = Math.max(lo, Math.min(block.content.length, Math.trunc(to)))
+    if (hi > lo) segments.push({ block, from: lo, to: hi })
+  }
+  const toEncoded = (block: Block, offset: number) =>
+    renderedOffsetToEncodedOffset(block.content, block.renderSegments, offset)
+
+  const startBlock = byId.get(start.blockId)
+  const endBlock = byId.get(end.blockId)
+  if (startBlock && endBlock && startBlock.id === endBlock.id) {
+    push(startBlock, toEncoded(startBlock, start.offset), toEncoded(endBlock, end.offset))
+    return segments
+  }
+  if (startBlock) push(startBlock, toEncoded(startBlock, start.offset), startBlock.content.length)
+  for (const id of middleBlockIds) {
+    const block = byId.get(id)
+    if (block) push(block, 0, block.content.length)
+  }
+  if (endBlock) push(endBlock, 0, toEncoded(endBlock, end.offset))
+  return segments
+})
+
+/** 选区在所有覆盖块上统一为同一 token 才返回它（工具条激活态口径） */
+function commonColorToken(
+  segments: RangeSegment[],
+  runs: InlineMarkRange[][],
+  key: 'color' | 'background',
+): string {
+  let token = ''
+  for (let i = 0; i < segments.length; i++) {
+    const segment = segments[i]!
+    const value = rangeColorToken(
+      runs[i]!,
+      segment.from,
+      segment.to,
+      key,
+      segment.block.content.length,
+    )
+    if (!value) return ''
+    if (!token) token = value
+    else if (token !== value) return ''
+  }
+  return token
+}
+
+const rangeFormat = computed<InlineMarkAttrs | null>(() => {
+  const segments = rangeSegments.value
+  if (segments.length === 0) return null
+  const runs = segments.map(segment => readInlineMarks(segment.block.format, segment.block.content.length))
+
+  const attrs: InlineMarkAttrs = {}
+  for (const key of ['bold', 'italic', 'underline', 'strike'] as const) {
+    const active = segments.every((segment, i) =>
+      rangeHasAttr(runs[i]!, segment.from, segment.to, key, segment.block.content.length))
+    if (active) attrs[key] = true
+  }
+  const color = commonColorToken(segments, runs, 'color')
+  if (color) attrs.color = color
+  const background = commonColorToken(segments, runs, 'background')
+  if (background) attrs.background = background
+  return attrs
+})
+
+/** 工具条动作：逐块切换格式；正文未变时 store 只更新 format 并调度保存 */
+function applyRangeMark(key: InlineMarkKey, token: string | null) {
+  for (const segment of rangeSegments.value) {
+    const textLength = segment.block.content.length
+    const marks = readInlineMarks(segment.block.format, textLength)
+    let next: InlineMarkRange[]
+    if (key === 'color' || key === 'background') {
+      const current = rangeColorToken(marks, segment.from, segment.to, key, textLength)
+      if (token && current !== token) {
+        const patch: InlineMarkAttrs = {}
+        patch[key] = token
+        next = setInlineMarkRange(marks, segment.from, segment.to, patch, textLength)
+      } else {
+        next = clearInlineMarkRange(marks, segment.from, segment.to, [key], textLength)
+      }
+    } else if (rangeHasAttr(marks, segment.from, segment.to, key, textLength)) {
+      next = clearInlineMarkRange(marks, segment.from, segment.to, [key], textLength)
+    } else {
+      const patch: InlineMarkAttrs = {}
+      patch[key] = true
+      next = setInlineMarkRange(marks, segment.from, segment.to, patch, textLength)
+    }
+    if (sameInlineMarks(marks, next)) continue
+    void blockStore.updateBlockContent(segment.block.id, segment.block.content, {
+      commitTags: false,
+      inlineMarks: next,
+    })
+  }
+}
+
 // ── 拖放指示器（模块级共享状态，渲染一次） ──
 // 所有 Block 的 useBlockDragDrop 写入同一组 ref，这里统一渲染单个 <BlockDropIndicator>，
 // 复现原全局 .drop-indicator DOM 元素行为，避免跨容器拖拽时残留指示器。
@@ -973,6 +1107,15 @@ onBeforeUnmount(() => {
         :style="{ top: `${rect.top}px`, left: `${rect.left}px`, width: `${rect.width}px`, height: `${rect.height}px` }"
       />
     </Teleport>
+
+    <!-- 跨块文本选区工具条：选区由本组件持有（编辑器在拖拽越阈值后已失活），
+         定位复用与高亮同一份矩形；格式按块回写 block.format.inlineMarks。 -->
+    <InlineFormatToolbar
+      :range="selection.textRange.value"
+      :range-rect="highlightRects[0] ?? null"
+      :range-format="rangeFormat"
+      @apply-range="applyRangeMark"
+    />
 
     <!-- 落点闪烁层（#109）：矩形与上一层同理 Teleport 到 body —— fixed 定位会被 transform 祖先困住。
          矩形量的是「内容区 + 属性区」的墨迹（测量收口在 useRestoreFlash，#115），只覆盖有内容的非空白区域。

@@ -320,6 +320,10 @@ export interface RenderInput {
    * 省缺此字段 = 沿用快照色（行为与动态解析引入前一致）。
    */
   resolveTagColor?: (tagId: string, title: string) => string | undefined
+  /** 行内格式区间（相对 content）；缺省 = 无格式 */
+  inlineMarks?: import('../utils/inline-marks').InlineMarkRange[]
+  /** 渲染坐标系与 content 坐标系的偏移（标题去 `# ` 前缀时传负值） */
+  markOffset?: number
 }
 
 /** 4.3: Link draft parsed from block content by Rust ContentParseService */

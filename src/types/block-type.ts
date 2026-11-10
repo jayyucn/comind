@@ -2,6 +2,7 @@ import type { Editor } from '@tiptap/vue-3'
 import type { Component } from 'vue'
 import type { Ref } from 'vue'
 
+import type { InlineMarkRange } from '../utils/inline-marks'
 import type { Block } from './block'
 
 export interface BlockTypeHandler {
@@ -61,6 +62,8 @@ export interface BlockTypeEditorExposed {
   /** 恢复一段选区（撤销/重做）；from === to 即折叠光标。无编辑态的渲染组件不实现 */
   focusRange?: (from: number, to: number) => void
   getText: () => string
+  /** 正文 + 行内格式（偏移相对返回的 text） */
+  getContent?: () => { text: string; marks: InlineMarkRange[] }
   markSaved: () => void
   getEditor: () => Editor
   cancelDebouncedSave?: () => void

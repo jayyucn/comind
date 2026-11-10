@@ -46,6 +46,8 @@ export type DateRefPanelConfig = DateRefClickPayload & { position: { x: number; 
 export interface EditorEventCtx {
   emit: (event: string, ...args: unknown[]) => void
   getEditor: () => Editor | undefined
+  /** 正文 + 行内格式；缺省时退回 getText()（无格式）。 */
+  getContentPayload?: () => { text: string; marks: unknown }
   props: { blockId: string }
   menuVisible: Ref<boolean>
   menuPosition: Ref<{ x: number; y: number }>
@@ -386,7 +388,12 @@ export function createEditorEvents(ctx: EditorEventCtx): Record<string, (e: Even
       case 'save': {
         const editor = ctx.getEditor()
         if (editor) {
-          ctx.emit('save', editor.getText())
+          const payload = ctx.getContentPayload?.()
+          if (payload) {
+            ctx.emit('save', payload.text, undefined, payload.marks)
+          } else {
+            ctx.emit('save', editor.getText())
+          }
         }
         break
       }

@@ -520,6 +520,49 @@ describe('结构化渲染片段（pre-computed segments）', () => {
   })
 })
 
+describe('useContentRenderer — 行内格式', () => {
+  it('回退路径按区间包裹文本', () => {
+    const html = renderContentToHtml({
+      segments: [],
+      content: 'hello world',
+      inlineMarks: [{ start: 0, end: 5, bold: true }],
+    })
+    expect(html).toBe('<strong>hello</strong> world')
+  })
+
+  it('segments 文本段按 marks 切分，段外不染色', () => {
+    const html = renderContentToHtml({
+      segments: [{ type: 'text', start: 0, end: 11 }],
+      content: 'hello world',
+      inlineMarks: [
+        { start: 0, end: 5, bold: true },
+        { start: 6, end: 11, color: '--tag-color-2' },
+      ],
+    })
+    expect(html).toBe('<strong>hello</strong> <span data-inline-color="--tag-color-2" style="color: var(--tag-color-2)">world</span>')
+  })
+
+  it('非文本段整体被格式覆盖时包裹结构化 HTML', () => {
+    const html = renderContentToHtml({
+      segments: [{ type: 'tag', start: 0, end: 4, title: 'tag', tag_id: '', is_system: false, color: '' }],
+      content: '#tag',
+      inlineMarks: [{ start: 0, end: 4, italic: true }],
+    })
+    expect(html.startsWith('<em><span class="block-tag"')).toBe(true)
+    expect(html.endsWith('</span></em>')).toBe(true)
+  })
+
+  it('markOffset 用于标题去前缀后的坐标系对齐', () => {
+    const html = renderContentToHtml({
+      segments: [],
+      content: 'Title',
+      markOffset: -2,
+      inlineMarks: [{ start: 2, end: 7, underline: true }],
+    })
+    expect(html).toBe('<u>Title</u>')
+  })
+})
+
 describe('parseHeading — 标题解析测试', () => {
   it('解析 h1 标题', () => {
     const result = parseHeading('# 一级标题')

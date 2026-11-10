@@ -20,8 +20,10 @@ import type { usePageStore } from '../../../stores/pages'
 import { useTagsStore } from '../../../stores/tags'
 import type { BlockTypeEditorExposed } from '../../../types/block-type'
 import { DATE_REF_AT_REGEX, type DateRefKind, normalizeRecurrence, type RecurrenceRule, serializeDateRef } from '../../../utils/date-ref'
+import type { InlineMarkRange } from '../../../utils/inline-marks'
+import { mapInlineMarkOffsets } from '../../../utils/inline-marks'
 import {
-  encodeRelationshipContent,
+  encodeRelationshipContentWithMeta,
   takeRelationshipSnapshot,
 } from '../../../utils/relationship-content'
 
@@ -124,12 +126,20 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
    * `commitTags`（默认 true = 提交动作）透传给建签门：Editor 的防抖打字保存传 false，
    * `#f`、`#fo` 这类中间前缀不落标签表；blur / 拆分 / 缩进等 withContentSync 操作走 true。
    */
-  async function handleSave(content: string, commitTags = true, flush = true) {
+  async function handleSave(
+    content: string,
+    commitTags = true,
+    flush = true,
+    marks?: InlineMarkRange[],
+  ) {
     // 编辑态显示中文 label → 存储英文 type（encode）
     // 快照保证改名后未编辑的 label 也能还原为原始 type
     const snapshot = takeRelationshipSnapshot(blockId.value)
-    const stored = encodeRelationshipContent(content, snapshot)
-    await blockStore.updateBlockContent(blockId.value, stored, { commitTags })
+    const { text: stored, spans } = encodeRelationshipContentWithMeta(content, snapshot)
+    const encodedMarks = marks === undefined
+      ? undefined
+      : mapInlineMarkOffsets(marks, spans, 'toNew', stored.length)
+    await blockStore.updateBlockContent(blockId.value, stored, { commitTags, inlineMarks: encodedMarks })
     // 方案 A: 立即 flush，确保 renderSegments 已写回，
     // 避免后续 deactivateBlock 时渲染组件因 renderSegments=undefined 闪现纯文本。
     // flush=false 时不阻塞等待落库（落库改由防抖后台调度），用于拆分等需低延迟的场景。
@@ -148,7 +158,8 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
       if (editorComponent.cancelDebouncedSave) {
         editorComponent.cancelDebouncedSave()
       }
-      await handleSave(editorRef.value.getText(), true, flush)
+      const payload = editorRef.value.getContent?.()
+      await handleSave(payload?.text ?? editorRef.value.getText(), true, flush, payload?.marks)
     }
   }
 
