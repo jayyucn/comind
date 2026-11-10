@@ -32,6 +32,7 @@ import { useBlockStore } from '../stores/blocks'
 import { useEditorStore } from '../stores/editor'
 import { usePageStore } from '../stores/pages'
 import type { Block, TreeNode } from '../types/block'
+import { type BlockAlign,blockAlignOf } from '../utils/block-align'
 import { sortByDocumentOrderIds } from '../utils/block-helpers'
 import {
   clearInlineMarkRange,
@@ -186,8 +187,11 @@ function isInSelectedArea(target: HTMLElement): boolean {
 function handleDocMouseUp(e: MouseEvent) {
   // 行内格式工具条（Teleport 到 body）上的交互不改写选区：否则按钮的 mouseup 会被
   // 当成「点击选区外」而清掉文本选区，工具条/调色板在 click 触发前就消失。
+  // 二级浮层（对齐下拉 / 取色面板）同样是 Teleport 出去的独立节点，必须一并豁免 ——
+  // 少豁免一次，点「居中」时选区先被清掉，`rangeSegments` 当场变空 ⇒ 点了个寂寞。
   const toolbarTarget = e.target as HTMLElement | null
-  if (toolbarTarget && typeof toolbarTarget.closest === 'function' && toolbarTarget.closest('.inline-format-toolbar')) {
+  if (toolbarTarget && typeof toolbarTarget.closest === 'function'
+    && toolbarTarget.closest('.inline-format-toolbar, .floating-submenu')) {
     return
   }
   // 记录最近点击交互（供 Ctrl+Shift+A 焦点丢失到 body 时回退判断上下文）
@@ -954,9 +958,37 @@ const rangeFormat = computed<InlineMarkAttrs | null>(() => {
   return attrs
 })
 
-/** 工具条动作：逐块切换格式；正文未变时 store 只更新 format 并调度保存 */
-function applyRangeMark(key: InlineMarkKey, token: string | null) {
+/**
+ * 跨块选区的对齐（工具条激活态）：所有覆盖块一致才显示那一项，否则按默认左对齐。
+ * 与 `rangeFormat` 同口径 —— 都是「选区在所有这些块上是否同一状态」。
+ */
+const rangeAlign = computed<BlockAlign>(() => {
+  const segments = rangeSegments.value
+  if (segments.length === 0) return 'left'
+  const first = blockAlignOf(segments[0]!.block.format)
+  return segments.every(segment => blockAlignOf(segment.block.format) === first) ? first : 'left'
+})
+
+/**
+ * 覆盖块的**对齐**一变，正文就横向重排：高亮矩形与工具条位置都是拖拽时量的 DOM 实测值，
+ * 而 `textRange` 本身没变 ⇒ 不重量的话，文字已经居中、蓝带和工具条还钉在原位。
+ * 等 DOM 落定（nextTick）再量，否则量到的仍是旧位置。
+ */
+watch(
+  () => rangeSegments.value.map(segment => `${segment.block.id}:${blockAlignOf(segment.block.format)}`).join('|'),
+  () => { void nextTick(refreshTextHighlight) },
+)
+
+/** 对齐按块生效：写覆盖到的每一块（已经是目标值的跳过，不产生无谓落库） */
+function applyRangeAlign(value: BlockAlign) {
   for (const segment of rangeSegments.value) {
+    if (blockAlignOf(segment.block.format) === value) continue
+    void blockStore.updateBlockFormat(segment.block.id, { align: value })
+  }
+}
+
+/** 工具条动作：逐块切换格式；正文未变时 store 只更新 format 并调度保存 */
+function applyRangeMark(key: InlineMarkKey, token: string | null) {  for (const segment of rangeSegments.value) {
     const textLength = segment.block.content.length
     const marks = readInlineMarks(segment.block.format, textLength)
     let next: InlineMarkRange[]
@@ -1114,7 +1146,9 @@ onBeforeUnmount(() => {
       :range="selection.textRange.value"
       :range-rect="highlightRects[0] ?? null"
       :range-format="rangeFormat"
+      :block-align="rangeAlign"
       @apply-range="applyRangeMark"
+      @apply-align="applyRangeAlign"
     />
 
     <!-- 落点闪烁层（#109）：矩形与上一层同理 Teleport 到 body —— fixed 定位会被 transform 祖先困住。

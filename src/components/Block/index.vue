@@ -36,6 +36,7 @@ import { useFieldValueStore } from '../../stores/fieldValue'
 import { usePageStore } from '../../stores/pages'
 import type { TreeNode } from '../../types/block'
 import type { BlockSetupContext, BlockTypeEditorExposed, BlockTypeHooks } from '../../types/block-type'
+import { type BlockAlign,blockAlignOf } from '../../utils/block-align'
 import { mapInlineMarkOffsets, readInlineMarks } from '../../utils/inline-marks'
 import {
   decodeRelationshipContentWithMeta,
@@ -141,6 +142,23 @@ const editInlineMarks = computed(() => {
   const marks = readInlineMarks(block.value.format, (block.value.content ?? '').length)
   return mapInlineMarkOffsets(marks, spans, 'toNew', text.length)
 })
+
+/**
+ * 块级文本对齐（`format.align`）：两态共用一份，挂 `.block-content` 上由子节点继承 ——
+ * 编辑态（TipTap）与渲染态（BulletRender）各自的文本容器都在这层里面。
+ *
+ * 只对文本块（bullet，含标题）生效：图片块用 `format.align` 表达 flex 那侧的对齐，
+ * 表格有成套逐格对齐 —— 给它们套 `text-align` 只会多一层无意义的继承。
+ */
+const contentAlignStyle = computed<{ textAlign: BlockAlign } | undefined>(() => {
+  if (block.value.type !== 'bullet') return undefined
+  return { textAlign: blockAlignOf(block.value.format) }
+})
+
+/** 工具条里的对齐动作：写回块格式（与图片块同一个键，`updateBlockFormat` 走统一落库） */
+function onContentAlign(value: BlockAlign) {
+  void blockStore.updateBlockFormat(blockId.value, { align: value })
+}
 
 /** 空 block：无内容且非标题（如 '# ' 开头）。表格块的内容在 format.table 里、正文恒为空，
     视觉上并不空 —— 判空会让它的 bullet dot 挂在 hide-empty-bullet 上，只能靠 hover 显现，
@@ -663,6 +681,7 @@ watch(isActive, (active) => {
           <!-- 内容区 -->
           <div
             class="block-content"
+            :style="contentAlignStyle"
             @mousedown="onContentMousedown"
           >
             <component
@@ -690,6 +709,7 @@ watch(isActive, (active) => {
               @exit-edit="handleExitEdit"
               @cursor-change="handleCursorChange"
               @selection-change="handleSelectionChange"
+              @align="onContentAlign"
               @language-change="onLanguageChange"
             />
             <component

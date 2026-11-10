@@ -26,6 +26,7 @@ import { WikiLinkExtension } from '../extensions/WikiLinkExtension'
 import { closeWikiLinkMenuByEditor, findWikiLinkAtCursor, notifyWikiLinkMenuSelect, WikiLinkTriggerExtension } from '../extensions/WikiLinkTriggerExtension'
 import { usePageStore } from '../stores/pages'
 import { useTagsStore } from '../stores/tags'
+import { type BlockAlign,blockAlignOf } from '../utils/block-align'
 import type { DateRefKind } from '../utils/date-ref'
 import { debounce } from '../utils/debounce'
 import type { InlineMarkAttrs, InlineMarkRange } from '../utils/inline-marks'
@@ -43,6 +44,8 @@ const props = defineProps<{
   content: string
   /** 行内格式（加粗/斜体/下划线/删除线/文字色/背景色），偏移相对 content */
   inlineMarks?: InlineMarkRange[]
+  /** 块格式：工具条按 `align` 显示对齐激活态（正文本身由 Block 的 `.block-content` 承载） */
+  blockFormat?: Record<string, unknown>
   showFullPlaceholder?: boolean
   readonly?: boolean
 }>()
@@ -78,6 +81,11 @@ const emit = defineEmits<{
    * 历史栈据此决定「这次选区变化属于改动前的快照」还是「属于即将入栈的新快照」。
    */
   (e: 'selection-change', payload: { from: number; to: number; contentChanged: boolean }): void
+  /**
+   * 块级对齐（工具条的对齐下拉）。对齐不是行内 mark，作用对象是整块，
+   * 因此向上抛给 `Block` 写 `format.align`，由它统一下发到 `.block-content`。
+   */
+  (e: 'align', value: BlockAlign): void
 }>()
 
 // ProseMirror 默认折叠空白，解析会丢弃段落行尾/连续空格（如 date-ref 单元后补的空格），
@@ -685,6 +693,8 @@ defineExpose({
     <InlineFormatToolbar
       :editor="editor"
       :revision="selectionRevision"
+      :block-align="blockAlignOf(props.blockFormat)"
+      @apply-align="emit('align', $event)"
     />
   </div>
 </template>

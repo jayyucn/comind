@@ -6,18 +6,15 @@
  * - 数据来自 Block.format.table；单元格文本与行内格式（`cellMarks`）经 500ms 防抖写回 store
  * - 键盘导航（Enter/Tab/Shift+Tab/方向键/Esc）在单元格内拦截；IME 组合期间不触发
  * - Ctrl+Z / Ctrl+Y 路由到页面唯一撤销栈，禁用原生撤销
- * - 格内文本选区浮现行内格式工具条（`InlineFormatToolbar` 的 detached 模式）
+ * - 格内文本选区与格/行/列范围共用**同一个选区浮层**（`range-menu`），
+ *   公共项（对齐 + B/I/U/S/A）恒在，结构项按选区类型增减
  */
 import type { Editor } from '@tiptap/core'
 import {
-  AlignCenter,
-  AlignLeft,
-  AlignRight,
   ArrowDown,
   ArrowLeft,
   ArrowRight,
   ArrowUp,
-  ChevronDown,
   ClipboardPaste,
   Columns3,
   Copy,
@@ -37,7 +34,6 @@ import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } fr
 import type { CrossBlockSelection } from '../../../../composables/useCrossBlockSelection'
 import { runUndoOrRedo } from '../../../../composables/useUndoRestore'
 import { writePlainTextToClipboard } from '../../../../services/block-clipboard'
-import { onLayoutChange } from '../../../../services/layout-change'
 import type { SelectionRect } from '../../../../services/selection-geometry'
 import {
   applyAlignToRange,
@@ -104,7 +100,10 @@ import {
   setInlineMarkRange,
 } from '../../../../utils/inline-marks'
 import BasePopover from '../../../common/BasePopover.vue'
-import InlineFormatToolbar from '../../../InlineFormatToolbar.vue'
+import FloatingSubmenu from '../../../common/FloatingSubmenu.vue'
+import SelectionMarkRow from '../../../common/SelectionMarkRow.vue'
+import InlineAlignMenu from '../../../InlineAlignMenu.vue'
+import InlineColorPalette from '../../../InlineColorPalette.vue'
 
 const props = defineProps<{
   blockId?: string
@@ -757,11 +756,11 @@ function onCellKeydown(row: number, col: number, e: KeyboardEvent) {
 
 // ── 格内文本选区的行内格式 ─────────────────────────────────────────
 
-/** 文本节点 / 元素所属的单元格 */
+/** 文本节点 / 元素所属的单元格（编辑态 .cell-input / 渲染态 .cell-text） */
 function cellInputOf(node: Node | null): HTMLElement | null {
   if (!node) return null
   const el = node.nodeType === Node.TEXT_NODE ? node.parentElement : (node as HTMLElement)
-  const found = el?.closest?.('.cell-input')
+  const found = el?.closest?.('.cell-input, .cell-text')
   return found instanceof HTMLElement ? found : null
 }
 
@@ -770,13 +769,17 @@ function cellInputOf(node: Node | null): HTMLElement | null {
  *
  * 只认「起止点在同一格内、且非折叠」的选区：跨格的原生选区由格选区手势接管，
  * 这里的格式模型是按格存的，跨格没有可写的目标。
+ *
+ * 两态都要读：渲染态没有可编辑实例，但格内拖出的原生文本选区同样该浮出工具条，
+ * 格式写入走 `cellMarks` + `v-html` 重画（见 applyCellMark）。
  */
 function captureCellTextSelection() {
   const clear = () => {
     if (cellTextSel.value) cellTextSel.value = null
+    // 文本选区没了，它撑起来的那个浮层也得走（格/行/列范围的菜单另有驱动，不动）
+    if (rangeMenu.value?.kind === 'text') closeRangeMenu()
     return null
   }
-  if (props.readonly) return clear()
   const selection = window.getSelection()
   if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return clear()
   const range = selection.getRangeAt(0)
@@ -809,48 +812,207 @@ function captureCellTextSelection() {
     rect: { left: box.left, top: box.top, width: box.width, height: box.height },
     format,
   }
+  syncTextMenu(row, col, el, start, end)
   return cellTextSel.value
+}
+
+/**
+ * 文本选区 → 同一个选区浮层（只在选区真正变了的时候写，避免拖动过程中反复重挂浮层）。
+ *
+ * 锚点用**所在的 td** 而不是文本矩形：这样文本选区与格矩形选区的浮层出自同一个
+ * 锚点规则（挂在这一格上沿、空间不足自动翻面），「表现形式一样」才有据可依。
+ */
+function syncTextMenu(row: number, col: number, el: HTMLElement, start: number, end: number) {
+  const td = el.closest('td')
+  if (!(td instanceof HTMLElement)) return
+  const current = rangeMenu.value
+  const prev = current?.kind === 'text' ? current.textSel : undefined
+  if (prev && prev.row === row && prev.col === col && prev.start === start
+    && prev.end === end && current?.anchor === td) return
+  rangeMenu.value = {
+    anchor: td,
+    range: { row1: row, row2: row, col1: col, col2: col },
+    kind: 'text',
+    textSel: { row, col, start, end },
+  }
+  submenu.value = null
 }
 
 function onSelectionChange() {
   captureCellTextSelection()
 }
 
-/** 工具条动作：把格式写进 `cellMarks`，重写该格 HTML 后恢复原选区 */
+/**
+ * 读一格的当前格式。
+ *
+ * 编辑态以 contenteditable 的 HTML 为准 —— 它是编辑中的真源（store 会滞后 500ms）；
+ * 渲染态反过来只读 `cellMarks`：`.cell-text` 是它画出来的派生物，读 DOM 会读到
+ * 尚未 patch 的旧内容（`menuFormat` 是 computed，重算时机与 v-html 的 patch 谁先谁后不定）。
+ */
+function readCellMarks(row: number, col: number): InlineMarkRange[] {
+  const el = props.readonly ? null : (cellEls.get(cellKey(row, col)) ?? null)
+  if (!el) return marksAt(row, col)
+  const text = rows.value[row]?.[col] ?? ''
+  return normalizeInlineMarks(readMarksFromDom(el), text.length)
+}
+
+/** 在 `[from, to)` 上切换一个行内格式：已全覆盖 → 清掉；色值相同 → 清掉；否则设上 */
+function toggleMarksInRange(
+  marks: InlineMarkRange[],
+  from: number,
+  to: number,
+  key: InlineMarkKey,
+  token: string | null,
+  length: number,
+): InlineMarkRange[] {
+  if (key === 'color' || key === 'background') {
+    const current = rangeColorToken(marks, from, to, key, length)
+    if (token && current !== token) {
+      const patch: InlineMarkAttrs = {}
+      patch[key] = token
+      return setInlineMarkRange(marks, from, to, patch, length)
+    }
+    return clearInlineMarkRange(marks, from, to, [key], length)
+  }
+  if (rangeHasAttr(marks, from, to, key, length)) {
+    return clearInlineMarkRange(marks, from, to, [key], length)
+  }
+  const patch: InlineMarkAttrs = {}
+  patch[key] = true
+  return setInlineMarkRange(marks, from, to, patch, length)
+}
+
+/** 文本选区：格式只作用于选中的那几个字 */
 function applyCellMark(key: InlineMarkKey, token: string | null) {
   const active = captureCellTextSelection()
   if (!active) return
-  const el = cellEls.get(cellKey(active.row, active.col))
-  if (!el) return
   const text = rows.value[active.row]?.[active.col] ?? ''
   const from = Math.min(active.start, text.length)
   const to = Math.min(active.end, text.length)
   if (to <= from) return
 
-  const marks = normalizeInlineMarks(readMarksFromDom(el), text.length)
-  let next: InlineMarkRange[]
-  if (key === 'color' || key === 'background') {
-    const current = rangeColorToken(marks, from, to, key, text.length)
-    if (token && current !== token) {
-      const patch: InlineMarkAttrs = {}
-      patch[key] = token
-      next = setInlineMarkRange(marks, from, to, patch, text.length)
-    } else {
-      next = clearInlineMarkRange(marks, from, to, [key], text.length)
-    }
-  } else if (rangeHasAttr(marks, from, to, key, text.length)) {
-    next = clearInlineMarkRange(marks, from, to, [key], text.length)
-  } else {
-    const patch: InlineMarkAttrs = {}
-    patch[key] = true
-    next = setInlineMarkRange(marks, from, to, patch, text.length)
-  }
+  const cellSelector = `.cell-text[data-row="${active.row}"][data-col="${active.col}"]`
+  const el = cellEls.get(cellKey(active.row, active.col)) ?? null
+  const marks = readCellMarks(active.row, active.col)
+  const next = toggleMarksInRange(marks, from, to, key, token, text.length)
 
   if (sameInlineMarks(marks, next)) return
   setMarksAt(active.row, active.col, next)
+
+  if (props.readonly) {
+    // 渲染态的格内容是 `v-html="cellHtml()"`，改完 cellMarks 会自动重画；
+    // DOM 换掉后原生选区随之失效，等重画完按原字符偏移恢复，菜单与选区才不会凭空消失。
+    // 立即落库（不走输入防抖）：格式是一次性操作，且切换两态前必须已经写回 store。
+    persist()
+    void nextTick(() => {
+      const redrawn = tableEl.value?.querySelector<HTMLElement>(cellSelector)
+      if (redrawn) selectCellText(redrawn, from, to)
+    })
+    return
+  }
+  if (!el) return
   renderCell(el, active.row, active.col)
   selectCellText(el, from, to)
   scheduleSave()
+}
+
+/**
+ * 范围里的「实际有 DOM 的格」：被合并区覆盖的格没有 DOM，内容只认左上格，
+ * 所有逐格操作（格式 / 对齐 / 复制）都必须按这个集合走。
+ */
+function cellsInRange(range: CellRange): { row: number; col: number }[] {
+  const cells: { row: number; col: number }[] = []
+  for (let r = range.row1; r <= range.row2; r += 1) {
+    for (let c = range.col1; c <= range.col2; c += 1) {
+      const origin = anchorFor(merges.value, r, c)
+      if (origin.row !== r || origin.col !== c) continue
+      cells.push({ row: r, col: c })
+    }
+  }
+  return cells
+}
+
+/**
+ * 格 / 行 / 列范围：格式作用于**选区内每一格的整格全文**。
+ *
+ * `cellMarks` 是按字符偏移存的，格矩形选区表达不了「格内哪几个字」，
+ * 因此这里把每一格都当成 `[0, 全文长度]` 来写；被合并区覆盖的格没有 DOM，
+ * 由 `cellsInRange` 跳过，内容只认左上格。
+ *
+ * 动作**整段只定一次**：先看选区是否已全覆盖 —— 全覆盖就整体清掉，否则整体设上。
+ * 不能让每格各判一次：选区里部分格已有该格式时，逐格判定会「有的被加上、有的被清掉」，
+ * 与浮层按钮的激活态（也按全覆盖判定，见 menuFormat）自相矛盾。
+ */
+function applyRangeMark(range: CellRange, key: InlineMarkKey, token: string | null) {
+  const cells = cellsInRange(range)
+    .filter(({ row, col }) => (rows.value[row]?.[col] ?? '').length > 0)
+  if (!cells.length) return
+
+  const fullCoverage = cells.every(({ row, col }) => {
+    const text = rows.value[row]?.[col] ?? ''
+    const marks = readCellMarks(row, col)
+    return key === 'color' || key === 'background'
+      ? !!token && rangeColorToken(marks, 0, text.length, key, text.length) === token
+      : rangeHasAttr(marks, 0, text.length, key, text.length)
+  })
+  // 「默认颜色 / 无背景」本身就是清除动作，token 为空时不必再看覆盖情况
+  const wantsClear = (key === 'color' || key === 'background') ? (!token || fullCoverage) : fullCoverage
+
+  const touched: { row: number; col: number }[] = []
+  for (const { row, col } of cells) {
+    const text = rows.value[row]?.[col] ?? ''
+    const marks = readCellMarks(row, col)
+    let next: InlineMarkRange[]
+    if (wantsClear) {
+      next = clearInlineMarkRange(marks, 0, text.length, [key], text.length)
+    } else {
+      const patch: InlineMarkAttrs = {}
+      if (key === 'color' || key === 'background') {
+        // token 为空时走的是 wantsClear 分支，这里 token 必有值
+        if (!token) continue
+        patch[key] = token
+      } else {
+        patch[key] = true
+      }
+      next = setInlineMarkRange(marks, 0, text.length, patch, text.length)
+    }
+    if (sameInlineMarks(marks, next)) continue
+    setMarksAt(row, col, next)
+    touched.push({ row, col })
+  }
+  if (!touched.length) return
+
+  if (props.readonly) {
+    // 渲染态靠 `v-html` 自动重画，只需落库
+    persist()
+    return
+  }
+  for (const { row, col } of touched) {
+    const el = cellEls.get(cellKey(row, col))
+    if (el) renderCell(el, row, col)
+  }
+  scheduleSave()
+}
+
+/** 浮层上的 B/I/U/S/A：文本选区走字符段，格范围走整格全文 */
+function applyMenuMark(key: InlineMarkKey, token: string | null) {
+  const menu = rangeMenu.value
+  if (!menu) return
+  if (menu.kind === 'text') {
+    applyCellMark(key, token)
+    return
+  }
+  applyRangeMark(menu.range, key, token)
+}
+
+/** 选色后浮层保持打开（与正文工具条同口径：字体色与背景色连续调整不反复展开） */
+function applyMenuColor(kind: 'color' | 'background', token: string | null) {
+  applyMenuMark(kind, token)
+}
+
+function resetMenuColors() {
+  applyMenuMark('color', null)
+  applyMenuMark('background', null)
 }
 
 // ── 结构操作 ──────────────────────────────────────────────────────
@@ -956,12 +1118,6 @@ const plusHot = ref<{ kind: EntryKind; index: number } | null>(null)
 
 type EntryKind = 'row' | 'col'
 
-const ALIGN_OPTIONS: Array<{ value: TableAlign; label: string; icon: unknown }> = [
-  { value: 'left', label: '左对齐', icon: AlignLeft },
-  { value: 'center', label: '居中对齐', icon: AlignCenter },
-  { value: 'right', label: '右对齐', icon: AlignRight },
-]
-
 /**
  * 统一的范围菜单（原「列条 / 行条菜单」+「格选区菜单」合并）。
  *
@@ -973,35 +1129,44 @@ const ALIGN_OPTIONS: Array<{ value: TableAlign; label: string; icon: unknown }> 
 interface RangeMenuState {
   anchor: HTMLElement
   range: CellRange
-  kind: 'row' | 'col' | 'cells'
+  kind: 'row' | 'col' | 'cells' | 'text'
+  /**
+   * `kind === 'text'`：格内原生文本选区的字符区间。
+   *
+   * 这一种选区只表达「这一格里的哪几个字」，所以公共项（对齐 + B/I/U/S/A）照旧，
+   * 结构项（合并 / 复制粘贴 / 删行列 / 移动）没有作用对象，整组不渲染。
+   */
+  textSel?: { row: number; col: number; start: number; end: number }
 }
 
 const rangeMenu = ref<RangeMenuState | null>(null)
 
 /**
- * 对齐二级：真正浮出的竖向下拉。
+ * 二级浮层：对齐下拉与取色面板。
  *
- * 两条路都堵死了才走这里：
- * - 「面板内第二行」会被 BasePopover 的 `overflow: auto; max-height: 80vh` 裁掉；
- * - 嵌套第二个 BasePopover 会撞 z-index（内层 overlay 比外层面板低一级），
- *   且两份 document Esc 监听会让按一次 Esc 关掉两级。
- * 所以改成 Teleport 到 body 的独立 fixed 浮层，Esc 在 window 捕获阶段截住（只关二级）。
+ * 定位与 Esc/收起规则收口在 `FloatingSubmenu`（对齐下拉与正文工具条共用同一个），
+ * 这里只留「同一时刻最多开一个」的状态，以及触发按钮的引用。
  */
-const alignSubmenuOpen = ref(false)
-const alignMenuAnchor = ref<DOMRect | null>(null)
-const alignMenuEl = ref<HTMLElement | null>(null)
-const alignMenuSize = ref({ w: 0, h: 0 })
+type SubmenuKind = 'align' | 'palette'
+const submenu = ref<SubmenuKind | null>(null)
+const submenuAnchor = ref<HTMLElement | null>(null)
 
 const rangeMenuRange = computed(() => rangeMenu.value?.range ?? null)
-const rangeMenuPlacement = computed<'bottom' | 'right'>(() => (rangeMenu.value?.kind === 'row' ? 'right' : 'bottom'))
+/**
+ * 浮层在**目标上方**：格矩形 / 文本选区锚在范围的左上格，`top` 即整块选区的上沿；
+ * 行条贴在行左侧，菜单挂右侧（`top` 会压住上面一行，看起来像属于上一行）；
+ * 列条贴在表格上沿，`top` 落在表格之外，不会盖住表头。
+ */
+const rangeMenuPlacement = computed<'top' | 'right'>(() => (rangeMenu.value?.kind === 'row' ? 'right' : 'top'))
 const isColMenuOpen = computed(() => rangeMenu.value?.kind === 'col')
 const isRowMenuOpen = computed(() => rangeMenu.value?.kind === 'row')
 const canPasteRange = computed(() => hasTableClipboard())
 
-/** 本块浮层白名单：范围工具条 + 它的对齐二级浮层。
- *  两者都 Teleport 到 body，句柄由 blockId 限定（别的表格块的菜单不算本块内部）。 */
+/** 本块浮层白名单：范围工具条 + 它的二级浮层（对齐下拉 / 取色面板）。
+ *  三者都 Teleport 到 body 且共用同一个句柄（`data-table-menu="<blockId>"`），
+ *  一个选择器就能表达「这些是本块内部」，不用为每层各开一个属性名。 */
 const overlaySelector = computed(() =>
-  props.blockId ? `[data-table-menu="${props.blockId}"], [data-table-align-menu="${props.blockId}"]` : '',
+  props.blockId ? `[data-table-menu="${props.blockId}"]` : '',
 )
 
 /** 范围覆盖整行（可删行 / 移行） */
@@ -1088,13 +1253,57 @@ const rangeAlign = computed<TableAlign>(() => {
   const origin = anchorFor(merges.value, range.row1, range.col1)
   return alignAt(origin.row, origin.col)
 })
-const rangeAlignIcon = computed(
-  () => ALIGN_OPTIONS.find(option => option.value === rangeAlign.value)?.icon ?? AlignLeft,
-)
+
+/** 当前浮层目标范围里的实际格（文本选区就是它所在的那一格） */
+const rangeCells = computed(() => {
+  const range = rangeMenuRange.value
+  return range ? cellsInRange(range) : []
+})
+
+/**
+ * 浮层上 B/I/U/S/A 的激活态。
+ *
+ * 文本选区按字符段读（`cellTextSel.format` 已是合并后的结果）；
+ * 格范围按「整格全覆盖」判定 —— 只要有一格没全带上就显示为未激活，
+ * 点一下正好把它补齐（与整段格式的常规语义一致）。
+ */
+const menuFormat = computed<InlineMarkAttrs>(() => {
+  // 编辑态的格式读自 contenteditable（非响应式），这里显式订阅 store 版本：
+  // 每次格式写入都先落 `cellMarks` 再重画 DOM，订阅它才能让激活态跟上。
+  void cellMarks.value
+  const menu = rangeMenu.value
+  if (!menu) return {}
+  if (menu.kind === 'text') return cellTextSel.value?.format ?? {}
+
+  const out: InlineMarkAttrs = {}
+  const cells = rangeCells.value
+  if (!cells.length) return out
+
+  for (const key of ['bold', 'italic', 'underline', 'strike'] as const) {
+    const all = cells.every(({ row, col }) => {
+      const text = rows.value[row]?.[col] ?? ''
+      if (!text.length) return true
+      return rangeHasAttr(readCellMarks(row, col), 0, text.length, key, text.length)
+    })
+    if (all) out[key] = true
+  }
+
+  // 色值取第一格作代表：多格不同色时按钮只表达「有颜色」，点开面板再统一覆盖
+  const first = cells.find(({ row, col }) => (rows.value[row]?.[col] ?? '').length > 0)
+  if (first) {
+    const text = rows.value[first.row]?.[first.col] ?? ''
+    const marks = readCellMarks(first.row, first.col)
+    const color = rangeColorToken(marks, 0, text.length, 'color', text.length)
+    if (color) out.color = color
+    const background = rangeColorToken(marks, 0, text.length, 'background', text.length)
+    if (background) out.background = background
+  }
+  return out
+})
 
 function openStripMenu(event: MouseEvent, kind: EntryKind, index: number) {
   menuOpen.value = false
-  alignSubmenuOpen.value = false
+  submenu.value = null
   const anchor = event.currentTarget as HTMLElement
   const range: CellRange = kind === 'row'
     ? { row1: index, row2: index, col1: 0, col2: Math.max(0, cols.value - 1) }
@@ -1102,23 +1311,28 @@ function openStripMenu(event: MouseEvent, kind: EntryKind, index: number) {
   rangeMenu.value = { anchor, range, kind }
 }
 
-/** 拖出格矩形后浮出工具条：锚在选区右下格，让 BasePopover 自己避让与翻面 */
+/**
+ * 拖出格矩形后浮出工具条：锚在选区**左上格**。
+ *
+ * 浮层挂在目标上方（`placement="top"`），所以锚点必须是范围的上沿而非右下角——
+ * 锚在下沿的话 `top` 会让菜单落进选区里，压住刚选中的那几行。
+ * 左上格可能被合并覆盖（没有 DOM），先归一到所属合并区的左上格。
+ */
 function openCellMenu() {
   const sel = selection?.cellSelection.value
   const table = tableEl.value
   if (!sel || !table || sel.blockId !== props.blockId) return
   const range = normalizeCellRange(sel.anchor, sel.head)
-  // 右下格可能被合并覆盖（没有 DOM），锚到它所属合并区的左上格
-  const corner = anchorFor(merges.value, range.row2, range.col2)
+  const corner = anchorFor(merges.value, range.row1, range.col1)
   const anchor = table.querySelector<HTMLElement>(`td[data-row="${corner.row}"][data-col="${corner.col}"]`)
   if (!anchor) return
-  alignSubmenuOpen.value = false
+  submenu.value = null
   rangeMenu.value = { anchor, range, kind: 'cells' }
 }
 
 function closeRangeMenu() {
   rangeMenu.value = null
-  alignSubmenuOpen.value = false
+  submenu.value = null
 }
 
 /**
@@ -1155,96 +1369,18 @@ function openCornerMenu(row: number, col: number) {
   rangeMenu.value = { anchor, range, kind: 'cells' }
 }
 
-// ── 对齐二级浮层（Teleport 到 body 的独立 fixed 浮层）─────────────
+// ── 二级浮层（对齐下拉 / 取色面板）──────────────────────────────
+// 定位（目标上方优先）、Esc（window 捕获，只关二级）、滚动收起全部收口在
+// `FloatingSubmenu`；这里只负责「同一时刻最多开一个」与记住触发按钮。
 
-/** 与锚点按钮的间隙、视口最小留白 */
-const ALIGN_MENU_GAP = 4
-const ALIGN_MENU_EDGE = 8
-
-function measureAlignMenu() {
-  const el = alignMenuEl.value
-  if (!el) return
-  alignMenuSize.value = { w: el.offsetWidth, h: el.offsetHeight }
-}
-
-function toggleAlignSubmenu(e: MouseEvent) {
-  if (alignSubmenuOpen.value) {
-    alignSubmenuOpen.value = false
+function openSubmenu(kind: SubmenuKind, anchor: HTMLElement) {
+  if (submenu.value === kind) {
+    submenu.value = null
     return
   }
-  alignMenuSize.value = { w: 0, h: 0 }
-  alignMenuAnchor.value = (e.currentTarget as HTMLElement).getBoundingClientRect()
-  alignSubmenuOpen.value = true
-  // 宽度/高度要等首帧渲染后才知道，拿到再收边（首帧按未收边位置画，尺寸极小不致抖动）
-  void nextTick(measureAlignMenu)
+  submenuAnchor.value = anchor
+  submenu.value = kind
 }
-
-/**
- * 定位：左缘对齐按钮、纵向挂在按钮下方；下方放不下翻到上方，
- * 右侧溢出贴视口右边。尺寸未测量时（首帧）不做收边，避免 jumping。
- */
-const alignMenuStyle = computed(() => {
-  const rect = alignMenuAnchor.value
-  if (!rect || typeof window === 'undefined') return { left: '0px', top: '0px' }
-  const vw = window.innerWidth
-  const vh = window.innerHeight
-  const { w, h } = alignMenuSize.value
-
-  let top = rect.bottom + ALIGN_MENU_GAP
-  if (h && top + h > vh - ALIGN_MENU_EDGE) {
-    const above = rect.top - h - ALIGN_MENU_GAP
-    top = above >= ALIGN_MENU_EDGE ? above : Math.max(ALIGN_MENU_EDGE, vh - h - ALIGN_MENU_EDGE)
-  }
-
-  let left = rect.left
-  if (w && left + w > vw - ALIGN_MENU_EDGE) left = Math.max(ALIGN_MENU_EDGE, vw - w - ALIGN_MENU_EDGE)
-
-  return { left: `${left}px`, top: `${top}px` }
-})
-
-/**
- * Esc 只关二级：监听挂在 **window 的捕获阶段**。
- * 捕获阶段从 window 往下传，比 BasePopover 挂在 document 上的捕获监听先执行；
- * 在这里 stopPropagation，同一次 Esc 就不会再传到工具条那一层。
- */
-function onAlignMenuKeyDown(e: KeyboardEvent) {
-  if (e.key !== 'Escape' || !alignSubmenuOpen.value) return
-  e.preventDefault()
-  e.stopPropagation()
-  alignSubmenuOpen.value = false
-}
-
-/**
- * 二级浮层是 fixed 定位，不跟随任何滚动祖先：视口一滚就脱节，
- * 直接收起比追着算更符合预期（按钮还在，随时可重开）。
- */
-function dismissAlignMenu() {
-  alignSubmenuOpen.value = false
-}
-
-let offAlignLayoutChange: (() => void) | null = null
-
-function attachAlignMenuListeners() {
-  window.addEventListener('keydown', onAlignMenuKeyDown, true)
-  window.addEventListener('scroll', dismissAlignMenu, true)
-  window.addEventListener('resize', dismissAlignMenu)
-  // 折叠侧栏 → 工具条跟着锚点格平移（BasePopover 重锚），二级浮层存的是**绝对矩形**，
-  // 跟着走要重算一次锚点；直接收起更省事，也与 scroll/resize 的口径一致。
-  offAlignLayoutChange = onLayoutChange(dismissAlignMenu)
-}
-
-function detachAlignMenuListeners() {
-  window.removeEventListener('keydown', onAlignMenuKeyDown, true)
-  window.removeEventListener('scroll', dismissAlignMenu, true)
-  window.removeEventListener('resize', dismissAlignMenu)
-  offAlignLayoutChange?.()
-  offAlignLayoutChange = null
-}
-
-watch(alignSubmenuOpen, (open) => {
-  if (open) attachAlignMenuListeners()
-  else detachAlignMenuListeners()
-})
 
 /** 菜单打开期间该段保持升档，避免锚点视觉断开 */
 function isColActive(index: number): boolean {
@@ -1400,7 +1536,7 @@ async function runRange(
   const range = { ...state.range }
   // keepOpen 只对已激活的表格成立：只读态激活会重建单元格 DOM，锚点元素随即失效
   if (options.keepOpen === true && !props.readonly) {
-    alignSubmenuOpen.value = false
+    submenu.value = null
   } else {
     closeRangeMenu()
   }
@@ -2163,7 +2299,6 @@ onBeforeUnmount(() => {
   document.removeEventListener('mousedown', onDocMouseDownCapture, true)
   document.removeEventListener('mousemove', onCellDragMove)
   document.removeEventListener('mouseup', onCellDragEnd)
-  detachAlignMenuListeners()
   cellDrag = null
   resizeObserver?.disconnect()
   resizeObserver = undefined
@@ -2430,8 +2565,9 @@ defineExpose({
       :style="rowGuideStyle"
     />
 
-    <!-- 范围工具条：行列条菜单与格选区菜单是同一个浮层，区别只在目标矩形。
-         纯图标单行 + 竖线分组；不可用项不渲染（工具条随范围变形），
+    <!-- 选区浮层：格内文本选区 / 格矩形 / 行条 / 列条 **同一个浮层**，区别只在菜单项。
+         公共项（对齐 + B/I/U/S/A）恒在且位置固定在前面，结构项按选区类型增减；
+         纯图标单行 + 竖线分组，不可用项不渲染（工具条随范围变形），
          「合并单元格」是未实现而非不可用，因此常驻置灰。 -->
     <BasePopover
       v-if="rangeMenu"
@@ -2447,196 +2583,193 @@ defineExpose({
         :data-table-menu="blockId"
         @mousedown.prevent
       >
-        <button
-          type="button"
-          class="rm-btn rm-btn--caret"
-          :class="{ 'is-on': alignSubmenuOpen }"
-          title="对齐方式"
-          aria-label="对齐方式"
-          @click="toggleAlignSubmenu"
+        <!-- 公共段（对齐 + B/I/U/S/A）：与正文行内工具条是**同一个组件** ——
+             顺序 / 字形 / 尺寸 / 激活态同源，两个入口的差异只允许出现在它之后的结构项。 -->
+        <SelectionMarkRow
+          :format="menuFormat"
+          :align="rangeAlign"
+          :open="submenu"
+          @apply-mark="applyMenuMark"
+          @toggle-align="(anchor: HTMLElement) => openSubmenu('align', anchor)"
+          @toggle-palette="(anchor: HTMLElement) => openSubmenu('palette', anchor)"
         >
-          <component
-            :is="rangeAlignIcon"
-            :size="14"
-            :stroke-width="2"
-          />
-          <ChevronDown
-            class="rm-caret"
-            :size="10"
-            :stroke-width="2.5"
-          />
-        </button>
-        <button
-          v-if="canMerge"
-          type="button"
-          class="rm-btn "
-          title="合并单元格"
-          aria-label="合并单元格"
-          @click="mergeSelection"
-        >
-          <TableCellsMerge :size="14" />
-        </button>
-        <button
-          v-else-if="mergeBlocked"
-          type="button"
-          class="rm-btn"
-          disabled
-          title="表头与表体不能合并"
-          aria-label="表头与表体不能合并"
-        >
-          <Merge :size="14" />
-        </button>
-        <button
-          v-if="mergeTargets.length > 0"
-          type="button"
-          class="rm-btn rm-btn--link"
-          title="取消合并"
-          aria-label="取消合并"
-          @click="unmergeSelection"
-        >
-          <TableCellsSplit :size="14" />
-        </button>
+          <!-- 结构项：只对「格 / 行 / 列」范围成立。文本选区不表达结构，整组不渲染。 -->
+          <template v-if="rangeMenu.kind !== 'text'">
+            <span class="sel-sep" />
+            <button
+              v-if="canMerge"
+              type="button"
+              class="sel-btn"
+              title="合并单元格"
+              aria-label="合并单元格"
+              @click="mergeSelection"
+            >
+              <TableCellsMerge :size="14" />
+            </button>
+            <button
+              v-else-if="mergeBlocked"
+              type="button"
+              class="sel-btn"
+              disabled
+              title="表头与表体不能合并"
+              aria-label="表头与表体不能合并"
+            >
+              <Merge :size="14" />
+            </button>
+            <button
+              v-if="mergeTargets.length > 0"
+              type="button"
+              class="sel-btn sel-btn--link"
+              title="取消合并"
+              aria-label="取消合并"
+              @click="unmergeSelection"
+            >
+              <TableCellsSplit :size="14" />
+            </button>
 
-        <span class="rm-sep" />
+            <span class="sel-sep" />
 
-        <button
-          type="button"
-          class="rm-btn"
-          title="复制"
-          aria-label="复制"
-          @click="copyRangeAction"
-        >
-          <Copy :size="14" />
-        </button>
-        <button
-          type="button"
-          class="rm-btn"
-          title="剪切"
-          aria-label="剪切"
-          @click="cutRangeAction"
-        >
-          <Scissors :size="14" />
-        </button>
-        <button
-          type="button"
-          class="rm-btn"
-          :disabled="!canPasteRange"
-          title="粘贴"
-          aria-label="粘贴"
-          @click="pasteRangeAction"
-        >
-          <ClipboardPaste :size="14" />
-        </button>
-        <button
-          type="button"
-          class="rm-btn"
-          title="清空内容"
-          aria-label="清空内容"
-          @click="clearRangeAction"
-        >
-          <Eraser :size="14" />
-        </button>
-
-        <template v-if="showDeleteRow || showDeleteCol">
-          <span class="rm-sep" />
-          <button
-            v-if="showDeleteRow"
-            type="button"
-            class="rm-btn"
-            title="删除行"
-            aria-label="删除行"
-            @click="deleteRowAction"
-          >
-            <Trash2 :size="14" />
-          </button>
-          <template v-if="showDeleteRow && rangeIsSingleRow">
             <button
               type="button"
-              class="rm-btn"
-              :disabled="!canMoveRowUp"
-              title="上移"
-              aria-label="上移"
-              @click="moveRowUpAction"
+              class="sel-btn"
+              title="复制"
+              aria-label="复制"
+              @click="copyRangeAction"
             >
-              <ArrowUp :size="14" />
+              <Copy :size="14" />
             </button>
             <button
               type="button"
-              class="rm-btn"
-              :disabled="!canMoveRowDown"
-              title="下移"
-              aria-label="下移"
-              @click="moveRowDownAction"
+              class="sel-btn"
+              title="剪切"
+              aria-label="剪切"
+              @click="cutRangeAction"
             >
-              <ArrowDown :size="14" />
+              <Scissors :size="14" />
             </button>
+            <button
+              type="button"
+              class="sel-btn"
+              :disabled="!canPasteRange"
+              title="粘贴"
+              aria-label="粘贴"
+              @click="pasteRangeAction"
+            >
+              <ClipboardPaste :size="14" />
+            </button>
+            <button
+              type="button"
+              class="sel-btn"
+              title="清空内容"
+              aria-label="清空内容"
+              @click="clearRangeAction"
+            >
+              <Eraser :size="14" />
+            </button>
+
+            <template v-if="showDeleteRow || showDeleteCol">
+              <span class="sel-sep" />
+              <button
+                v-if="showDeleteRow"
+                type="button"
+                class="sel-btn"
+                title="删除行"
+                aria-label="删除行"
+                @click="deleteRowAction"
+              >
+                <Trash2 :size="14" />
+              </button>
+              <template v-if="showDeleteRow && rangeIsSingleRow">
+                <button
+                  type="button"
+                  class="sel-btn"
+                  :disabled="!canMoveRowUp"
+                  title="上移"
+                  aria-label="上移"
+                  @click="moveRowUpAction"
+                >
+                  <ArrowUp :size="14" />
+                </button>
+                <button
+                  type="button"
+                  class="sel-btn"
+                  :disabled="!canMoveRowDown"
+                  title="下移"
+                  aria-label="下移"
+                  @click="moveRowDownAction"
+                >
+                  <ArrowDown :size="14" />
+                </button>
+              </template>
+              <button
+                v-if="showDeleteCol"
+                type="button"
+                class="sel-btn"
+                title="删除列"
+                aria-label="删除列"
+                @click="deleteColAction"
+              >
+                <Trash2 :size="14" />
+              </button>
+              <template v-if="showDeleteCol && rangeIsSingleCol">
+                <button
+                  type="button"
+                  class="sel-btn"
+                  :disabled="!canMoveColLeft"
+                  title="左移"
+                  aria-label="左移"
+                  @click="moveColLeftAction"
+                >
+                  <ArrowLeft :size="14" />
+                </button>
+                <button
+                  type="button"
+                  class="sel-btn"
+                  :disabled="!canMoveColRight"
+                  title="右移"
+                  aria-label="右移"
+                  @click="moveColRightAction"
+                >
+                  <ArrowRight :size="14" />
+                </button>
+              </template>
+            </template>
           </template>
-          <button
-            v-if="showDeleteCol"
-            type="button"
-            class="rm-btn"
-            title="删除列"
-            aria-label="删除列"
-            @click="deleteColAction"
-          >
-            <Trash2 :size="14" />
-          </button>
-          <template v-if="showDeleteCol && rangeIsSingleCol">
-            <button
-              type="button"
-              class="rm-btn"
-              :disabled="!canMoveColLeft"
-              title="左移"
-              aria-label="左移"
-              @click="moveColLeftAction"
-            >
-              <ArrowLeft :size="14" />
-            </button>
-            <button
-              type="button"
-              class="rm-btn"
-              :disabled="!canMoveColRight"
-              title="右移"
-              aria-label="右移"
-              @click="moveColRightAction"
-            >
-              <ArrowRight :size="14" />
-            </button>
-          </template>
-        </template>
+        </SelectionMarkRow>
       </div>
     </BasePopover>
 
-    <!-- 对齐二级：真正浮出的竖向下拉。
+    <!-- 对齐二级：与正文工具条共用 InlineAlignMenu（选项来源同一份、定位与 Esc 同一套）。
          独立 Teleport 到 body —— 不被工具条面板的 `overflow: auto` 裁掉，
-         也不与它共用 overlay / Esc（Esc 由 onAlignMenuKeyDown 在 window 捕获阶段截住）。 -->
-    <Teleport to="body">
-      <Transition name="align-menu-fade">
-        <div
-          v-if="alignSubmenuOpen && rangeMenu"
-          ref="alignMenuEl"
-          class="align-menu"
-          :style="alignMenuStyle"
-          :data-table-align-menu="blockId"
-          @mousedown.prevent
-        >
-          <button
-            v-for="option in ALIGN_OPTIONS"
-            :key="option.value"
-            type="button"
-            class="align-item"
-            :class="{ 'is-on': rangeAlign === option.value }"
-            @click="setRangeAlign(option.value)"
-          >
-            <component
-              :is="option.icon"
-              :size="13"
-              :stroke-width="2"
-            />{{ option.label }}
-          </button>
-        </div>
-      </Transition>
-    </Teleport>
+         也不与它共用 overlay / Esc（Esc 在 FloatingSubmenu 的 window 捕获里截住，只关二级）。 -->
+    <InlineAlignMenu
+      :open="submenu === 'align' && !!rangeMenu"
+      :anchor="submenuAnchor"
+      :current="rangeAlign"
+      :menu-id="blockId"
+      @pick="setRangeAlign"
+      @close="submenu = null"
+    />
+
+    <!-- 取色面板：与对齐二级同一套浮层规则；面板本体复用正文工具条的 InlineColorPalette。 -->
+    <FloatingSubmenu
+      :open="submenu === 'palette' && !!rangeMenu"
+      :anchor="submenuAnchor"
+      :menu-id="blockId"
+      @close="submenu = null"
+    >
+      <div
+        class="palette-menu"
+        @mousedown.prevent
+      >
+        <InlineColorPalette
+          :color="menuFormat.color ?? ''"
+          :background="menuFormat.background ?? ''"
+          @apply="applyMenuColor"
+          @reset="resetMenuColors"
+        />
+      </div>
+    </FloatingSubmenu>
 
     <div
       ref="scrollEl"
@@ -2683,6 +2816,8 @@ defineExpose({
                 class="cell-text"
                 :class="{ 'is-placeholder': !cell.text }"
                 :style="{ textAlign: alignAt(0, cell.col) }"
+                :data-row="0"
+                :data-col="cell.col"
                 v-html="cellHtml(0, cell.col)"
               />
               <button
@@ -2731,6 +2866,8 @@ defineExpose({
                 v-else
                 class="cell-text"
                 :style="{ textAlign: alignAt(rowIndex, cell.col) }"
+                :data-row="rowIndex"
+                :data-col="cell.col"
                 v-html="cellHtml(rowIndex, cell.col)"
               />
               <button
@@ -2775,14 +2912,6 @@ defineExpose({
       @pointermove="onHScrollPointerMove"
       @pointerup="onHScrollPointerEnd"
       @pointercancel="onHScrollPointerEnd"
-    />
-
-    <!-- 格内文本选区的行内格式工具条（detached：选区是浏览器原生的，不依赖 TipTap 编辑器） -->
-    <InlineFormatToolbar
-      detached
-      :range-rect="cellTextSel?.rect ?? null"
-      :range-format="cellTextSel?.format ?? null"
-      @apply-range="applyCellMark"
     />
   </div>
 </template>
@@ -3257,7 +3386,10 @@ defineExpose({
   height: 1px;
 }
 
-/* 范围工具条：纯图标单行 + 竖线分组。不可用项直接不渲染，因此不写 disabled 视觉以外的收窄。 */
+/* 范围工具条：纯图标单行 + 竖线分组。公共段（对齐 + B/I/U/S/A）的按钮视觉由
+   `common/SelectionMarkRow` 提供（与正文行内工具条同一份），这里只管这一层的排布：
+   按钮直接是它的 flex 子项（该组件是片段根），结构项经它的插槽接在后面，
+   因此 gap / wrap 对两段一视同仁。不可用项直接不渲染（工具条随范围变形）。 */
 .range-menu {
   display: flex;
   align-items: center;
@@ -3267,120 +3399,9 @@ defineExpose({
   max-width: min(92vw, 520px);
 }
 
-.rm-btn {
+/* 取色面板：面皮与定位在 FloatingSubmenu，面板自带内边距与最小宽度（InlineColorPalette） */
+.palette-menu {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 1px;
-  width: 26px;
-  height: 26px;
-  padding: 0;
-  border: 0;
-  border-radius: var(--radius-xs);
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
-}
-
-.rm-btn--link {
-  color: var(--link);
-}
-
-.rm-btn:not(:disabled):hover {
-  background: var(--accent-subtle);
-  color: var(--accent);
-}
-
-.rm-btn.is-on {
-  background: var(--accent-subtle);
-  color: var(--accent);
-}
-
-.rm-btn:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-/* 带二级的项：主图标 + 右下角小箭头，宽度比纯图标项宽一点 */
-.rm-btn--caret {
-  width: 34px;
-  gap: 0;
-}
-
-.rm-caret {
-  margin-top: 8px;
-  margin-left: -2px;
-  opacity: 0.7;
-}
-
-.rm-sep {
-  width: 1px;
-  height: 16px;
-  margin: 0 3px;
-  background: var(--border);
-}
-
-/* 对齐二级：Teleport 到 body 的独立 fixed 浮层（真正的浮出，不是面板内第二行）。
-   面皮与 BasePopover 同款三层渐变（token 全局，scoped 不影响）；
-   z 用 --z-popover-nested（= --z-popover + 20），盖住工具条面板（+1）。 */
-.align-menu {
-  position: fixed;
-  z-index: var(--z-popover-nested);
-  display: flex;
-  flex-direction: column;
-  min-width: 118px;
-  padding: 4px;
-  background:
-    var(--corner-glow) padding-box,
-    var(--grad-surface) padding-box,
-    var(--grad-border) border-box;
-  border: 1px solid transparent;
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-floating);
-}
-
-.align-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  padding: 5px 8px;
-  border: 0;
-  border-radius: var(--radius-xs);
-  background: transparent;
-  color: var(--text-secondary);
-  font: inherit;
-  font-size: var(--text-xs);
-  line-height: 1.5;
-  white-space: nowrap;
-  cursor: pointer;
-  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
-}
-
-.align-item:not(:disabled):hover {
-  background: var(--accent-subtle);
-  color: var(--accent);
-}
-
-.align-item.is-on {
-  background: var(--accent-subtle);
-  color: var(--accent);
-}
-
-/* 轻弹层编排（ADR-0053）：base 入 / fast 出 */
-.align-menu-fade-enter-active {
-  transition: opacity var(--dur-base) var(--ease-out), transform var(--dur-base) var(--ease-out);
-}
-
-.align-menu-fade-leave-active {
-  transition: opacity var(--dur-fast) var(--ease-in), transform var(--dur-fast) var(--ease-in);
-}
-
-.align-menu-fade-enter-from,
-.align-menu-fade-leave-to {
-  opacity: 0;
-  transform: translateY(-4px) scale(0.98);
 }
 
 </style>

@@ -135,13 +135,14 @@ test('表格范围工具条跟随 ctrl+b 折叠侧栏（相对锚点格位置不
   await page.waitForTimeout(300)
 
   const menuBefore = await page.locator('.range-menu').first().boundingBox()
-  const anchorBefore = await cellBox(2, 1)
+  // 浮层锚在选区**左上格**（工具条挂在目标上方），跟手性也要按这颗锚点量
+  const anchorBefore = await cellBox(1, 0)
   expect(menuBefore).not.toBeNull()
 
   await collapseSidebar(page)
 
   const menuAfter = await page.locator('.range-menu').first().boundingBox()
-  const anchorAfter = await cellBox(2, 1)
+  const anchorAfter = await cellBox(1, 0)
   expect(menuAfter, '折叠后工具条消失').not.toBeNull()
 
   const dAnchor = anchorAfter.x - anchorBefore.x

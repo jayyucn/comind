@@ -55,7 +55,7 @@ async function dragCells(page: Page, r1: number, c1: number, r2: number, c2: num
 /** 拖出矩形 → 点工具条上的「合并单元格」 */
 async function mergeRange(page: Page, r1: number, c1: number, r2: number, c2: number) {
   await dragCells(page, r1, c1, r2, c2)
-  await page.locator('.range-menu .rm-btn[aria-label="合并单元格"]').click()
+  await page.locator('.range-menu .sel-btn[aria-label="合并单元格"]').click()
   await page.waitForTimeout(600)
 }
 
@@ -112,7 +112,7 @@ test('取消合并：范围内相交的合并区被拆开，4 格回来、内容
   await mergeRange(page, 1, 0, 2, 1)
 
   await dragCells(page, 1, 0, 2, 2)
-  const unmerge = page.locator('.range-menu .rm-btn[aria-label="取消合并"]')
+  const unmerge = page.locator('.range-menu .sel-btn[aria-label="取消合并"]')
   await expect(unmerge).toBeVisible()
 
   await unmerge.click()
@@ -151,10 +151,10 @@ test('合并格左下角热区：单击选中整块并浮出菜单，一处点�
 
   // 菜单对着整块合并区：只给「取消合并」，不再给「合并」
   await expect(page.locator('.range-menu')).toBeVisible()
-  await expect(page.locator('.range-menu .rm-btn[aria-label="合并单元格"]')).toHaveCount(0)
-  await expect(page.locator('.range-menu .rm-btn[aria-label="取消合并"]')).toBeVisible()
+  await expect(page.locator('.range-menu .sel-btn[aria-label="合并单元格"]')).toHaveCount(0)
+  await expect(page.locator('.range-menu .sel-btn[aria-label="取消合并"]')).toBeVisible()
 
-  await page.locator('.range-menu .rm-btn[aria-label="取消合并"]').click()
+  await page.locator('.range-menu .sel-btn[aria-label="取消合并"]').click()
   await page.waitForTimeout(600)
   await expect(page.locator('.table-block td[data-row="2"][data-col="1"]')).toHaveCount(1)
   await expect(page.locator('.table-block td[data-row="1"][data-col="1"]')).toHaveCount(1)
@@ -176,13 +176,13 @@ test('普通格左下角热区：单格也能开菜单（对齐 / 复制 / 清�
   await page.waitForTimeout(400)
 
   await expect(page.locator('.range-menu')).toBeVisible()
-  await expect(page.locator('.range-menu .rm-btn[aria-label="复制"]')).toBeVisible()
-  await expect(page.locator('.range-menu .rm-btn[aria-label="清空内容"]')).toBeVisible()
+  await expect(page.locator('.range-menu .sel-btn[aria-label="复制"]')).toBeVisible()
+  await expect(page.locator('.range-menu .sel-btn[aria-label="清空内容"]')).toBeVisible()
   // 1×1 范围：合并 / 取消合并 / 删除行列 都不成立
-  await expect(page.locator('.range-menu .rm-btn[aria-label="合并单元格"]')).toHaveCount(0)
-  await expect(page.locator('.range-menu .rm-btn[aria-label="取消合并"]')).toHaveCount(0)
-  await expect(page.locator('.range-menu .rm-btn[aria-label="删除行"]')).toHaveCount(0)
-  await expect(page.locator('.range-menu .rm-btn[aria-label="删除列"]')).toHaveCount(0)
+  await expect(page.locator('.range-menu .sel-btn[aria-label="合并单元格"]')).toHaveCount(0)
+  await expect(page.locator('.range-menu .sel-btn[aria-label="取消合并"]')).toHaveCount(0)
+  await expect(page.locator('.range-menu .sel-btn[aria-label="删除行"]')).toHaveCount(0)
+  await expect(page.locator('.range-menu .sel-btn[aria-label="删除列"]')).toHaveCount(0)
 })
 
 test('删行撞到合并区：直接拆开（不禁止删行）', async ({ page }) => {
@@ -202,7 +202,7 @@ test('删行撞到合并区：直接拆开（不禁止删行）', async ({ page 
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
   await page.waitForTimeout(450)
 
-  await page.locator('.range-menu .rm-btn[aria-label="删除行"]').click()
+  await page.locator('.range-menu .sel-btn[aria-label="删除行"]').click()
   await page.waitForTimeout(700)
 
   // 行数 3 → 2，冲突的合并区被拆开（(1,0) 与 (1,1) 都是独立格，colspan 消失）
@@ -219,10 +219,10 @@ test('表头与表体不能合并：跨边界时合并按钮置灰并说明原�
   await createTable(page)
 
   await dragCells(page, 0, 0, 1, 1)
-  const blocked = page.locator('.range-menu .rm-btn[aria-label="表头与表体不能合并"]')
+  const blocked = page.locator('.range-menu .sel-btn[aria-label="表头与表体不能合并"]')
   await expect(blocked).toBeVisible()
   await expect(blocked).toBeDisabled()
-  await expect(page.locator('.range-menu .rm-btn[aria-label="合并单元格"]')).toHaveCount(0)
+  await expect(page.locator('.range-menu .sel-btn[aria-label="合并单元格"]')).toHaveCount(0)
 })
 
 test('左下角光标按主题分两版：浅底深墨 / 暗底浅灰，切主题即换图', async ({ page }) => {

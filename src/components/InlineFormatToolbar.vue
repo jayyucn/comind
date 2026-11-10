@@ -4,8 +4,12 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import type { SelectionRect } from '../services/selection-geometry'
 import type { TextRange } from '../services/text-range'
+import type { BlockAlign } from '../utils/block-align'
 import type { InlineMarkAttrs, InlineMarkKey } from '../utils/inline-marks'
-import { INLINE_COLORS } from '../utils/inline-marks'
+import FloatingSubmenu from './common/FloatingSubmenu.vue'
+import SelectionMarkRow from './common/SelectionMarkRow.vue'
+import InlineAlignMenu from './InlineAlignMenu.vue'
+import InlineColorPalette from './InlineColorPalette.vue'
 
 const props = defineProps<{
   editor?: Editor | null | undefined
@@ -19,19 +23,31 @@ const props = defineProps<{
   rangeRect?: SelectionRect | null
   /** 范围模式下选区的合并格式（驱动按钮激活态） */
   rangeFormat?: InlineMarkAttrs | null
+  /**
+   * 当前对齐（块级 `block.format.align`）。
+   *
+   * 对齐不是行内 mark：它按**块**存，作用对象是整块正文而不是选中的那几个字。
+   * 因此三种模式下由宿主各自算出「这些块共同的对齐」传进来。
+   */
+  blockAlign?: BlockAlign | null
 }>()
 
 const emit = defineEmits<{
   (e: 'apply-range', key: InlineMarkKey, token: string | null): void
+  (e: 'apply-align', value: BlockAlign): void
 }>()
 
 const visible = ref(false)
 const position = ref({ left: 0, top: 0 })
-const picker = ref(false)
 const toolbarEl = ref<HTMLElement | null>(null)
 
+/** 二级浮层：同一时刻最多开一个（对齐下拉 / 取色面板），定位与 Esc 收口在 FloatingSubmenu */
+type SubmenuKind = 'align' | 'palette'
+const submenu = ref<SubmenuKind | null>(null)
+const submenuAnchor = ref<HTMLElement | null>(null)
+
 /** 首帧尚未挂载时的兜底尺寸（真实尺寸在 nextTick 后补测） */
-const FALLBACK_WIDTH = 236
+const FALLBACK_WIDTH = 290
 const FALLBACK_HEIGHT = 34
 
 const state = computed(() => {
@@ -69,18 +85,12 @@ const state = computed(() => {
   }
 })
 
-/** 合并色按钮：字形取文字色，按钮底色取背景色（与正文渲染同口径的 28% 淡染） */
-const colorButtonStyle = computed<Record<string, string>>(() => {
-  const info = state.value
-  const style: Record<string, string> = {}
-  if (info?.color) style.color = `var(${info.color})`
-  if (info?.background) style.background = `color-mix(in srgb, var(${info.background}) 28%, transparent)`
-  return style
-})
+/** 当前对齐（未设置即默认左对齐）：与表格选区浮层同一份取值口径 */
+const currentAlign = computed<BlockAlign>(() => props.blockAlign ?? 'left')
 
 function hide() {
   visible.value = false
-  picker.value = false
+  submenu.value = null
 }
 
 function updatePosition() {
@@ -141,6 +151,17 @@ watch(visible, async (value) => {
   if (visible.value && toolbarEl.value?.offsetWidth) updatePosition()
 })
 
+/**
+ * 对齐是**块级样式**：点完正文在横向上整体重排，但选区的 from/to、`revision` 全都没变，
+ * 上面那个 watch 不会触发 ⇒ 编辑态下工具条会停在旧位置（蓝带是浏览器原生选区，自己会跟）。
+ * 必须等 DOM 重排落定再量一次坐标。
+ */
+watch(() => props.blockAlign, () => {
+  void nextTick(() => {
+    if (visible.value) updatePosition()
+  })
+})
+
 function toggleMark(name: 'bold' | 'italic' | 'underline' | 'strike') {
   if (props.range || props.detached) {
     emit('apply-range', name, null)
@@ -183,13 +204,35 @@ function resetColors() {
   updatePosition()
 }
 
-function togglePicker() {
-  picker.value = !picker.value
+/**
+ * 公共按钮行的回调：色值走面板（选完保持展开，连续调整），字形走 mark 开关。
+ */
+function onApplyMark(key: InlineMarkKey, token: string | null) {
+  if (key === 'color' || key === 'background') {
+    applyColor(key, token)
+    return
+  }
+  toggleMark(key)
+}
+
+/** 二级浮层互斥：同一个锚点引用 + 一个状态，开另一个就顶掉前一个 */
+function toggleSubmenu(kind: SubmenuKind, anchor: HTMLElement) {
+  if (submenu.value === kind) {
+    submenu.value = null
+    return
+  }
+  submenuAnchor.value = anchor
+  submenu.value = kind
+}
+
+function pickAlign(value: BlockAlign) {
+  submenu.value = null
+  emit('apply-align', value)
 }
 
 function hideOnScroll() {
   visible.value = false
-  picker.value = false
+  submenu.value = null
 }
 
 onMounted(() => {
@@ -212,132 +255,45 @@ onBeforeUnmount(() => {
       :style="{ left: `${position.left}px`, top: `${position.top}px` }"
       @mousedown.prevent
     >
-      <button
-        type="button"
-        class="inline-format-button"
-        :class="{ 'is-active': state.bold }"
-        title="加粗 (Ctrl+B)"
-        @click="toggleMark('bold')"
-      >
-        <strong>B</strong>
-      </button>
-      <button
-        type="button"
-        class="inline-format-button"
-        :class="{ 'is-active': state.italic }"
-        title="斜体 (Ctrl+I)"
-        @click="toggleMark('italic')"
-      >
-        <em>I</em>
-      </button>
-      <button
-        type="button"
-        class="inline-format-button"
-        :class="{ 'is-active': state.underline }"
-        title="下划线 (Ctrl+U)"
-        @click="toggleMark('underline')"
-      >
-        <span class="underline-icon">U</span>
-      </button>
-      <button
-        type="button"
-        class="inline-format-button"
-        :class="{ 'is-active': state.strike }"
-        title="删除线 (Ctrl+Shift+X)"
-        @click="toggleMark('strike')"
-      >
-        <s>S</s>
-      </button>
-      <span class="inline-format-divider" />
-      <button
-        type="button"
-        class="inline-format-button inline-format-button--color"
-        :class="{ 'is-active': !!state.color || !!state.background, 'is-open': picker }"
-        :style="colorButtonStyle"
-        title="文字颜色与背景色"
-        @click="togglePicker"
-      >
-        <span class="color-icon">A</span>
-      </button>
-
-      <div
-        v-if="picker"
-        class="inline-format-palette"
-      >
-        <div
-          class="inline-format-palette-section"
-          data-kind="color"
-        >
-          <div class="inline-format-palette-label">
-            字体颜色
-          </div>
-          <div class="inline-format-palette-grid">
-            <button
-              type="button"
-              class="inline-format-swatch inline-format-swatch--text inline-format-swatch--default"
-              :class="{ 'is-active': !state.color }"
-              title="默认颜色"
-              @click="applyColor('color', null)"
-            >
-              A
-            </button>
-            <button
-              v-for="entry in INLINE_COLORS"
-              :key="entry.token"
-              type="button"
-              class="inline-format-swatch inline-format-swatch--text"
-              :class="{ 'is-active': state.color === entry.token }"
-              :style="{ color: `var(${entry.token})` }"
-              :title="entry.label"
-              @click="applyColor('color', entry.token)"
-            >
-              A
-            </button>
-          </div>
-        </div>
-
-        <div
-          class="inline-format-palette-section"
-          data-kind="background"
-        >
-          <div class="inline-format-palette-label">
-            背景颜色
-          </div>
-          <div class="inline-format-palette-grid">
-            <button
-              type="button"
-              class="inline-format-swatch inline-format-swatch--none"
-              :class="{ 'is-active': !state.background }"
-              title="无背景色"
-              @click="applyColor('background', null)"
-            />
-            <button
-              v-for="entry in INLINE_COLORS"
-              :key="entry.token"
-              type="button"
-              class="inline-format-swatch"
-              :class="{ 'is-active': state.background === entry.token }"
-              :style="{ backgroundColor: `var(${entry.token})` }"
-              :title="entry.label"
-              @click="applyColor('background', entry.token)"
-            />
-          </div>
-        </div>
-
-        <button
-          type="button"
-          class="inline-format-reset"
-          title="清除文字色与背景色"
-          @click="resetColors"
-        >
-          恢复默认
-        </button>
-      </div>
+      <!-- 公共按钮行：与表格选区浮层是同一个组件（对齐 + B/I/U/S/A 同序同形） -->
+      <SelectionMarkRow
+        :format="state"
+        :align="currentAlign"
+        :open="submenu"
+        @apply-mark="onApplyMark"
+        @toggle-align="(anchor: HTMLElement) => toggleSubmenu('align', anchor)"
+        @toggle-palette="(anchor: HTMLElement) => toggleSubmenu('palette', anchor)"
+      />
     </div>
+
+    <!-- 对齐下拉：与表格选区浮层共用 InlineAlignMenu（上方优先、Esc 只关二级） -->
+    <InlineAlignMenu
+      :open="submenu === 'align'"
+      :anchor="submenuAnchor"
+      :current="currentAlign"
+      @pick="pickAlign"
+      @close="submenu = null"
+    />
+
+    <!-- 取色面板：与表格选区浮层同一套二级浮层规则（挂在 A 按钮上方，不压住选中的文字） -->
+    <FloatingSubmenu
+      :open="submenu === 'palette'"
+      :anchor="submenuAnchor"
+      @close="submenu = null"
+    >
+      <InlineColorPalette
+        :color="state?.color"
+        :background="state?.background"
+        @apply="applyColor"
+        @reset="resetColors"
+      />
+    </FloatingSubmenu>
   </Teleport>
 </template>
 
 <style scoped>
+/* 面板本体：面皮 + 排布。按钮尺寸/配色/激活态在 SelectionMarkRow（与表格浮层同一份）。
+   面皮与选区浮层（BasePopover 面板）同款三层渐变 —— 两个入口的差别只该是菜单项，不该是壳。 */
 .inline-format-toolbar {
   position: fixed;
   z-index: var(--z-popover);
@@ -346,133 +302,12 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 2px;
   padding: 4px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--bg-base);
-  box-shadow: var(--shadow-floating);
-}
-
-.inline-format-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  padding: 0;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: var(--text-sm);
-  line-height: 1;
-  cursor: pointer;
-}
-
-.inline-format-button:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-
-.inline-format-button.is-active,
-.inline-format-button.is-open {
-  background: var(--bg-active);
-  color: var(--text-primary);
-}
-
-.underline-icon {
-  text-decoration: underline;
-}
-
-.color-icon {
-  font-weight: var(--font-semibold);
-}
-
-.inline-format-divider {
-  width: 1px;
-  height: 16px;
-  margin: 0 3px;
-  background: var(--border);
-}
-
-.inline-format-palette {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
-  min-width: 176px;
-  padding: 8px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--bg-base);
-  box-shadow: var(--shadow-floating);
-}
-
-.inline-format-palette-label {
-  margin-bottom: 6px;
-  color: var(--text-tertiary);
-  font-size: var(--text-xs);
-}
-
-.inline-format-palette-section + .inline-format-palette-section {
-  margin-top: 8px;
-}
-
-.inline-format-palette-grid {
-  display: grid;
-  grid-template-columns: repeat(6, 20px);
-  gap: 6px;
-}
-
-.inline-format-swatch {
-  width: 20px;
-  height: 20px;
-  padding: 0;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-}
-
-.inline-format-swatch.is-active {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-
-/* 字体色块用字面 "A" 展示颜色，无填充底 */
-.inline-format-swatch--text {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-color: transparent;
-  background: transparent;
-  font-size: var(--text-sm);
-  font-weight: var(--font-semibold);
-  line-height: 1;
-}
-
-.inline-format-swatch--text:hover {
-  background: var(--bg-hover);
-}
-
-.inline-format-swatch--none {
   background:
-    linear-gradient(to top right, transparent calc(50% - 1px), var(--border-strong) calc(50% - 1px), var(--border-strong) calc(50% + 1px), transparent calc(50% + 1px)),
-    var(--bg-base);
-}
-
-.inline-format-reset {
-  width: 100%;
-  margin-top: 10px;
-  padding: 4px 0;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: var(--text-xs);
-  line-height: 1.4;
-  cursor: pointer;
-}
-
-.inline-format-reset:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
+    var(--corner-glow) padding-box,
+    var(--grad-surface) padding-box,
+    var(--grad-border) border-box;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-floating);
 }
 </style>

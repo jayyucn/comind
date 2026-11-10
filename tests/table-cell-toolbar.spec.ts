@@ -9,6 +9,8 @@
  *    会把「表格之外」的点击当成撤销选区，必须白名单豁免）。
  * 4. 只读态（未激活的渲染态表格）也能拖选并操作：点项时先激活块再执行。
  * 5. 对齐是**逐格**的：只影响选区内的格。
+ * 6. 公共项恒在：对齐 + B/I/U/S/A 在任何选区下都在，且格矩形下按「整格全文」生效；
+ *    动作整段只定一次（全覆盖则整体清掉），不会逐格各判出现半明半暗。
  *
  * 运行：`npm run dev`（已起则复用）后 `npx playwright test tests/table-cell-toolbar.spec.ts`
  */
@@ -58,7 +60,7 @@ function toolbar(page: Page) {
 }
 
 async function toolbarButtonTitles(page: Page) {
-  return page.$$eval('.range-menu .rm-btn', els =>
+  return page.$$eval('.range-menu .sel-btn', els =>
     els.map(el => el.getAttribute('aria-label') ?? el.getAttribute('title') ?? ''),
   )
 }
@@ -81,7 +83,16 @@ test('格选区松手浮出工具条：矩形下不出现行列专属项，合�
   expect(titles).not.toContain('删除列')
 
   // 合并单元格：矩形范围下可用（1×1 时整项隐藏）
-  await expect(page.locator('.range-menu .rm-btn[aria-label="合并单元格"]')).toBeEnabled()
+  await expect(page.locator('.range-menu .sel-btn[aria-label="合并单元格"]')).toBeEnabled()
+
+  // 浮层在**目标上方**：底边贴着选区上沿（左上格），不压住刚框住的格
+  const menuBox = (await toolbar(page).boundingBox())!
+  const anchorBox = (await page
+    .locator('.table-block td[data-row="1"][data-col="0"]')
+    .first()
+    .boundingBox())!
+  expect(anchorBox.y - (menuBox.y + menuBox.height)).toBeGreaterThanOrEqual(0)
+  expect(anchorBox.y - (menuBox.y + menuBox.height)).toBeLessThan(24)
 })
 
 test('对齐：工具条点项不丢选区，且只作用于选区内', async ({ page }) => {
@@ -93,7 +104,7 @@ test('对齐：工具条点项不丢选区，且只作用于选区内', async ({
   await dragCells(page, 1, 0, 2, 1)
   await expect(toolbar(page)).toBeVisible()
 
-  await page.locator('.range-menu .rm-btn[aria-label="对齐方式"]').click()
+  await page.locator('.range-menu .sel-btn[aria-label="对齐方式"]').click()
   await expect(page.locator('.align-menu')).toBeVisible()
   await page.waitForTimeout(150)
 
@@ -139,8 +150,8 @@ test('行条菜单：整行范围下出现删除行与上下移，不出现删�
   expect(titles).not.toContain('删除列')
 
   // 末行：下移不可用（按钮仍在但置灰）
-  await expect(page.locator('.range-menu .rm-btn[aria-label="下移"]')).toBeDisabled()
-  await expect(page.locator('.range-menu .rm-btn[aria-label="上移"]')).toBeEnabled()
+  await expect(page.locator('.range-menu .sel-btn[aria-label="下移"]')).toBeDisabled()
+  await expect(page.locator('.range-menu .sel-btn[aria-label="上移"]')).toBeEnabled()
 })
 
 test('只读态：拖选后点项先激活块再执行', async ({ page }) => {
@@ -157,7 +168,7 @@ test('只读态：拖选后点项先激活块再执行', async ({ page }) => {
   await dragCells(page, 1, 0, 1, 1)
   await expect(toolbar(page)).toBeVisible()
 
-  await page.locator('.range-menu .rm-btn[aria-label="对齐方式"]').click()
+  await page.locator('.range-menu .sel-btn[aria-label="对齐方式"]').click()
   await page.locator('.align-item', { hasText: '右对齐' }).click()
   await page.waitForTimeout(800)
 
@@ -203,7 +214,7 @@ test('对齐二级是真正浮出的独立浮层：点它不关工具条，Esc �
   await dragCells(page, 1, 0, 1, 1)
   await expect(toolbar(page)).toBeVisible()
 
-  const alignBtn = page.locator('.range-menu .rm-btn[aria-label="对齐方式"]')
+  const alignBtn = page.locator('.range-menu .sel-btn[aria-label="对齐方式"]')
   const submenu = page.locator('.align-menu')
 
   await alignBtn.click()
@@ -212,16 +223,16 @@ test('对齐二级是真正浮出的独立浮层：点它不关工具条，Esc �
 
   // ① Teleport 到 body：不是工具条面板的子节点（否则会被 overflow:auto 裁掉）
   expect(await submenu.evaluate(el => !!el.closest('.base-popover'))).toBe(false)
-  // ② z 高于工具条面板，不会被面板盖住
+  // ② z 高于工具条面板，不会被面板盖住（层级挂在 fixed 定位的浮层外壳上）
   expect(await page.evaluate(() => {
-    const menu = document.querySelector('.align-menu') as HTMLElement
+    const menu = document.querySelector('.align-menu')!.closest('.floating-submenu') as HTMLElement
     const panel = document.querySelector('.range-menu')!.closest('.base-popover') as HTMLElement
     return Number(getComputedStyle(menu).zIndex) > Number(getComputedStyle(panel).zIndex)
   })).toBe(true)
-  // ③ 纵向浮出：整体在按钮下方（不是面板内换行的第二行）
+  // ③ 纵向浮出：整体在按钮**上方**（与选区浮层同向叠上去，不压住选中的格）
   const btnBox = await alignBtn.boundingBox()
   const menuBox = await submenu.boundingBox()
-  expect(menuBox!.y).toBeGreaterThan(btnBox!.y + btnBox!.height - 2)
+  expect(menuBox!.y + menuBox!.height).toBeLessThan(btnBox!.y + 2)
   // ④ 三项竖排：左/中/右
   expect(await submenu.locator('.align-item').allInnerTexts()).toEqual(['左对齐', '居中对齐', '右对齐'])
 
@@ -238,4 +249,48 @@ test('对齐二级是真正浮出的独立浮层：点它不关工具条，Esc �
   await page.waitForTimeout(300)
   await expect(submenu).toHaveCount(0)
   await expect(toolbar(page)).toBeVisible()
+})
+
+test('公共项恒在：格矩形下 B/I/U/S 按整格全文生效，再点一次整段清掉', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto('/')
+  await page.waitForSelector('.block', { timeout: 15000 })
+  await createTable(page)
+
+  await dragCells(page, 1, 0, 2, 1)
+  await expect(toolbar(page)).toBeVisible()
+
+  const titles = await toolbarButtonTitles(page)
+  for (const label of ['对齐方式', '加粗', '斜体', '下划线', '删除线', '文字颜色与背景色']) {
+    expect(titles).toContain(label)
+  }
+  // 公共项排在结构项之前：与文本选区那个浮层是同一套顺序，只差后面的项
+  expect(titles.indexOf('加粗')).toBeLessThan(titles.indexOf('复制'))
+
+  const cells: Array<[number, number]> = [[1, 0], [1, 1], [2, 0], [2, 1]]
+  const boldIn = (row: number, col: number) =>
+    page.locator(`.table-block .cell-input[data-row="${row}"][data-col="${col}"] strong`)
+
+  await page.locator('.range-menu .sel-btn[aria-label="加粗"]').click()
+  await page.waitForTimeout(400)
+
+  for (const [row, col] of cells) {
+    await expect(boldIn(row, col)).toHaveCount(1)
+    // 整格全文都带上格式（不是只包住第一个字）
+    expect(await page
+      .locator(`.table-block .cell-input[data-row="${row}"][data-col="${col}"]`)
+      .first()
+      .evaluate(el => {
+        const strong = el.querySelector('strong, b')
+        return strong ? strong.textContent === el.textContent : false
+      })).toBe(true)
+  }
+  // 全覆盖 ⇒ 按钮点亮
+  await expect(page.locator('.range-menu .sel-btn[aria-label="加粗"]')).toHaveClass(/is-on/)
+
+  // 再点一次：整段一起清掉（逐格各判的话这里会剩一半）
+  await page.locator('.range-menu .sel-btn[aria-label="加粗"]').click()
+  await page.waitForTimeout(400)
+  for (const [row, col] of cells) await expect(boldIn(row, col)).toHaveCount(0)
+  await expect(page.locator('.range-menu .sel-btn[aria-label="加粗"]')).not.toHaveClass(/is-on/)
 })
