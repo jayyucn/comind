@@ -8,6 +8,7 @@
  * 本模块保持纯函数（不碰 DOM、不碰 store），供拖拽手势、复制与删除共用。
  */
 
+import type { InlineMarkRange } from '../utils/inline-marks'
 import { alignKey, isCoveredCell, type TableAlign, type TableData } from './table-model'
 
 /** 单元格坐标（0 基，行优先，与 `td[data-row]` / `td[data-col]` 同源） */
@@ -64,15 +65,40 @@ export function cellRangeHasContent(data: TableData, range: CellRange): boolean 
   return false
 }
 
+/**
+ * 丢掉被 `drop` 命中的格的逐格行内格式。
+ *
+ * 文本被整体改写（清空 / 粘贴覆盖）后，原有的格式区间与字符位置不再对应，
+ * 留着会把格式套到新文字的另一段上。全表无格式时连键一起移除，保持 JSON 稳定。
+ */
+function dropCellMarks(
+  data: TableData,
+  drop: (row: number, col: number) => boolean,
+): TableData {
+  if (!data.cellMarks) return data
+  const next: Record<string, InlineMarkRange[]> = {}
+  for (const [key, marks] of Object.entries(data.cellMarks)) {
+    const [row, col] = key.split(':').map(Number)
+    if (drop(row!, col!)) continue
+    next[key] = marks
+  }
+  const { cellMarks: _omitted, ...rest } = data
+  return Object.keys(next).length > 0 ? { ...rest, cellMarks: next } : rest
+}
+
 /** 清空矩形内单元格内容；表结构（行列数、表头标记）保持不变 */
 export function clearCellRange(data: TableData, range: CellRange): TableData {
-  return {
-    ...data,
-    rows: data.rows.map((cells, row) => {
-      if (row < range.row1 || row > range.row2) return cells
-      return cells.map((cell, col) => (col >= range.col1 && col <= range.col2 ? '' : cell))
-    }),
-  }
+  return dropCellMarks(
+    {
+      ...data,
+      rows: data.rows.map((cells, row) => {
+        if (row < range.row1 || row > range.row2) return cells
+        return cells.map((cell, col) => (col >= range.col1 && col <= range.col2 ? '' : cell))
+      }),
+    },
+    (row, col) =>
+      row >= range.row1 && row <= range.row2 && col >= range.col1 && col <= range.col2,
+  )
 }
 
 /**
@@ -101,21 +127,29 @@ export function cellRangeToMatrix(data: TableData, range: CellRange): string[][]
  */
 export function writeRangeIntoData(data: TableData, range: CellRange, matrix: string[][]): TableData {
   if (matrix.length === 0) return data
-  return {
-    ...data,
-    rows: data.rows.map((cells, row) => {
-      if (row < range.row1 || row > range.row2) return cells
-      const source = matrix[row - range.row1]
-      if (!source) return cells
-      return cells.map((cell, col) => {
-        if (col < range.col1 || col > range.col2) return cell
-        // 合并区里被覆盖的格不接收粘贴内容：写进去也看不见，取消合并后会莫名冒出来
-        if (isCoveredCell(data.merges, row, col)) return cell
-        const next = source[col - range.col1]
-        return next === undefined ? cell : next
-      })
-    }),
-  }
+  return dropCellMarks(
+    {
+      ...data,
+      rows: data.rows.map((cells, row) => {
+        if (row < range.row1 || row > range.row2) return cells
+        const source = matrix[row - range.row1]
+        if (!source) return cells
+        return cells.map((cell, col) => {
+          if (col < range.col1 || col > range.col2) return cell
+          // 合并区里被覆盖的格不接收粘贴内容：写进去也看不见，取消合并后会莫名冒出来
+          if (isCoveredCell(data.merges, row, col)) return cell
+          const next = source[col - range.col1]
+          return next === undefined ? cell : next
+        })
+      }),
+    },
+    // 只丢真正被替换掉的格的格式：矩阵够不到的格文本没变，格式也不该丢
+    (row, col) => {
+      if (row < range.row1 || row > range.row2 || col < range.col1 || col > range.col2) return false
+      if (isCoveredCell(data.merges, row, col)) return false
+      return matrix[row - range.row1]?.[col - range.col1] !== undefined
+    },
+  )
 }
 
 /**

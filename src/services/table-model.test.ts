@@ -3,9 +3,11 @@ import { describe, expect, test } from 'vitest'
 import {
   addColumn,
   addColumnToAligns,
+  addColumnToCellMarks,
   addColumnToMerges,
   addRow,
   addRowToAligns,
+  addRowToCellMarks,
   addRowToMerges,
   anchorFor,
   cellAlign,
@@ -21,16 +23,20 @@ import {
   readTableData,
   removeColumn,
   removeColumnFromAligns,
+  removeColumnFromCellMarks,
   removeColumnFromMerges,
   removeRow,
   removeRowFromAligns,
+  removeRowFromCellMarks,
   removeRowFromMerges,
   sanitizeCellText,
   serializeTableGfm,
   serializeTableTsv,
   swapColumnsInAligns,
+  swapColumnsInCellMarks,
   swapColumnsInMerges,
   swapRowsInAligns,
+  swapRowsInCellMarks,
   swapRowsInMerges,
   unmergeRange,
 } from './table-model'
@@ -319,5 +325,70 @@ describe('table-model — 合并单元格', () => {
     const b = mergeRange(a, { row1: 1, col1: 1, row2: 2, col2: 2 })
     expect(isSameTableData(a, a)).toBe(true)
     expect(isSameTableData(a, b)).toBe(false)
+  })
+})
+
+describe('table-model — 单元格行内格式（cellMarks）', () => {
+  const marks = { start: 0, end: 2, bold: true as const }
+
+  test('归一化：丢弃非法键 / 越界坐标 / 空格的格式，偏移按文本长度截断', () => {
+    const data = normalizeTableData({
+      rows: [['ab', 'cd'], ['ef', 'gh']],
+      cellMarks: {
+        '1:1': [{ start: 0, end: 99, bold: true }],
+        '9:9': [{ start: 0, end: 1, bold: true }],
+        bad: [{ start: 0, end: 1, bold: true }],
+        '0:0': [{ start: 1, end: 2, italic: true }],
+      },
+    })
+    expect(data.cellMarks).toEqual({
+      '1:1': [{ start: 0, end: 2, bold: true }],
+      '0:0': [{ start: 1, end: 2, italic: true }],
+    })
+  })
+
+  test('无格式时不写 cellMarks 键（JSON 与旧数据同形）', () => {
+    const data = normalizeTableData({ rows: [['a']], cellMarks: {} })
+    expect('cellMarks' in data).toBe(false)
+  })
+
+  test('行 / 列增删与移动：键跟随坐标重映射', () => {
+    const cellMarks = { '0:0': [marks], '2:1': [marks] }
+    expect(addRowToCellMarks(cellMarks, 1)).toEqual({ '0:0': [marks], '3:1': [marks] })
+    expect(removeRowFromCellMarks(cellMarks, 0)).toEqual({ '1:1': [marks] })
+    expect(addColumnToCellMarks(cellMarks, 1)).toEqual({ '0:0': [marks], '2:2': [marks] })
+    expect(removeColumnFromCellMarks(cellMarks, 0)).toEqual({ '2:0': [marks] })
+    expect(swapRowsInCellMarks({ '0:0': [marks], '1:0': [marks] }, 0, 1)).toEqual({
+      '0:0': [marks],
+      '1:0': [marks],
+    })
+    expect(swapColumnsInCellMarks(cellMarks, 0, 1)).toEqual({ '0:1': [marks], '2:0': [marks] })
+  })
+
+  test('合并：区内格式平移到锚点文本，区外的格原样保留', () => {
+    const data = normalizeTableData({
+      rows: [['x', 'y', 'z'], ['a', 'b', 'c'], ['d', 'e', 'f']],
+      cellMarks: {
+        '0:0': [{ start: 0, end: 1, italic: true }],
+        '1:0': [{ start: 0, end: 1, bold: true }],
+        '1:1': [{ start: 0, end: 1, underline: true }],
+      },
+    })
+    const merged = mergeRange(data, { row1: 1, col1: 0, row2: 1, col2: 1 })
+    // 锚点文本 `a b`：a 加粗、b 下划线，中间空格无格式
+    expect(merged.cellMarks).toEqual({
+      '0:0': [{ start: 0, end: 1, italic: true }],
+      '1:0': [
+        { start: 0, end: 1, bold: true },
+        { start: 2, end: 3, underline: true },
+      ],
+    })
+  })
+
+  test('格式变化参与等价判定（撤销 / 重做依赖它触发重渲染）', () => {
+    const base = normalizeTableData({ rows: [['ab']], cellMarks: { '0:0': [marks] } })
+    const other = normalizeTableData({ rows: [['ab']], cellMarks: { '0:0': [{ ...marks, italic: true }] } })
+    expect(isSameTableData(base, base)).toBe(true)
+    expect(isSameTableData(base, other)).toBe(false)
   })
 })

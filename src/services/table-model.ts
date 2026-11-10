@@ -14,6 +14,7 @@
  *
  * 本模块保持纯函数，供编辑组件、剪贴板与 Markdown 导出共用。
  */
+import { type InlineMarkRange,normalizeInlineMarks } from '../utils/inline-marks'
 
 /** 合并区（闭区间，四边均包含；与 `CellRange` 结构相同）。1×1 不算合并 */
 export interface MergeRect {
@@ -32,6 +33,8 @@ export interface TableData {
   aligns: Record<string, TableAlign>
   /** 合并区列表（有序：按 左上→右下 排序，保证 JSON 比较稳定） */
   merges: MergeRect[]
+  /** 单元格行内格式（可选）：键 `"row:col"`（与对齐键同源），只存有格式的格 */
+  cellMarks?: Record<string, InlineMarkRange[]>
 }
 
 export type TableHeaderAlign = 'left' | 'center' | 'right'
@@ -78,6 +81,7 @@ export function normalizeTableData(value: unknown): TableData {
     headerAlign?: unknown
     aligns?: unknown
     merges?: unknown
+    cellMarks?: unknown
   }
   if (!Array.isArray(candidate.rows) || candidate.rows.length === 0) return createTableData()
 
@@ -88,16 +92,54 @@ export function normalizeTableData(value: unknown): TableData {
   const rows = rawRows.map(row =>
     Array.from({ length: colCount }, (_, i) => String(row[i] ?? '')),
   )
-  return {
-    rows,
-    header: candidate.header !== false,
-    headerAlign:
-      candidate.headerAlign === 'center' || candidate.headerAlign === 'right'
-        ? candidate.headerAlign
-        : 'left',
-    aligns: normalizeAligns(candidate.aligns, rows.length, colCount),
-    merges: normalizeMerges(candidate.merges, rows.length, colCount),
+  return withCellMarks(
+    {
+      rows,
+      header: candidate.header !== false,
+      headerAlign:
+        candidate.headerAlign === 'center' || candidate.headerAlign === 'right'
+          ? candidate.headerAlign
+          : 'left',
+      aligns: normalizeAligns(candidate.aligns, rows.length, colCount),
+      merges: normalizeMerges(candidate.merges, rows.length, colCount),
+    },
+    normalizeCellMarks(candidate.cellMarks, rows),
+  )
+}
+
+/** 只在非空时挂 `cellMarks`：无格式的表格 JSON 保持与旧数据一致 */
+function withCellMarks(
+  data: TableData,
+  cellMarks: Record<string, InlineMarkRange[]>,
+): TableData {
+  if (Object.keys(cellMarks).length === 0) {
+    const { cellMarks: _omitted, ...rest } = data
+    return rest
   }
+  return { ...data, cellMarks }
+}
+
+/**
+ * 逐格行内格式归一化：丢弃非法键/越界坐标，偏移按对应格文本长度截断。
+ * 文本为空的格一定没有格式，直接丢弃。
+ */
+function normalizeCellMarks(
+  value: unknown,
+  rows: string[][],
+): Record<string, InlineMarkRange[]> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  const out: Record<string, InlineMarkRange[]> = {}
+  for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
+    const matched = ALIGN_KEY.exec(key)
+    if (!matched) continue
+    const row = Number(matched[1])
+    const col = Number(matched[2])
+    const text = rows[row]?.[col]
+    if (text === undefined) continue
+    const marks = normalizeInlineMarks(raw, text.length)
+    if (marks.length > 0) out[alignKey(row, col)] = marks
+  }
+  return out
 }
 
 /**
@@ -298,6 +340,51 @@ export function swapColumnsInAligns(aligns: Record<string, TableAlign>, a: numbe
   return remapAligns(aligns, identity, i => (i === a ? b : i === b ? a : i))
 }
 
+// ── 单元格行内格式的坐标重映射 ──────────────────────────────────────
+// 与 `*FromAligns` 同批调用：格式跟着格子走，行列增删移动后不能留在旧坐标上。
+
+function remapCellMarks(
+  cellMarks: Record<string, InlineMarkRange[]> | undefined,
+  rowMap: AxisMap,
+  colMap: AxisMap,
+): Record<string, InlineMarkRange[]> | undefined {
+  if (!cellMarks) return undefined
+  const out: Record<string, InlineMarkRange[]> = {}
+  for (const [key, marks] of Object.entries(cellMarks)) {
+    const [row, col] = key.split(':').map(Number)
+    const nextRow = rowMap(row!)
+    if (nextRow === null) continue
+    const nextCol = colMap(col!)
+    if (nextCol === null) continue
+    out[alignKey(nextRow, nextCol)] = marks.map(mark => ({ ...mark }))
+  }
+  return Object.keys(out).length > 0 ? out : undefined
+}
+
+export function removeRowFromCellMarks(cellMarks: Record<string, InlineMarkRange[]> | undefined, index: number) {
+  return remapCellMarks(cellMarks, i => (i === index ? null : i > index ? i - 1 : i), identity)
+}
+
+export function addRowToCellMarks(cellMarks: Record<string, InlineMarkRange[]> | undefined, index: number) {
+  return remapCellMarks(cellMarks, i => (i >= index ? i + 1 : i), identity)
+}
+
+export function removeColumnFromCellMarks(cellMarks: Record<string, InlineMarkRange[]> | undefined, index: number) {
+  return remapCellMarks(cellMarks, identity, i => (i === index ? null : i > index ? i - 1 : i))
+}
+
+export function addColumnToCellMarks(cellMarks: Record<string, InlineMarkRange[]> | undefined, index: number) {
+  return remapCellMarks(cellMarks, identity, i => (i >= index ? i + 1 : i))
+}
+
+export function swapRowsInCellMarks(cellMarks: Record<string, InlineMarkRange[]> | undefined, a: number, b: number) {
+  return remapCellMarks(cellMarks, i => (i === a ? b : i === b ? a : i), identity)
+}
+
+export function swapColumnsInCellMarks(cellMarks: Record<string, InlineMarkRange[]> | undefined, a: number, b: number) {
+  return remapCellMarks(cellMarks, identity, i => (i === a ? b : i === b ? a : i))
+}
+
 // ── 合并 / 取消合并 ─────────────────────────────────────────────────
 
 function orderedRect(range: MergeRect): MergeRect {
@@ -344,7 +431,55 @@ export function mergeRange(data: TableData, range: MergeRect): TableData {
       return row === rect.row1 && col === rect.col1 ? merged : ''
     })
   })
-  return { ...data, rows, merges: [...rest, rect].sort(compareMergeRects) }
+  return withCellMarks(
+    { ...data, rows, merges: [...rest, rect].sort(compareMergeRects) },
+    mergeCellMarks(data.cellMarks, texts, rect),
+  )
+}
+
+/**
+ * 合并时把区内各格的行内格式平移到拼接后的锚点文本上。
+ * 拼接口径与 `mergeCellTexts` 完全一致（逐格 trim、非空才用空格连接），
+ * 区间先裁进 trim 后的文本再平移。被合并掉的格不再保留格式。
+ */
+function mergeCellMarks(
+  cellMarks: Record<string, InlineMarkRange[]> | undefined,
+  texts: readonly string[],
+  rect: MergeRect,
+): Record<string, InlineMarkRange[]> {
+  if (!cellMarks) return {}
+  // 区外的格保持原样；区内各格（含锚点自己）的格式统一重算后只写回锚点
+  const out: Record<string, InlineMarkRange[]> = {}
+  for (const [key, marks] of Object.entries(cellMarks)) {
+    const matched = ALIGN_KEY.exec(key)
+    if (!matched) continue
+    const row = Number(matched[1])
+    const col = Number(matched[2])
+    if (row >= rect.row1 && row <= rect.row2 && col >= rect.col1 && col <= rect.col2) continue
+    out[key] = marks
+  }
+  const merged: InlineMarkRange[] = []
+  let cursor = 0
+  let index = 0
+  for (let row = rect.row1; row <= rect.row2; row++) {
+    for (let col = rect.col1; col <= rect.col2; col++) {
+      const text = texts[index++] ?? ''
+      const trimmed = text.trim()
+      if (!trimmed) continue
+      const lead = text.length - text.trimStart().length
+      for (const mark of cellMarks[alignKey(row, col)] ?? []) {
+        const start = Math.max(mark.start, lead)
+        const end = Math.min(mark.end, lead + trimmed.length)
+        if (end > start) {
+          merged.push({ ...mark, start: start - lead + cursor, end: end - lead + cursor })
+        }
+      }
+      cursor += trimmed.length + 1
+    }
+  }
+  const marks = normalizeInlineMarks(merged, Math.max(0, cursor - 1))
+  if (marks.length > 0) out[alignKey(rect.row1, rect.col1)] = marks
+  return out
 }
 
 /** 取消合并：删掉所有与矩形相交的合并区。内容留在左上格，不丢 */

@@ -89,7 +89,7 @@ test('操作条：菜单打开期间同类整排保持可见，另一方向仍�
   for (let i = 0; i < 9; i += 1) {
     const row = Math.floor(i / 3)
     const col = i % 3
-    await page.locator(`.table-block textarea[data-row="${row}"][data-col="${col}"]`).first().click()
+    await page.locator(`.table-block .cell-input[data-row="${row}"][data-col="${col}"]`).first().click()
     await page.keyboard.type(`R${row}C${col}`, { delay: 10 })
   }
   await page.waitForTimeout(400)

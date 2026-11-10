@@ -39,9 +39,9 @@ test('编辑态应显示行内文字色', async ({ page }) => {
   await page.keyboard.press('Control+a')
   const toolbar = page.locator('.inline-format-toolbar')
   await expect(toolbar).toBeVisible({ timeout: 4000 })
-  await toolbar.locator('button[title="文字颜色"]').click()
+  await toolbar.locator('button[title="文字颜色与背景色"]').click()
   await toolbar
-    .locator('.inline-format-palette-grid .inline-format-swatch:not(.inline-format-swatch--none)')
+    .locator('.inline-format-palette-section[data-kind="color"] .inline-format-swatch--text:not(.inline-format-swatch--default)')
     .first()
     .click()
   await page.waitForTimeout(400)

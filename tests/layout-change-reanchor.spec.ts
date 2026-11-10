@@ -102,7 +102,7 @@ async function createTable(page: Page) {
   for (let i = 0; i < 9; i += 1) {
     const row = Math.floor(i / 3)
     const col = i % 3
-    await page.locator(`.table-block textarea[data-row="${row}"][data-col="${col}"]`).first().click()
+    await page.locator(`.table-block .cell-input[data-row="${row}"][data-col="${col}"]`).first().click()
     await page.keyboard.type(`R${row}C${col}-padding-content`, { delay: 3 })
   }
   await page.waitForTimeout(400)

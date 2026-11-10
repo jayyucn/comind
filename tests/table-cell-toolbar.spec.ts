@@ -25,7 +25,7 @@ async function createTable(page: Page) {
   for (let i = 0; i < 9; i += 1) {
     const row = Math.floor(i / 3)
     const col = i % 3
-    await page.locator(`.table-block textarea[data-row="${row}"][data-col="${col}"]`).first().click()
+    await page.locator(`.table-block .cell-input[data-row="${row}"][data-col="${col}"]`).first().click()
     await page.keyboard.type(`R${row}C${col}`, { delay: 5 })
   }
   await page.waitForTimeout(400)
@@ -102,7 +102,7 @@ test('对齐：工具条点项不丢选区，且只作用于选区内', async ({
   await page.waitForTimeout(500)
 
   const alignOf = async (row: number, col: number) => page
-    .locator(`.table-block textarea[data-row="${row}"][data-col="${col}"]`)
+    .locator(`.table-block .cell-input[data-row="${row}"][data-col="${col}"]`)
     .first()
     .evaluate(el => getComputedStyle(el).textAlign)
 
@@ -152,7 +152,7 @@ test('只读态：拖选后点项先激活块再执行', async ({ page }) => {
   // 点表格块之外的空白处 → 表格退出编辑态变只读
   await page.keyboard.press('Escape')
   await page.waitForTimeout(600)
-  await expect(page.locator('.table-block textarea')).toHaveCount(0)
+  await expect(page.locator('.table-block .cell-input')).toHaveCount(0)
 
   await dragCells(page, 1, 0, 1, 1)
   await expect(toolbar(page)).toBeVisible()
@@ -161,10 +161,10 @@ test('只读态：拖选后点项先激活块再执行', async ({ page }) => {
   await page.locator('.align-item', { hasText: '右对齐' }).click()
   await page.waitForTimeout(800)
 
-  // 点项后块被激活（textarea 回来），对齐已落在这格上
-  await expect(page.locator('.table-block textarea[data-row="1"][data-col="0"]')).toHaveCount(1)
+  // 点项后块被激活（可编辑区回来），对齐已落在这格上
+  await expect(page.locator('.table-block .cell-input[data-row="1"][data-col="0"]')).toHaveCount(1)
   expect(await page
-    .locator('.table-block textarea[data-row="1"][data-col="0"]')
+    .locator('.table-block .cell-input[data-row="1"][data-col="0"]')
     .first()
     .evaluate(el => getComputedStyle(el).textAlign)).toBe('right')
 })

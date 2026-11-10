@@ -41,7 +41,7 @@ async function focusedCell(page: Page) {
   return page.evaluate(() => {
     const el = document.activeElement as HTMLElement | null
     return {
-      tag: el?.tagName ?? null,
+      cellInput: el?.classList.contains('cell-input') ?? false,
       row: el?.dataset?.row ?? null,
       col: el?.dataset?.col ?? null,
     }
@@ -63,13 +63,13 @@ test.describe('渲染态单击后的光标落点', () => {
     await seedTable(page)
 
     await clickCell(page, 2, 1)
-    expect(await focusedCell(page)).toEqual({ tag: 'TEXTAREA', row: '2', col: '1' })
+    expect(await focusedCell(page)).toEqual({ cellInput: true, row: '2', col: '1' })
 
     // 换一格再点，确认不是「恰好最后一次对」
     await page.mouse.click(5, 5)
     await page.waitForTimeout(400)
     await clickCell(page, 2, 2)
-    expect(await focusedCell(page)).toEqual({ tag: 'TEXTAREA', row: '2', col: '2' })
+    expect(await focusedCell(page)).toEqual({ cellInput: true, row: '2', col: '2' })
   })
 
   test('坐标解析不出格时，也不会把光标抢回首格', async ({ page }) => {
@@ -88,6 +88,6 @@ test.describe('渲染态单击后的光标落点', () => {
     await seedTable(page)
 
     await clickCell(page, 2, 1)
-    expect(await focusedCell(page)).toEqual({ tag: 'TEXTAREA', row: '2', col: '1' })
+    expect(await focusedCell(page)).toEqual({ cellInput: true, row: '2', col: '1' })
   })
 })

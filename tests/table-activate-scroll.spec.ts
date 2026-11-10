@@ -81,7 +81,11 @@ async function scrollToBottom(page: Page) {
 function focusedCell(page: Page) {
   return page.evaluate(() => {
     const el = document.activeElement as HTMLElement | null
-    return { tag: el?.tagName ?? null, row: el?.dataset?.row ?? null, col: el?.dataset?.col ?? null }
+    return {
+      cellInput: el?.classList.contains('cell-input') ?? false,
+      row: el?.dataset?.row ?? null,
+      col: el?.dataset?.col ?? null,
+    }
   })
 }
 
@@ -129,7 +133,7 @@ test.describe('长表格滚动到底部后单击单元格', () => {
     expect(Math.abs(after!.top - before!.top)).toBeLessThanOrEqual(2)
 
     // 2. 光标落在点击的那一格，且点击坐标此刻仍压在同一格上（两者互相印证「没有位移」）
-    expect(await focusedCell(page)).toEqual({ tag: 'TEXTAREA', row: String(lastRow), col: '1' })
+    expect(await focusedCell(page)).toEqual({ cellInput: true, row: String(lastRow), col: '1' })
     expect(await cellAtPoint(page, clickX, clickY)).toEqual({ row: String(lastRow), col: '1' })
   })
 
@@ -165,6 +169,6 @@ test.describe('长表格滚动到底部后单击单元格', () => {
 
     await page.mouse.click(box.x + 30, box.y + box.height / 2)
     await page.waitForTimeout(1200)
-    expect(await focusedCell(page)).toEqual({ tag: 'TEXTAREA', row: String(lastRow), col: '1' })
+    expect(await focusedCell(page)).toEqual({ cellInput: true, row: String(lastRow), col: '1' })
   })
 })

@@ -2,10 +2,11 @@
 /**
  * 表格块（P0）
  *
- * - 编辑态与只读态共用同一个组件：readonly 时渲染纯文本网格，编辑态渲染单元格 textarea
- * - 数据来自 Block.format.table；单元格改动经 500ms 防抖写回 store（焦点变化/结构操作立即落库）
+ * - 编辑态与只读态共用同一个组件：readonly 时渲染带格式的纯文本网格，编辑态渲染 contenteditable 单元格
+ * - 数据来自 Block.format.table；单元格文本与行内格式（`cellMarks`）经 500ms 防抖写回 store
  * - 键盘导航（Enter/Tab/Shift+Tab/方向键/Esc）在单元格内拦截；IME 组合期间不触发
- * - Ctrl+Z / Ctrl+Y 路由到页面唯一撤销栈，禁用 textarea 原生撤销
+ * - Ctrl+Z / Ctrl+Y 路由到页面唯一撤销栈，禁用原生撤销
+ * - 格内文本选区浮现行内格式工具条（`InlineFormatToolbar` 的 detached 模式）
  */
 import type { Editor } from '@tiptap/core'
 import {
@@ -37,6 +38,7 @@ import type { CrossBlockSelection } from '../../../../composables/useCrossBlockS
 import { runUndoOrRedo } from '../../../../composables/useUndoRestore'
 import { writePlainTextToClipboard } from '../../../../services/block-clipboard'
 import { onLayoutChange } from '../../../../services/layout-change'
+import type { SelectionRect } from '../../../../services/selection-geometry'
 import {
   applyAlignToRange,
   type CellRange,
@@ -53,9 +55,11 @@ import { getTableClipboard, hasTableClipboard, setTableClipboard } from '../../.
 import {
   addColumn,
   addColumnToAligns,
+  addColumnToCellMarks,
   addColumnToMerges,
   addRow,
   addRowToAligns,
+  addRowToCellMarks,
   addRowToMerges,
   anchorFor,
   cellAlign,
@@ -66,14 +70,18 @@ import {
   readTableData,
   removeColumn,
   removeColumnFromAligns,
+  removeColumnFromCellMarks,
   removeColumnFromMerges,
   removeRow,
   removeRowFromAligns,
+  removeRowFromCellMarks,
   removeRowFromMerges,
   sanitizeCellText,
   swapColumnsInAligns,
+  swapColumnsInCellMarks,
   swapColumnsInMerges,
   swapRowsInAligns,
+  swapRowsInCellMarks,
   swapRowsInMerges,
   type TableAlign,
   type TableData,
@@ -83,7 +91,20 @@ import {
 import { useBlockStore } from '../../../../stores/blocks'
 import { useEditorStore } from '../../../../stores/editor'
 import { getPrevSibling } from '../../../../utils/block-helpers'
+import {
+  clearInlineMarkRange,
+  type InlineMarkAttrs,
+  type InlineMarkKey,
+  type InlineMarkRange,
+  inlineMarksToHtml,
+  normalizeInlineMarks,
+  rangeColorToken,
+  rangeHasAttr,
+  sameInlineMarks,
+  setInlineMarkRange,
+} from '../../../../utils/inline-marks'
 import BasePopover from '../../../common/BasePopover.vue'
+import InlineFormatToolbar from '../../../InlineFormatToolbar.vue'
 
 const props = defineProps<{
   blockId?: string
@@ -108,11 +129,22 @@ const headerAlign = ref<TableHeaderAlign>(initial.headerAlign)
 const aligns = ref<Record<string, TableAlign>>(initial.aligns)
 /** 合并区：区内内容合并后拼进左上格，被覆盖的格不渲染（没有 DOM） */
 const merges = ref<MergeRect[]>(initial.merges)
+/** 逐格行内格式（稀疏）：键 `"row:col"`，只存有格式的格 */
+const cellMarks = ref<Record<string, InlineMarkRange[]>>(initial.cellMarks ?? {})
+/** 格内文本选区（驱动 detached 模式的行内格式工具条） */
+const cellTextSel = ref<{
+  row: number
+  col: number
+  start: number
+  end: number
+  rect: SelectionRect
+  format: InlineMarkAttrs
+} | null>(null)
 const activeCell = ref<{ row: number; col: number } | null>(null)
 const composing = ref(false)
 const rootEl = ref<HTMLElement | null>(null)
 
-const cellEls = new Map<string, HTMLTextAreaElement>()
+const cellEls = new Map<string, HTMLElement>()
 let saveTimer: number | undefined
 let dirty = false
 // 结构变更会重建单元格 DOM，期间产生的 blur 不应清掉操作条
@@ -168,7 +200,7 @@ const scrollEl = ref<HTMLElement | null>(null)
 
 const cellKey = (row: number, col: number) => `${row}:${col}`
 
-function setCellEl(row: number, col: number, el: HTMLTextAreaElement | null) {
+function setCellEl(row: number, col: number, el: HTMLElement | null) {
   const key = cellKey(row, col)
   if (el) cellEls.set(key, el)
   else cellEls.delete(key)
@@ -178,45 +210,211 @@ function isActiveCell(row: number, col: number): boolean {
   return activeCell.value?.row === row && activeCell.value?.col === col
 }
 
-function autoResize(el: HTMLTextAreaElement) {
-  el.style.height = 'auto'
-  const height = el.scrollHeight
-  // 祖先 display:none 时 scrollHeight 恒为 0：此时别把高度写成 0，留着下次可见时重量
-  if (!height) return
-  el.style.height = `${height}px`
+function marksAt(row: number, col: number): InlineMarkRange[] {
+  return cellMarks.value[cellKey(row, col)] ?? []
+}
+
+function setMarksAt(row: number, col: number, marks: InlineMarkRange[]) {
+  const key = cellKey(row, col)
+  if (marks.length === 0) {
+    if (!(key in cellMarks.value)) return
+    const next = { ...cellMarks.value }
+    delete next[key]
+    cellMarks.value = next
+    return
+  }
+  cellMarks.value = { ...cellMarks.value, [key]: marks }
+}
+
+/** 落库用的稀疏副本（空表不写键，保证 JSON 与旧数据同形） */
+function cellMarksSnapshot(): Record<string, InlineMarkRange[]> | undefined {
+  const entries = Object.entries(cellMarks.value)
+  if (entries.length === 0) return undefined
+  return Object.fromEntries(entries.map(([key, marks]) => [key, marks.map(mark => ({ ...mark }))]))
+}
+
+/** 只读态渲染用：纯文本 + 行内格式 → 已转义的 HTML */
+function cellHtml(row: number, col: number): string {
+  return inlineMarksToHtml(rows.value[row]?.[col] ?? '', marksAt(row, col))
 }
 
 /**
- * 把一行的输入框统一拉到该行**最高内容**的高度。
+ * 从格内 DOM 反推行内格式。
+ *
+ * contenteditable 是格式的唯一真源：用户输入、原生 Ctrl+B、我们自己的重写都会落到 DOM 上，
+ * 再从这里读回区间存进 `cellMarks`。识别口径与 `inlineMarksToHtml` 的产出严格对称
+ * （`strong/b`、`em/i`、`u`、`s/strike/del`、`data-inline-color`、`data-inline-bg`）。
+ */
+function readMarksFromDom(el: HTMLElement): InlineMarkRange[] {
+  const out: InlineMarkRange[] = []
+  let offset = 0
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+  let node = walker.nextNode() as Text | null
+  while (node) {
+    const length = node.nodeValue?.length ?? 0
+    if (length > 0) {
+      const attrs = attrsFromAncestors(node.parentElement, el)
+      if (attrs) {
+        const previous = out[out.length - 1]
+        if (previous && previous.end === offset && sameMarkAttrs(previous, attrs)) previous.end = offset + length
+        else out.push({ start: offset, end: offset + length, ...attrs })
+      }
+      offset += length
+    }
+    node = walker.nextNode() as Text | null
+  }
+  return normalizeInlineMarks(out, offset)
+}
+
+function attrsFromAncestors(node: HTMLElement | null, root: HTMLElement): InlineMarkAttrs | null {
+  const attrs: InlineMarkAttrs = {}
+  let current: HTMLElement | null = node
+  while (current && current !== root) {
+    const tag = current.tagName
+    if (tag === 'STRONG' || tag === 'B') attrs.bold = true
+    else if (tag === 'EM' || tag === 'I') attrs.italic = true
+    else if (tag === 'U') attrs.underline = true
+    else if (tag === 'S' || tag === 'STRIKE' || tag === 'DEL') attrs.strike = true
+    const color = current.dataset?.inlineColor
+    if (color) attrs.color = color
+    const background = current.dataset?.inlineBg
+    if (background) attrs.background = background
+    current = current.parentElement
+  }
+  return Object.keys(attrs).length > 0 ? attrs : null
+}
+
+function sameMarkAttrs(a: InlineMarkAttrs, b: InlineMarkAttrs): boolean {
+  return a.bold === b.bold
+    && a.italic === b.italic
+    && a.underline === b.underline
+    && a.strike === b.strike
+    && a.color === b.color
+    && a.background === b.background
+}
+
+/** 用当前 `rows` + `cellMarks` 重写格内 HTML；内容已一致时不动 DOM（保住光标） */
+function renderCell(el: HTMLElement, row: number, col: number) {
+  const text = rows.value[row]?.[col] ?? ''
+  const marks = marksAt(row, col)
+  if ((el.textContent ?? '') === text && sameInlineMarks(readMarksFromDom(el), marks)) return
+  el.innerHTML = inlineMarksToHtml(text, marks)
+}
+
+/** 外部数据写入后把所有格的 HTML 拉回与状态一致（结构变更重建的新格也得补内容） */
+function syncAllCells() {
+  if (props.readonly) return
+  for (const [key, el] of cellEls) {
+    const [row, col] = key.split(':').map(Number)
+    if (row === undefined || col === undefined) continue
+    renderCell(el, row, col)
+  }
+}
+
+/** 同步 DOM 内容后重量行高（两态同高依赖它） */
+function refreshCells() {
+  syncAllCells()
+  resizeAllCells()
+}
+
+function autoResize(el: HTMLElement) {
+  // contenteditable 按内容自然长高；先清掉上一轮的对齐高度，才能量到本格自身的内容高
+  el.style.minHeight = ''
+}
+
+/**
+ * 把一行的单元格统一拉到该行**最高内容**的高度。
  *
  * 行高由行内最高的那一格决定。矮格若只按自身内容高，格子下方就留一块「点不到光标」的死区：
- * 那一带的 mousedown 命中 `<td>` 而不是输入框，走的是格选区手势 —— 同一张表里
- * 「点得进去」的范围随内容长短变化，手感很怪。拉满之后整格都是输入框，点在哪儿落哪儿。
+ * 那一带的 mousedown 命中 `<td>` 而不是单元格，走的是格选区手势 —— 同一张表里
+ * 「点得进去」的范围随内容长短变化，手感很怪。拉满之后整格都是可编辑区，点在哪儿落哪儿。
  *
  * 同值重设不产生布局变更，所以这里不会把 ResizeObserver 顶成自激循环。
  */
 function fitRowHeights(tr: Element | null | undefined) {
-  const inputs = tr?.querySelectorAll<HTMLTextAreaElement>('textarea.cell-input')
+  const inputs = tr?.querySelectorAll<HTMLElement>('.cell-input')
   if (!inputs?.length) return
   let tallest = 0
   for (const el of inputs) {
     autoResize(el)
-    tallest = Math.max(tallest, el.scrollHeight)
+    tallest = Math.max(tallest, el.offsetHeight)
   }
   if (!tallest) return
-  for (const el of inputs) el.style.height = `${tallest}px`
+  for (const el of inputs) el.style.minHeight = `${tallest}px`
 }
 
 /**
  * 全表重算单元格高度。
  *
- * textarea 不会自己长高（`rows="1"` + `overflow:hidden`），高度全靠 `autoResize` 手写；
- * 渲染态用的是 `<span>`，浏览器按内容自然撑开。两态同高只有在「每次可能改变折行数或字号的
- * 变更之后，把每一格都重量一遍」时才成立 —— 漏一处就是「编辑态比渲染态矮、折行文字被裁」。
+ * contenteditable 按内容自然撑开，但「拉满整行」这一步仍需手写；渲染态用的是 `<div>`，
+ * 两态同高只有在「每次可能改变折行数或字号的变更之后，把每一格都重量一遍」时才成立 ——
+ * 漏一处就是「编辑态比渲染态矮、折行文字被裁」。
  */
 function resizeAllCells() {
   if (props.readonly || !tableEl.value) return
   for (const tr of tableEl.value.querySelectorAll('tr')) fitRowHeights(tr)
+}
+
+// ── 格内字符偏移 ↔ DOM 坐标 ───────────────────────────────────────
+
+/** 节点（文本节点或元素）对应的格内字符偏移（UTF-16） */
+function textOffsetInCell(el: HTMLElement, container: Node, offset: number): number | null {
+  if (!el.contains(container)) return null
+  const probe = document.createRange()
+  probe.selectNodeContents(el)
+  try {
+    probe.setEnd(container, offset)
+  } catch {
+    return null
+  }
+  return probe.toString().length
+}
+
+/** 折叠光标所在的格内偏移（选区非折叠或不在格内 → null） */
+function caretOffsetInCell(el: HTMLElement): number | null {
+  const selection = window.getSelection()
+  if (!selection || selection.rangeCount === 0 || !selection.isCollapsed) return null
+  const node = selection.focusNode
+  if (!node) return null
+  return textOffsetInCell(el, node, selection.focusOffset)
+}
+
+/** 偏移 → 文本节点落点；格内无文本时落到元素自身 */
+function locateTextOffset(el: HTMLElement, offset: number): { node: Node; offset: number } {
+  let remaining = Math.max(0, offset)
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+  let node = walker.nextNode() as Text | null
+  let last: Text | null = null
+  while (node) {
+    last = node
+    if (remaining <= node.length) return { node, offset: remaining }
+    remaining -= node.length
+    node = walker.nextNode() as Text | null
+  }
+  return last ? { node: last, offset: last.length } : { node: el, offset: 0 }
+}
+
+function setCaretInCell(el: HTMLElement, offset: number) {
+  const point = locateTextOffset(el, offset)
+  const range = document.createRange()
+  range.setStart(point.node, point.node === el ? 0 : point.offset)
+  range.collapse(true)
+  const selection = window.getSelection()
+  if (!selection) return
+  selection.removeAllRanges()
+  selection.addRange(range)
+}
+
+function selectCellText(el: HTMLElement, start: number, end: number) {
+  const from = locateTextOffset(el, start)
+  const to = locateTextOffset(el, end)
+  const range = document.createRange()
+  range.setStart(from.node, from.node === el ? 0 : from.offset)
+  range.setEnd(to.node, to.node === el ? 0 : to.offset)
+  const selection = window.getSelection()
+  if (!selection) return
+  selection.removeAllRanges()
+  selection.addRange(range)
 }
 
 function focusCell(row: number, col: number, caret: 'start' | 'end' = 'end') {
@@ -227,7 +425,7 @@ function focusCell(row: number, col: number, caret: 'start' | 'end' = 'end') {
     row: Math.min(Math.max(0, row), maxRow),
     col: Math.min(Math.max(0, col), maxCol),
   }
-  // 被合并覆盖的格没有 textarea：焦点落到所属合并区的左上格
+  // 被合并覆盖的格没有编辑区：焦点落到所属合并区的左上格
   const { row: r, col: c } = anchorFor(merges.value, clamped.row, clamped.col)
   activeCell.value = { row: r, col: c }
   restoringFocus = true
@@ -236,8 +434,8 @@ function focusCell(row: number, col: number, caret: 'start' | 'end' = 'end') {
     restoringFocus = false
     if (!el) return
     el.focus()
-    const pos = caret === 'start' ? 0 : el.value.length
-    el.setSelectionRange(pos, pos)
+    const length = (rows.value[r]?.[c] ?? '').length
+    setCaretInCell(el, caret === 'start' ? 0 : length)
     fitRowHeights(el.closest('tr'))
   })
 }
@@ -311,6 +509,7 @@ function scheduleSave() {
 function flushSave() {
   if (!dirty || !props.blockId) return
   dirty = false
+  const marks = cellMarksSnapshot()
   void blockStore.updateBlockFormat(props.blockId, {
     table: {
       rows: rows.value.map(row => [...row]),
@@ -318,6 +517,7 @@ function flushSave() {
       headerAlign: headerAlign.value,
       aligns: { ...aligns.value },
       merges: merges.value.map(rect => ({ ...rect })),
+      ...(marks ? { cellMarks: marks } : {}),
     },
   })
 }
@@ -326,8 +526,8 @@ function flushSave() {
 function persist() {
   dirty = true
   flushSave()
-  // 结构 / 内容整体替换会改变折行数，且重建 DOM 的格会退回 `rows="1"` 的一行高
-  void nextTick(resizeAllCells)
+  // 结构 / 内容整体替换会改变折行数，且重建 DOM 的格需要补内容并重量行高
+  void nextTick(refreshCells)
 }
 
 /** 当前表格数据快照（纯函数层的入参） */
@@ -337,15 +537,17 @@ const dataSnapshot = computed<TableData>(() => ({
   headerAlign: headerAlign.value,
   aligns: aligns.value,
   merges: merges.value,
+  cellMarks: cellMarksSnapshot(),
 }))
 
-/** 写入一份新的表格数据快照（内容 / 表头 / 对齐一起落库） */
+/** 写入一份新的表格数据快照（内容 / 表头 / 对齐 / 行内格式一起落库） */
 function applyData(next: TableData) {
   rows.value = next.rows
   header.value = next.header
   headerAlign.value = next.headerAlign
   aligns.value = next.aligns
   merges.value = next.merges
+  cellMarks.value = next.cellMarks ?? {}
   // 活动格可能被新合并区覆盖（没有 DOM）：归一到合并区左上角
   const active = activeCell.value
   if (active) activeCell.value = anchorFor(next.merges, active.row, active.col)
@@ -368,18 +570,36 @@ watch(
     headerAlign.value = incoming.headerAlign
     aligns.value = incoming.aligns
     merges.value = incoming.merges
+    cellMarks.value = incoming.cellMarks ?? {}
     const active = activeCell.value
     if (active) activeCell.value = anchorFor(incoming.merges, active.row, active.col)
-    // 撤销 / 重做 / 其他入口写入的文本长度可能变，行高必须跟着重量
-    void nextTick(resizeAllCells)
+    // 撤销 / 重做 / 其他入口写入的文本与格式都可能变，DOM 内容与行高必须一起重量
+    void nextTick(refreshCells)
   },
 )
 
 // ── 单元格输入 ─────────────────────────────────────────────────────
 
 function onCellInput(row: number, col: number, e: Event) {
-  const el = e.target as HTMLTextAreaElement
-  rows.value[row][col] = el.value
+  const el = e.currentTarget as HTMLElement
+  const raw = el.textContent ?? ''
+  // IME 组合期间不改写 DOM：动 innerHTML 会打断候选窗
+  if (composing.value) {
+    rows.value[row][col] = sanitizeCellText(raw)
+    return
+  }
+  const text = sanitizeCellText(raw)
+  if (text !== raw) {
+    const caret = caretOffsetInCell(el) ?? text.length
+    el.textContent = text
+    setCaretInCell(el, Math.min(caret, text.length))
+  }
+  // 删空的格留 `<br>` 会让 `:empty` 占位失效：清成真正的空节点
+  if (text.length === 0 && el.childNodes.length > 0) {
+    el.innerHTML = ''
+  }
+  rows.value[row][col] = text
+  setMarksAt(row, col, readMarksFromDom(el))
   // 本格变高/变矮都会牵动整行：同行其它格必须一起拉到新的行高
   fitRowHeights(el.closest('tr'))
   scheduleSave()
@@ -390,18 +610,12 @@ function onCellPaste(e: ClipboardEvent) {
   const text = e.clipboardData?.getData('text/plain')
   if (text === undefined) return
   e.preventDefault()
-  const el = e.target as HTMLTextAreaElement
+  const el = e.currentTarget as HTMLElement
   const clean = sanitizeCellText(text)
-  const start = el.selectionStart
-  const end = el.selectionEnd
-  const next = el.value.slice(0, start) + clean + el.value.slice(end)
-  rows.value[Number(el.dataset.row)]![Number(el.dataset.col)] = next
-  void nextTick(() => {
-    const pos = start + clean.length
-    el.setSelectionRange(pos, pos)
-    fitRowHeights(el.closest('tr'))
-  })
-  scheduleSave()
+  // 走原生插入：保留光标位置与 IME 状态，input 事件再统一回写文本与格式
+  el.focus()
+  document.execCommand('insertText', false, clean)
+  fitRowHeights(el.closest('tr'))
 }
 
 function onCompositionStart() {
@@ -435,6 +649,26 @@ function onCellKeydown(row: number, col: number, e: KeyboardEvent) {
       void runUndoOrRedo(pageId, redo ? 'redo' : 'undo')
     }
     return
+  }
+
+  // 有文本选区时接管格式快捷键：工具条的写入路径是「重写 innerHTML + 存区间」，
+  // 原生 execCommand 产出的标签不保证能被格式模型读回，统一走自己的那条路
+  if (mod && !e.altKey) {
+    const key = e.key.toLowerCase()
+    const mark: InlineMarkKey | null = !e.shiftKey && key === 'b'
+      ? 'bold'
+      : !e.shiftKey && key === 'i'
+        ? 'italic'
+        : !e.shiftKey && key === 'u'
+          ? 'underline'
+          : e.shiftKey && key === 'x'
+            ? 'strike'
+            : null
+    if (mark && captureCellTextSelection()) {
+      e.preventDefault()
+      applyCellMark(mark, null)
+      return
+    }
   }
 
   if (e.key === 'Enter') {
@@ -499,9 +733,11 @@ function onCellKeydown(row: number, col: number, e: KeyboardEvent) {
     return
   }
 
-  const el = e.currentTarget as HTMLTextAreaElement
-  const atStart = el.selectionStart === 0 && el.selectionEnd === 0
-  const atEnd = el.selectionStart === el.value.length && el.selectionEnd === el.value.length
+  const el = e.currentTarget as HTMLElement
+  const caret = caretOffsetInCell(el)
+  const length = (rows.value[row]?.[col] ?? '').length
+  const atStart = caret === 0
+  const atEnd = caret !== null && caret === length
 
   if (e.key === 'ArrowLeft' && atStart) {
     e.preventDefault()
@@ -517,6 +753,104 @@ function onCellKeydown(row: number, col: number, e: KeyboardEvent) {
     if (right) focusCell(right.row, right.col, 'start')
     else if (row + 1 < rows.value.length) focusCell(row + 1, 0, 'start')
   }
+}
+
+// ── 格内文本选区的行内格式 ─────────────────────────────────────────
+
+/** 文本节点 / 元素所属的单元格 */
+function cellInputOf(node: Node | null): HTMLElement | null {
+  if (!node) return null
+  const el = node.nodeType === Node.TEXT_NODE ? node.parentElement : (node as HTMLElement)
+  const found = el?.closest?.('.cell-input')
+  return found instanceof HTMLElement ? found : null
+}
+
+/**
+ * 读取当前格内文本选区，并同步工具条状态。
+ *
+ * 只认「起止点在同一格内、且非折叠」的选区：跨格的原生选区由格选区手势接管，
+ * 这里的格式模型是按格存的，跨格没有可写的目标。
+ */
+function captureCellTextSelection() {
+  const clear = () => {
+    if (cellTextSel.value) cellTextSel.value = null
+    return null
+  }
+  if (props.readonly) return clear()
+  const selection = window.getSelection()
+  if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return clear()
+  const range = selection.getRangeAt(0)
+  const el = cellInputOf(range.startContainer)
+  if (!el || el !== cellInputOf(range.endContainer) || !tableEl.value?.contains(el)) return clear()
+  const row = Number(el.dataset.row)
+  const col = Number(el.dataset.col)
+  if (!Number.isFinite(row) || !Number.isFinite(col)) return clear()
+  const start = textOffsetInCell(el, range.startContainer, range.startOffset)
+  const end = textOffsetInCell(el, range.endContainer, range.endOffset)
+  if (start === null || end === null || end <= start) return clear()
+
+  const text = rows.value[row]?.[col] ?? ''
+  const marks = normalizeInlineMarks(readMarksFromDom(el), text.length)
+  const format: InlineMarkAttrs = {}
+  for (const key of ['bold', 'italic', 'underline', 'strike'] as const) {
+    if (rangeHasAttr(marks, start, end, key, text.length)) format[key] = true
+  }
+  const color = rangeColorToken(marks, start, end, 'color', text.length)
+  if (color) format.color = color
+  const background = rangeColorToken(marks, start, end, 'background', text.length)
+  if (background) format.background = background
+
+  const box = range.getClientRects()[0] ?? range.getBoundingClientRect()
+  cellTextSel.value = {
+    row,
+    col,
+    start,
+    end,
+    rect: { left: box.left, top: box.top, width: box.width, height: box.height },
+    format,
+  }
+  return cellTextSel.value
+}
+
+function onSelectionChange() {
+  captureCellTextSelection()
+}
+
+/** 工具条动作：把格式写进 `cellMarks`，重写该格 HTML 后恢复原选区 */
+function applyCellMark(key: InlineMarkKey, token: string | null) {
+  const active = captureCellTextSelection()
+  if (!active) return
+  const el = cellEls.get(cellKey(active.row, active.col))
+  if (!el) return
+  const text = rows.value[active.row]?.[active.col] ?? ''
+  const from = Math.min(active.start, text.length)
+  const to = Math.min(active.end, text.length)
+  if (to <= from) return
+
+  const marks = normalizeInlineMarks(readMarksFromDom(el), text.length)
+  let next: InlineMarkRange[]
+  if (key === 'color' || key === 'background') {
+    const current = rangeColorToken(marks, from, to, key, text.length)
+    if (token && current !== token) {
+      const patch: InlineMarkAttrs = {}
+      patch[key] = token
+      next = setInlineMarkRange(marks, from, to, patch, text.length)
+    } else {
+      next = clearInlineMarkRange(marks, from, to, [key], text.length)
+    }
+  } else if (rangeHasAttr(marks, from, to, key, text.length)) {
+    next = clearInlineMarkRange(marks, from, to, [key], text.length)
+  } else {
+    const patch: InlineMarkAttrs = {}
+    patch[key] = true
+    next = setInlineMarkRange(marks, from, to, patch, text.length)
+  }
+
+  if (sameInlineMarks(marks, next)) return
+  setMarksAt(active.row, active.col, next)
+  renderCell(el, active.row, active.col)
+  selectCellText(el, from, to)
+  scheduleSave()
 }
 
 // ── 结构操作 ──────────────────────────────────────────────────────
@@ -1133,6 +1467,7 @@ function alignRange(range: CellRange, align: TableAlign) {
 function removeRowAt(index: number) {
   if (rows.value.length > 1) {
     aligns.value = removeRowFromAligns(aligns.value, index)
+    cellMarks.value = removeRowFromCellMarks(cellMarks.value, index) ?? {}
     // 撞到合并区直接拆开（禁止会让人删不掉行）
     merges.value = removeRowFromMerges(merges.value, index)
   }
@@ -1142,6 +1477,7 @@ function removeRowAt(index: number) {
 function removeColumnAt(index: number) {
   if (cols.value > 1) {
     aligns.value = removeColumnFromAligns(aligns.value, index)
+    cellMarks.value = removeColumnFromCellMarks(cellMarks.value, index) ?? {}
     merges.value = removeColumnFromMerges(merges.value, index)
   }
   rows.value = removeColumn(rows.value, index)
@@ -1169,6 +1505,7 @@ function moveRowInRange(range: CellRange, delta: -1 | 1) {
   if (delta < 0 && index <= bodyStart.value) return
   if (delta > 0 && index >= rows.value.length - 1) return
   aligns.value = swapRowsInAligns(aligns.value, index, index + delta)
+  cellMarks.value = swapRowsInCellMarks(cellMarks.value, index, index + delta) ?? {}
   merges.value = swapRowsInMerges(merges.value, index, index + delta)
   swapRows(index, index + delta)
   followActiveRow(index, index + delta)
@@ -1182,6 +1519,7 @@ function moveColumnInRange(range: CellRange, delta: -1 | 1) {
   if (delta < 0 && index <= 0) return
   if (delta > 0 && index >= cols.value - 1) return
   aligns.value = swapColumnsInAligns(aligns.value, index, index + delta)
+  cellMarks.value = swapColumnsInCellMarks(cellMarks.value, index, index + delta) ?? {}
   merges.value = swapColumnsInMerges(merges.value, index, index + delta)
   swapCols(index, index + delta)
   followActiveCol(index, index + delta)
@@ -1267,26 +1605,22 @@ function cellAtPoint(x: number, y: number): CellRef | null {
 }
 
 /**
- * 出格后清掉浏览器原生文本选区，并撤掉格内 textarea 的焦点。
+ * 出格后清掉浏览器原生文本选区，并撤掉格内可编辑区的焦点。
  *
- * 两段式的分界线就在这里：格内的高亮归浏览器原生选择（渲染态 span / 编辑态 textarea），
+ * 两段式的分界线就在这里：格内的高亮归浏览器原生选择（渲染态 div / 编辑态 contenteditable），
  * 一旦跨出起点格，跨格的原生区间必须立刻收掉，否则它会和整格色块同时画出
  * 「B 格文字被选中」的假象——这正是本次要修的现象本身。
  *
- * 焦点必须一并撤：只要起点格的 textarea 还持焦，浏览器每次 mousemove 都要刷新它的
+ * 焦点必须一并撤：只要起点格的可编辑区还持焦，浏览器每次 mousemove 都要刷新它的
  * 原生选区，输入法工具栏（候选窗 / 软键盘）就被反复唤醒、一直闪。整格选区不需要格内光标。
  * 撤焦还有个必要副作用——键盘事件的 target 落回 body，BlockList 的文档级分派表才接得住
- * Ctrl+C / Delete（焦点在输入控件里会被 `isInEditableInput` 豁免掉，格选区反倒吃不到键）。
+ * Ctrl+C / Delete（焦点在可编辑控件里会被 `isInEditableInput` 豁免掉，格选区反倒吃不到键）。
  */
 function dropNativeTextSelection() {
   window.getSelection()?.removeAllRanges()
-  const active = document.activeElement as HTMLTextAreaElement | null
-  if (active?.tagName !== 'TEXTAREA' || !tableEl.value?.contains(active)) return
-  try {
-    active.setSelectionRange(0, 0)
-  } catch {
-    /* 非文本控件 */
-  }
+  const active = document.activeElement
+  if (!(active instanceof HTMLElement) || !active.classList.contains('cell-input')) return
+  if (!tableEl.value?.contains(active)) return
   // 先落库再失焦：blur 会触发 onCellBlur 的 flushSave，这里提前显式落一次，
   // 避免拖拽末尾敲的几个字卡在「失焦 → 手势收尾」之间没写下去。
   flushSave()
@@ -1407,6 +1741,8 @@ watch(
   () => props.readonly,
   (readonly) => {
     if (readonly) return
+    // 渲染态的 `.cell-text` 换成空的可编辑区：先补内容（focusCell 的选区不能被重写清掉）
+    void nextTick(refreshCells)
     const cell = editorStore.consumeTableCellFocus(props.blockId)
     if (cell) {
       handoffApplied = true
@@ -1721,6 +2057,7 @@ const rowGuideStyle = computed(() => {
 function insertRowAt(index: number) {
   const insertAt = index + 1
   aligns.value = addRowToAligns(aligns.value, insertAt)
+  cellMarks.value = addRowToCellMarks(cellMarks.value, insertAt) ?? {}
   merges.value = addRowToMerges(merges.value, insertAt)
   rows.value = addRow(rows.value, insertAt)
   const cell = activeCell.value
@@ -1740,6 +2077,7 @@ function insertRowAt(index: number) {
 function insertColumnAt(index: number) {
   const insertAt = index + 1
   aligns.value = addColumnToAligns(aligns.value, insertAt)
+  cellMarks.value = addColumnToCellMarks(cellMarks.value, insertAt) ?? {}
   merges.value = addColumnToMerges(merges.value, insertAt)
   rows.value = addColumn(rows.value, insertAt)
   const cell = activeCell.value
@@ -1765,6 +2103,8 @@ function onRootClick(e: MouseEvent) {
 let resizeObserver: ResizeObserver | undefined
 
 onMounted(() => {
+  // 先把文本 / 格式灌进各格，再落光标：重写 innerHTML 会清掉刚设好的选区
+  refreshCells()
   if (!props.readonly) {
     // 渲染态单击某格激活时，要落的是**那一格**，不是首格（坐标由 store 交接，见 onCellDragEnd）
     const target = editorStore.consumeTableCellFocus(props.blockId)
@@ -1776,7 +2116,7 @@ onMounted(() => {
     }
   }
   void nextTick(() => {
-    // 挂载这一帧所有格都是 `rows="1"` 的一行高：先全量重量，再量条几何
+    // 挂载这一帧所有格都还没对齐行高：先全量重量，再量条几何
     resizeAllCells()
     measureStrips()
     // 高度重量回来之后再还原滚动位置：塌陷那一帧浏览器已经把 scrollTop 钳掉了（见 pendingTableScroll）
@@ -1787,6 +2127,8 @@ onMounted(() => {
     }
   })
   window.addEventListener('resize', measureStrips)
+  // 格内文本选区驱动行内格式工具条（工具条只在非折叠选区出现）
+  document.addEventListener('selectionchange', onSelectionChange)
   // 点表格之外任意位置撤销格选区（表格内的点击由 onCellMouseDown 重新起选）
   document.addEventListener('mousedown', onDocMouseDownCapture, true)
   if (typeof ResizeObserver !== 'undefined') {
@@ -1817,6 +2159,7 @@ onBeforeUnmount(() => {
     if (scroller) editorStore.setTableScroll(props.blockId ?? '', scroller.scrollTop)
   }
   window.removeEventListener('resize', measureStrips)
+  document.removeEventListener('selectionchange', onSelectionChange)
   document.removeEventListener('mousedown', onDocMouseDownCapture, true)
   document.removeEventListener('mousemove', onCellDragMove)
   document.removeEventListener('mouseup', onCellDragEnd)
@@ -2317,13 +2660,13 @@ defineExpose({
               :data-row="0"
               :data-col="cell.col"
             >
-              <textarea
+              <div
                 v-if="!readonly"
-                :ref="el => setCellEl(0, cell.col, el as unknown as HTMLTextAreaElement | null)"
-                :value="cell.text"
+                :ref="el => setCellEl(0, cell.col, el as HTMLElement | null)"
                 class="cell-input"
-                rows="1"
-                placeholder="列名"
+                contenteditable="true"
+                role="textbox"
+                data-placeholder="列名"
                 :style="{ textAlign: alignAt(0, cell.col) }"
                 :data-row="0"
                 :data-col="cell.col"
@@ -2335,12 +2678,13 @@ defineExpose({
                 @compositionstart="onCompositionStart"
                 @compositionend="onCompositionEnd"
               />
-              <span
+              <div
                 v-else
                 class="cell-text"
                 :class="{ 'is-placeholder': !cell.text }"
                 :style="{ textAlign: alignAt(0, cell.col) }"
-              >{{ cell.text }}</span>
+                v-html="cellHtml(0, cell.col)"
+              />
               <button
                 type="button"
                 class="cell-corner"
@@ -2366,12 +2710,12 @@ defineExpose({
               :data-row="rowIndex"
               :data-col="cell.col"
             >
-              <textarea
+              <div
                 v-if="!readonly"
-                :ref="el => setCellEl(rowIndex, cell.col, el as unknown as HTMLTextAreaElement | null)"
-                :value="cell.text"
+                :ref="el => setCellEl(rowIndex, cell.col, el as HTMLElement | null)"
                 class="cell-input"
-                rows="1"
+                contenteditable="true"
+                role="textbox"
                 :style="{ textAlign: alignAt(rowIndex, cell.col) }"
                 :data-row="rowIndex"
                 :data-col="cell.col"
@@ -2383,11 +2727,12 @@ defineExpose({
                 @compositionstart="onCompositionStart"
                 @compositionend="onCompositionEnd"
               />
-              <span
+              <div
                 v-else
                 class="cell-text"
                 :style="{ textAlign: alignAt(rowIndex, cell.col) }"
-              >{{ cell.text }}</span>
+                v-html="cellHtml(rowIndex, cell.col)"
+              />
               <button
                 type="button"
                 class="cell-corner"
@@ -2430,6 +2775,14 @@ defineExpose({
       @pointermove="onHScrollPointerMove"
       @pointerup="onHScrollPointerEnd"
       @pointercancel="onHScrollPointerEnd"
+    />
+
+    <!-- 格内文本选区的行内格式工具条（detached：选区是浏览器原生的，不依赖 TipTap 编辑器） -->
+    <InlineFormatToolbar
+      detached
+      :range-rect="cellTextSel?.rect ?? null"
+      :range-format="cellTextSel?.format ?? null"
+      @apply-range="applyCellMark"
     />
   </div>
 </template>
@@ -2652,7 +3005,7 @@ defineExpose({
   background: var(--table-header-bg);
 }
 
-/* 聚焦格不画描边：激活表格（或跨格移动）时，位置由 textarea 的插入光标指示，
+/* 聚焦格不画描边：激活表格（或跨格移动）时，位置由格内插入光标指示，
    再加一圈 --accent 内描边会在格线上叠出一道粗蓝框，视觉噪音明显。
    `is-active` 类保留（activeCell 仍是插入/删除行列的锚点），只是不再有视觉投影。 */
 
@@ -2663,7 +3016,6 @@ defineExpose({
   padding: 6px 9px;
   border: 0;
   outline: 0;
-  resize: none;
   overflow: hidden;
   box-sizing: border-box;
   background: transparent;
@@ -2672,13 +3024,19 @@ defineExpose({
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-word;
+  /* 可编辑区必须能选中文字（`.block` 的 user-select:none 会连格内一起禁掉） */
+  user-select: text;
+  cursor: text;
 }
 
 .header-cell .cell-input {
   font-weight: var(--font-semibold);
 }
 
-.cell-input::placeholder {
+/* 空表头格的占位：contenteditable 没有原生 placeholder，用 `:empty` 伪元素补上
+   （伪元素不进选区、不进复制，与「不是内容」的语义一致）。 */
+.cell-input:empty::before {
+  content: attr(data-placeholder);
   color: var(--text-disabled);
 }
 
@@ -2701,7 +3059,7 @@ defineExpose({
   font-weight: var(--font-semibold);
 }
 
-/* 空表头格的占位与编辑态对齐：编辑态是 textarea 的 placeholder「列名」，
+/* 空表头格的占位与编辑态对齐：编辑态是 contenteditable 的 `data-placeholder`「列名」，
    渲染态若什么都不画，同一张表在两态下会差一行字。
    用 ::before 而不是塞文本节点——伪元素不进选区、不进复制，
    与 placeholder「不是内容」的语义一致（导出 / 复制仍按空的处理）。 */

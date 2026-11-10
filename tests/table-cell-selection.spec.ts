@@ -45,16 +45,16 @@ async function nativeText(page: Page) {
   })
 }
 
-/** 当前聚焦元素标签名：出格后必须是 BODY（textarea 撤焦，输入法工具栏才不闪） */
+/** 当前聚焦元素标签名：出格后必须是 BODY（格内可编辑区撤焦，输入法工具栏才不闪） */
 async function activeTag(page: Page) {
   return page.evaluate(() => document.activeElement?.tagName ?? 'NONE')
 }
 
-/** 当前聚焦格（仅当聚焦元素是格内 textarea） */
+/** 当前聚焦格（仅当聚焦元素是格内可编辑区） */
 async function focusedCell(page: Page) {
   return page.evaluate(() => {
-    const el = document.activeElement as HTMLTextAreaElement | null
-    return el?.tagName === 'TEXTAREA' ? [el.dataset.row, el.dataset.col] : null
+    const el = document.activeElement as HTMLElement | null
+    return el?.classList.contains('cell-input') ? [el.dataset.row, el.dataset.col] : null
   })
 }
 
@@ -88,7 +88,7 @@ test('表格两段式选择：格内只选该格文字，出格转为整格矩�
   for (const [i, text] of CELLS.entries()) {
     const row = Math.floor(i / 3)
     const col = i % 3
-    await page.locator(`.table-block textarea[data-row="${row}"][data-col="${col}"]`).first().click()
+    await page.locator(`.table-block .cell-input[data-row="${row}"][data-col="${col}"]`).first().click()
     await page.keyboard.type(text, { delay: 12 })
   }
 
@@ -186,8 +186,8 @@ test('表格两段式选择：格内只选该格文字，出格转为整格矩�
     await page.waitForTimeout(500)
     await expect(table).not.toHaveClass(/is-readonly/)
     const focus = await page.evaluate(() => {
-      const el = document.activeElement as HTMLTextAreaElement | null
-      return el?.tagName === 'TEXTAREA' ? [el.dataset.row, el.dataset.col] : null
+      const el = document.activeElement as HTMLElement | null
+      return el?.classList.contains('cell-input') ? [el.dataset.row, el.dataset.col] : null
     })
     expect(focus).toEqual(['1', '1'])
   })
@@ -200,7 +200,7 @@ test('表格两段式选择：格内只选该格文字，出格转为整格矩�
     await page.mouse.move(c2.x + 20, c2.y + c2.height / 2, { steps: 12 })
     await page.waitForTimeout(200)
     expect(await cellBoxes(page)).toHaveLength(4) // rows 1-2 × cols 0-1
-    // 出格即撤焦：起点格 textarea 不再持焦，浏览器才不会每次 mousemove 都刷新它的选区
+    // 出格即撤焦：起点格可编辑区不再持焦，浏览器才不会每次 mousemove 都刷新它的选区
     expect(await activeTag(page)).toBe('BODY')
     expect(await nativeText(page)).toBe('')
     // 手势途中继续抖动，焦点也不许回到格内
@@ -230,17 +230,13 @@ test('表格两段式选择：格内只选该格文字，出格转为整格矩�
     expect(await focusedCell(page)).toEqual(['1', '0'])
   })
 
-  await test.step('S11 编辑态格内拖选：textarea 自己选出文字，不产生格选区', async () => {
+  await test.step('S11 编辑态格内拖选：格内可编辑区自己选出文字，不产生格选区', async () => {
     const cell = await cellBox(page, 2, 2)
     await page.mouse.click(cell.x + 10, cell.y + cell.height / 2)
     await page.waitForTimeout(400)
     await drag(page, { x: cell.x + 10, y: cell.y + cell.height / 2 }, { x: cell.x + cell.width - 12, y: cell.y + cell.height / 2 })
     expect(await cellBoxes(page)).toHaveLength(0)
-    const ta = await page.evaluate(() => {
-      const el = document.activeElement as HTMLTextAreaElement | null
-      return el?.tagName === 'TEXTAREA' ? { text: el.value.slice(el.selectionStart, el.selectionEnd) } : null
-    })
-    expect(ta?.text).toBe('R2C2')
+    expect(await nativeText(page)).toBe('R2C2')
   })
 
   await test.step('S12 格选区态按 Esc：撤选区并退回渲染态（出格后格内 Esc 已收不到）', async () => {

@@ -36,7 +36,7 @@ async function createTable(page: Page) {
   for (let i = 0; i < 9; i += 1) {
     const row = Math.floor(i / 3)
     const col = i % 3
-    await page.locator(`.table-block textarea[data-row="${row}"][data-col="${col}"]`).first().click()
+    await page.locator(`.table-block .cell-input[data-row="${row}"][data-col="${col}"]`).first().click()
     await page.keyboard.type(`R${row}C${col}`, { delay: 5 })
   }
   await page.waitForTimeout(400)
@@ -154,7 +154,7 @@ test('渲染态 hover 出条时，左侧 bullet dot 仍可点（条没有盖住�
 
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
   await page.waitForTimeout(800)
-  await expect(page.locator('.table-block textarea').first()).toBeVisible()
+  await expect(page.locator('.table-block .cell-input').first()).toBeVisible()
 })
 
 test('渲染态点「+」：插入一行并激活块，光标落到新行首格', async ({ page }) => {
@@ -179,11 +179,15 @@ test('渲染态点「+」：插入一行并激活块，光标落到新行首格'
   await page.waitForTimeout(900)
 
   // 插入后块被激活（编辑态），行数 +1，光标在新行首格
-  await expect(page.locator('.table-block textarea').first()).toBeVisible()
+  await expect(page.locator('.table-block .cell-input').first()).toBeVisible()
   expect(await page.locator('.table-block tr').count()).toBe(totalBefore + 1)
   const focused = await page.evaluate(() => {
     const el = document.activeElement as HTMLElement | null
-    return { tag: el?.tagName ?? null, row: el?.dataset?.row ?? null, col: el?.dataset?.col ?? null }
+    return {
+      cellInput: el?.classList.contains('cell-input') ?? false,
+      row: el?.dataset?.row ?? null,
+      col: el?.dataset?.col ?? null,
+    }
   })
-  expect(focused).toEqual({ tag: 'TEXTAREA', row: String(totalBefore), col: '0' })
+  expect(focused).toEqual({ cellInput: true, row: String(totalBefore), col: '0' })
 })

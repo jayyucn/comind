@@ -100,6 +100,18 @@ describe('cellRangeHasContent / clearCellRange - 删除', () => {
     ])
   })
 
+  it('清空矩形时一并丢弃这些格的格式（旧偏移对新文本已无意义）', () => {
+    const withMarks: TableData = {
+      ...table([['AB', 'CD'], ['EF', 'GH']]),
+      cellMarks: {
+        '0:0': [{ start: 0, end: 1, bold: true }],
+        '1:1': [{ start: 0, end: 1, italic: true }],
+      },
+    }
+    const next = clearCellRange(withMarks, { row1: 0, col1: 0, row2: 0, col2: 0 })
+    expect(next.cellMarks).toEqual({ '1:1': [{ start: 0, end: 1, italic: true }] })
+  })
+
   it('清空不改变表结构（行列数与表头标记）', () => {
     const next = clearCellRange(data, normalizeCellRange({ row: 0, col: 0 }, { row: 2, col: 2 }))
     expect(next.rows).toHaveLength(3)
@@ -165,6 +177,18 @@ describe('cellRangeToMatrix / writeRangeIntoData - 范围剪贴板与粘贴', ()
     const next = writeRangeIntoData(data, normalizeCellRange({ row: 0, col: 0 }, { row: 2, col: 2 }), [['x']])
     expect(next.rows[0]![0]).toBe('x')
     expect(next.rows[2]![2]).toBe('I')
+  })
+
+  it('粘贴覆盖的格丢弃旧格式，未覆盖的格格式保留', () => {
+    const withMarks: TableData = {
+      ...table([['AB', 'CD'], ['EF', 'GH']]),
+      cellMarks: {
+        '0:0': [{ start: 0, end: 1, bold: true }],
+        '1:1': [{ start: 0, end: 1, italic: true }],
+      },
+    }
+    const next = writeRangeIntoData(withMarks, { row1: 0, col1: 0, row2: 0, col2: 0 }, [['new']])
+    expect(next.cellMarks).toEqual({ '1:1': [{ start: 0, end: 1, italic: true }] })
   })
 })
 

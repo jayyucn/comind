@@ -2,12 +2,12 @@
  * 表格块「编辑态 / 渲染态」视觉对齐回归网。
  *
  * 锚定行为：
- * 1. 单元格折行时，两态**行高相同**。渲染态是 `<span>`（浏览器按内容撑开），编辑态是
- *    `<textarea rows="1">` + `overflow:hidden`，高度只由 `autoResize` 手写 ——
+ * 1. 单元格折行时，两态**行高相同**。渲染态是 `<div>`（浏览器按内容撑开），编辑态是
+ *    `contenteditable` 的 `<div>`，行高由 `fitRowHeights` 把同行拉齐 ——
  *    所以每一次可能改变折行数的变更（重新挂载、结构操作、撤销/重做、宽度变化）
  *    都必须把**每一格**重量一遍，而不是只量当前聚焦的那一格。
- * 2. 编辑态不裁内容：textarea 的 scrollHeight 不大于 clientHeight。
- * 3. 空表头格在两态显示同一个占位「列名」（编辑态 placeholder / 渲染态 ::before）。
+ * 2. 编辑态不裁内容：可编辑区的 scrollHeight 不大于 clientHeight。
+ * 3. 空表头格在两态显示同一个占位「列名」（编辑态 `:empty::before` / 渲染态 ::before）。
  *
  * 运行：`npm run dev`（已起则复用）后 `npx playwright test tests/table-render-edit-parity.spec.ts`
  */
@@ -34,7 +34,7 @@ async function cellHeight(page: Page, row: number, col: number) {
   return box.height
 }
 
-/** 点格：两态通用（编辑态落在 textarea 上，渲染态由 mousedown 激活整块并落光标） */
+/** 点格：两态通用（编辑态落在 contenteditable 上，渲染态由 mousedown 激活整块并落光标） */
 async function clickCell(page: Page, row: number, col: number) {
   await page.locator(`.table-block td[data-row="${row}"][data-col="${col}"]`).first().click()
   await page.waitForTimeout(400)
@@ -71,9 +71,9 @@ test.describe('表格块两态视觉对齐', () => {
 
     // 内容不被 overflow:hidden 裁掉
     const overflow = await page
-      .locator('.table-block textarea[data-row="1"][data-col="1"]')
+      .locator('.table-block .cell-input[data-row="1"][data-col="1"]')
       .first()
-      .evaluate(el => (el as HTMLTextAreaElement).scrollHeight - (el as HTMLTextAreaElement).clientHeight)
+      .evaluate(el => el.scrollHeight - el.clientHeight)
     expect(overflow).toBeLessThanOrEqual(1)
   })
 
@@ -93,9 +93,9 @@ test.describe('表格块两态视觉对齐', () => {
       .locator('.table-block td[data-row="1"][data-col="0"]')
       .first()
       .evaluate((td) => {
-        const input = td.querySelector('textarea')
+        const input = td.querySelector('.cell-input')
         return input
-          ? { cell: (td as HTMLElement).clientHeight, input: input.offsetHeight }
+          ? { cell: (td as HTMLElement).clientHeight, input: (input as HTMLElement).offsetHeight }
           : null
       })
     expect(sizes).not.toBeNull()
@@ -110,9 +110,9 @@ test.describe('表格块两态视觉对齐', () => {
     await page.waitForTimeout(800)
     await createTable(page)
 
-    // 编辑态：textarea 原生 placeholder
-    await expect(page.locator('.table-block textarea[data-row="0"][data-col="0"]')).toHaveAttribute(
-      'placeholder',
+    // 编辑态：`:empty::before` 用 data-placeholder 画「列名」
+    await expect(page.locator('.table-block .cell-input[data-row="0"][data-col="0"]')).toHaveAttribute(
+      'data-placeholder',
       '列名',
     )
 

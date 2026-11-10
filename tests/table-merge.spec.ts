@@ -26,7 +26,7 @@ async function createTable(page: Page) {
   for (let i = 0; i < 9; i += 1) {
     const row = Math.floor(i / 3)
     const col = i % 3
-    await page.locator(`.table-block textarea[data-row="${row}"][data-col="${col}"]`).first().click()
+    await page.locator(`.table-block .cell-input[data-row="${row}"][data-col="${col}"]`).first().click()
     await page.keyboard.type(`R${row}C${col}`, { delay: 5 })
   }
   await page.waitForTimeout(400)
@@ -77,9 +77,9 @@ test('合并 2×2：span 正确，被覆盖格消失，内容拼进左上格', a
   await expect(page.locator('.table-block td[data-row="2"][data-col="1"]')).toHaveCount(0)
 
   // 四格内容按行优先拼进左上格，一个字都不丢
-  expect(await origin.locator('textarea').inputValue()).toBe('R1C0 R1C1 R2C0 R2C1')
+  expect(await origin.locator('.cell-input').textContent()).toBe('R1C0 R1C1 R2C0 R2C1')
   await expect(page.locator('.table-block td[data-row="1"][data-col="2"]')).toHaveCount(1)
-  expect(await page.locator('.table-block textarea[data-row="1"][data-col="2"]').first().inputValue()).toBe('R1C2')
+  expect(await page.locator('.table-block .cell-input[data-row="1"][data-col="2"]').first().textContent()).toBe('R1C2')
 })
 
 test('选区跨合并区：色块覆盖整块（不是缺一格），工具条正常浮出', async ({ page }) => {
@@ -122,9 +122,9 @@ test('取消合并：范围内相交的合并区被拆开，4 格回来、内容
   await expect(page.locator('.table-block td[data-row="2"][data-col="0"]')).toHaveCount(1)
   await expect(page.locator('.table-block td[data-row="2"][data-col="1"]')).toHaveCount(1)
   // 合并时的拼接结果留在左上格；被清空的格不会「复活」
-  expect(await page.locator('.table-block textarea[data-row="1"][data-col="0"]').first().inputValue())
+  expect(await page.locator('.table-block .cell-input[data-row="1"][data-col="0"]').first().textContent())
     .toBe('R1C0 R1C1 R2C0 R2C1')
-  expect(await page.locator('.table-block textarea[data-row="1"][data-col="1"]').first().inputValue()).toBe('')
+  expect(await page.locator('.table-block .cell-input[data-row="1"][data-col="1"]').first().textContent()).toBe('')
 })
 
 test('合并格左下角热区：单击选中整块并浮出菜单，一处点掉取消合并', async ({ page }) => {
