@@ -24,9 +24,11 @@ const props = withDefaults(
     position?: { x: number; y: number }
     /** 点击 overlay 空白是否关闭，默认 true。 */
     closeOnOverlay?: boolean
-    /** 锚点元素或返回元素的 getter；提供后进入锚点避让模式（ADR-0038）。
+    /** 锚点元素 / 锚点矩形，或返回它们的 getter；提供后进入锚点避让模式（ADR-0038）。
+     *  DOMRect 形态用于锚点没有稳定 DOM 的场景（如 ProseMirror 光标）：调用方用
+     *  coordsAtPos 实时给出光标点，避免把整行段落盒子当锚点而把面板拽到行首。
      *  不传（默认 null）则退化为遗留点模式，仅按 position 做视口收边（与 ADR-0009 一致）。 */
-    anchorEl?: HTMLElement | (() => HTMLElement | null) | null
+    anchorEl?: HTMLElement | DOMRect | (() => HTMLElement | DOMRect | null) | null
     /** 首选放置侧，默认 'bottom'；空间不足时自动翻到对侧。仅 anchorEl 模式生效。 */
     placement?: 'bottom' | 'top' | 'left' | 'right'
     /** 是否模态：true（默认）铺一层全屏 overlay 接住「点空白关闭」；
@@ -99,16 +101,23 @@ function observe() {
   }
 }
 
-function resolveAnchorEl(): HTMLElement | null {
+type AnchorTarget = HTMLElement | DOMRect
+
+function resolveAnchorEl(): AnchorTarget | null {
   const a = props.anchorEl
   if (!a) return null
   const el = typeof a === 'function' ? a() : a
   return el ?? null
 }
 
+/** HTMLElement 没有数值 left/top；用鸭子类型区分元素与矩形，不依赖 instanceof（跨 realm 安全）。 */
+function isAnchorRect(a: AnchorTarget): a is DOMRect {
+  return typeof (a as DOMRect).left === 'number' && typeof (a as DOMRect).top === 'number'
+}
+
 function updateAnchorRect() {
   const el = resolveAnchorEl()
-  anchorRect.value = el ? el.getBoundingClientRect() : null
+  anchorRect.value = !el ? null : isAnchorRect(el) ? el : el.getBoundingClientRect()
 }
 
 /** 向上查找最近的滚动祖先（overflow 含 auto/scroll/hidden 且确有溢出），用于实时重定位。 */
@@ -131,7 +140,8 @@ function attachListeners() {
   onScroll = () => updateAnchorRect()
   scrollTargets = [window]
   const el = resolveAnchorEl()
-  if (el) {
+  // 矩形锚点（光标点）没有 DOM 祖先可挂；window 的 capture 阶段已能接住任意后代滚动。
+  if (el && !isAnchorRect(el)) {
     const sc = getNearestScrollableAncestor(el)
     if (sc) scrollTargets.push(sc)
   }
@@ -165,7 +175,8 @@ function attachNonModalCloser() {
     const target = e.target as (Node & Element) | null
     if (!target) return
     if (panelEl.value?.contains(target)) return
-    if (resolveAnchorEl()?.contains(target)) return
+    const anchor = resolveAnchorEl()
+    if (anchor && !isAnchorRect(anchor) && anchor.contains(target)) return
     if (props.ignoreOutsideSelector && target.closest?.(props.ignoreOutsideSelector)) return
     emit('close')
   }

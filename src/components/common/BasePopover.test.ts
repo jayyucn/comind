@@ -178,6 +178,44 @@ describe('BasePopover 锚点避让（ADR-0038）', () => {
     anchor.remove()
   })
 
+  it('矩形锚点（光标点）：按矩形定位，布局变化时由 getter 实时重算', async () => {
+    let caretLeft = 240
+    const caretRect = () => new DOMRect(caretLeft, 300, 0, 0)
+    const w = mount(BasePopover, {
+      props: { visible: true, anchorEl: caretRect, placement: 'bottom' },
+      slots: { default: '<div style="width:200px;height:100px">p</div>' },
+      attachTo: document.body,
+    })
+    const panel = panelEl()!
+    fakeSize(panel, 200, 100)
+    await w.vm.$nextTick()
+    await w.vm.$nextTick()
+    expect(panel.style.left).toBe('240px')
+    expect(panel.style.top).toBe('304px') // 300 + ANCHOR_GAP(4)
+
+    // 光标横向移动后重测必须读到新矩形；若锚点是整行段落，left 会永远停在行首
+    caretLeft = 420
+    window.dispatchEvent(new Event('resize'))
+    await w.vm.$nextTick()
+    expect(panel.style.left).toBe('420px')
+    w.unmount()
+  })
+
+  it('矩形锚点在非模态模式下不误判为外部元素', async () => {
+    const caretRect = () => new DOMRect(150, 200, 0, 0)
+    const w = mount(BasePopover, {
+      props: { visible: true, modal: false, anchorEl: caretRect, placement: 'bottom' },
+      slots: { default: '<div>p</div>' },
+      attachTo: document.body,
+    })
+    await w.vm.$nextTick()
+    await w.vm.$nextTick()
+    document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    await w.vm.$nextTick()
+    expect(w.emitted('close')).toHaveLength(1)
+    w.unmount()
+  })
+
   it('anchorEl 解析为 null 时不内联定位（交回 CSS）', async () => {
     const w = mount(BasePopover, {
       props: { visible: true, anchorEl: null, placement: 'bottom' },

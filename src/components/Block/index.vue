@@ -37,6 +37,7 @@ import { usePageStore } from '../../stores/pages'
 import type { TreeNode } from '../../types/block'
 import type { BlockSetupContext, BlockTypeEditorExposed, BlockTypeHooks } from '../../types/block-type'
 import { type BlockAlign,blockAlignOf } from '../../utils/block-align'
+import { hasHiddenAncestor } from '../../utils/element-visibility'
 import { mapInlineMarkOffsets, readInlineMarks } from '../../utils/inline-marks'
 import {
   decodeRelationshipContentWithMeta,
@@ -382,6 +383,15 @@ async function handleDeleteBetweenProperty(e: Event) {
 }
 
 /**
+ * 取编辑器实例的根 DOM：ProseMirror 的 Editor 走 `view.dom`，CodeMirror 的 EditorView
+ * 本身就是 `{ dom }`。用于判断编辑器是否被藏在 display:none 容器里（见 focusActiveEditor）。
+ */
+function editorDomOf(editor: unknown): HTMLElement | null {
+  const e = editor as { view?: { dom?: HTMLElement }; dom?: HTMLElement } | null
+  return e?.view?.dom ?? e?.dom ?? null
+}
+
+/**
  * 激活后聚焦编辑器。
  * 优先级：点击坐标 > cursorPos > end。
  * 等待浏览器 layout 完成，确保 ProseMirror 的 view.dom 已渲染（posAtCoords 依赖布局信息）。
@@ -393,7 +403,12 @@ async function focusActiveEditor() {
   await new Promise(resolve => requestAnimationFrame(resolve))
   if (!editorRef.value) return
   const editor = editorRef.value.getEditor()
-  if (editor) {
+  // 非活动 tab 里的同源块也会被判成 active —— `isActive` 的 pane 护栏只区分 pane，
+  // 不区分同一 pane 内的多个 tab 视图（非活动 tab 只是 display:none，组件照常挂载）。
+  // 让它登记的话，全局 activeEditor 就指向一份用户看不见的实例：斜杠面板用它的
+  // coordsAtPos 求光标（恒 (0,0)，面板跳到视口左上角），命令回读正文也读不到用户正在
+  // 写的那一份。看不见的编辑器不能成为活动编辑器。
+  if (editor && !hasHiddenAncestor(editorDomOf(editor))) {
     editorStore.setActiveEditor(editor)
   }
 

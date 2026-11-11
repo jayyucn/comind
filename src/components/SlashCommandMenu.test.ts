@@ -168,9 +168,8 @@ describe('SlashCommandMenu', () => {
     expect(wrapper.find('.slash-command-menu').exists()).toBe(true)
   })
 
-  it('engages BasePopover anchor mode (ADR-0038) via cursor getter', async () => {
-    // 验证迁移：触发后 anchorView/anchorPos 被记录，且 anchorElProp getter 能反查到光标元素。
-    const anchorEl = document.createElement('div')
+  it('engages BasePopover anchor mode (ADR-0038) with a caret-point rect', async () => {
+    // 锚点必须是光标的精确坐标，不能是 domAtPos 返回的整行段落盒子（会把面板钉在行首）。
     const mockCommands = createMockCommands(3)
     vi.mocked(useSlashCommands).mockReturnValue({
       commands: mockCommands,
@@ -183,12 +182,10 @@ describe('SlashCommandMenu', () => {
       global: { stubs: { Teleport: { template: '<div><slot /></div>' } } }
     })
 
+    // 只给 coordsAtPos：不再依赖 domAtPos，也就拿不到整行段落元素。
     document.dispatchEvent(new CustomEvent('slash-command-trigger', {
       detail: {
-        view: {
-          coordsAtPos: () => ({ left: 100, bottom: 200 }),
-          domAtPos: () => ({ node: anchorEl, offset: 0 })
-        },
+        view: { coordsAtPos: () => ({ left: 100, bottom: 200 }) },
         position: 5,
         range: { from: 0, to: 1 }
       }
@@ -199,12 +196,74 @@ describe('SlashCommandMenu', () => {
     const vm = wrapper.vm as any
     expect(vm.anchorView).toBeTruthy()
     expect(vm.anchorPos).toBe(5)
-    // anchorElProp 在触发后应是一个 getter，调用它返回光标元素
     expect(typeof vm.anchorElProp).toBe('function')
-    expect(vm.anchorElProp()).toBe(anchorEl)
+    const rect = vm.anchorElProp() as DOMRect
+    expect(rect.left).toBe(100)
+    expect(rect.top).toBe(200)
+    expect(rect.width).toBe(0)
+    expect(rect.height).toBe(0)
 
     // 菜单仍正常渲染
     expect(wrapper.find('.slash-command-menu').exists()).toBe(true)
+  })
+
+  it('ignores slash-command-trigger from an editor hidden in a non-active tab', async () => {
+    // 同一 pane 的多个 tab 视图不卸载非活动 tab，只把它 display:none（Block / 编辑器照常挂载）。
+    // 里面的编辑器随正文同步跑到 `/` 右侧，也会派发同一事件 —— 但它的 DOM 没有几何，
+    // coordsAtPos 恒返回 (0,0)。采纳它会把刚摆好的面板从光标处拽到视口左上角。
+    const mockCommands = createMockCommands(3)
+    vi.mocked(useSlashCommands).mockReturnValue({
+      commands: mockCommands,
+      filterCommands: vi.fn((query: string) => mockCommands),
+      groupCommands: vi.fn(() => new Map([['Test Group', mockCommands]])),
+      parseCommandInput: vi.fn(() => ({ command: null, argument: null }))
+    } as any)
+
+    const wrapper = mount(SlashCommandMenu, {
+      global: { stubs: { Teleport: { template: '<div><slot /></div>' } } }
+    })
+
+    // 用户正在输入的编辑器
+    const visibleDom = document.createElement('div')
+    document.body.appendChild(visibleDom)
+    const visibleView = {
+      dom: visibleDom,
+      coordsAtPos: () => ({ left: 655, bottom: 235 })
+    }
+
+    // 非活动 tab 里的同源编辑器：组件仍挂载，容器 display:none
+    const hiddenTab = document.createElement('div')
+    hiddenTab.style.display = 'none'
+    const hiddenDom = document.createElement('div')
+    hiddenTab.appendChild(hiddenDom)
+    document.body.appendChild(hiddenTab)
+    const hiddenView = {
+      dom: hiddenDom,
+      coordsAtPos: () => ({ left: 0, bottom: 0 })
+    }
+
+    document.dispatchEvent(new CustomEvent('slash-command-trigger', {
+      detail: { view: visibleView, position: 6, range: { from: 6, to: 7 } }
+    }))
+    await flushPromises()
+
+    const vm = wrapper.vm as any
+    expect((vm.anchorElProp() as DOMRect).left).toBe(655)
+
+    // 隐藏实例的重复触发必须被丢弃，锚点仍停在光标处
+    document.dispatchEvent(new CustomEvent('slash-command-trigger', {
+      detail: { view: hiddenView, position: 6, range: { from: 6, to: 7 } }
+    }))
+    await flushPromises()
+
+    expect(vm.anchorView).toBe(visibleView)
+    const rect = vm.anchorElProp() as DOMRect
+    expect(rect.left).toBe(655)
+    expect(rect.top).toBe(235)
+
+    wrapper.unmount()
+    visibleDom.remove()
+    hiddenTab.remove()
   })
 
   it('auto-scrolls when selected item is out of viewport', async () => {

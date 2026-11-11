@@ -14,6 +14,7 @@ import { useEditorStore } from '../stores/editor'
 import { useFieldValueStore } from '../stores/fieldValue'
 import { useUserTemplatesStore } from '../stores/user-templates'
 import type { Command } from '../types/command'
+import { hasHiddenAncestor } from '../utils/element-visibility'
 import { getCoreClient } from '../wasm/client'
 import BasePopover from './common/BasePopover.vue'
 import ConfirmDialog from './ConfirmDialog.vue'
@@ -80,6 +81,23 @@ const flatCommands = computed(() => {
   return result
 })
 
+/**
+ * 触发事件是否来自「用户看得见的编辑器」。
+ *
+ * 同一 pane 内的多个 tab 视图不会卸载非活动 tab，只把它 `display:none`（Block / 编辑器组件
+ * 照常挂载）。这些隐形实例会随正文同步跑到 `/` 右侧，同样派发 slash-command-trigger ——
+ * 但它们的 DOM 没有几何，`coordsAtPos` 恒返回 (0,0)。一旦采纳，刚摆好的面板会被拽到视口
+ * 左上角（实测 left/top 由 655px 变 8px，正是「输入 / 后很快跳到 app 左上角」）。
+ * 它也不可能是用户正在输入的那一个，直接丢弃。
+ */
+function isTriggerFromRenderedView(view: EditorView | null | undefined): boolean {
+  const dom = view?.dom as HTMLElement | undefined
+  // 测试替身 / 无 DOM 上下文：无从判断，保持旧行为（可信）。
+  if (!dom || typeof dom.getBoundingClientRect !== 'function') return true
+  if (!dom.isConnected) return false
+  return !hasHiddenAncestor(dom)
+}
+
 // 监听 slash-command-trigger 事件
 function handleSlashCommandTrigger(event: Event) {
   const customEvent = event as CustomEvent<{
@@ -88,12 +106,14 @@ function handleSlashCommandTrigger(event: Event) {
     range: { from: number; to: number }
   }>
 
-  const { position: pos, range: r } = customEvent.detail
+  const { position: pos, range: r, view } = customEvent.detail
+
+  // 非活动 tab 里的同源编辑器也会派发本事件（见 isTriggerFromRenderedView），先丢弃。
+  if (!isTriggerFromRenderedView(view)) return
 
   // 去重守卫：面板已打开且锚点（同一编辑器同一位置）未变时忽略重复触发。
   // 键入 `/` 本身会先后触发 handleTextInput 与 extension view.update 的光标检测，
   // 不去重会把刚同步的 query 重置掉。
-  const view = customEvent.detail.view
   if (visible.value && anchorView.value === view && anchorPos.value === pos) {
     return
   }
@@ -111,23 +131,24 @@ function handleSlashCommandTrigger(event: Event) {
   selectedIndex.value = 0
 }
 
-// 由 ProseMirror 文本位置反查光标所在 DOM 元素，作为 BasePopover 的避让锚点。
-// 文本节点取其父元素；元素节点直接用。失败（如 view 无 domAtPos）则回退到 position 模式。
-function anchorFromView(view: EditorView, pos: number): HTMLElement | null {
+// 锚点必须是光标的精确视口坐标，不能用 domAtPos 返回的段落元素：那是整行盒子，
+// left 固定在行首，会把面板从光标下方横向拽到内容区左缘（「跑到左上角」）。
+// coordsAtPos 给出光标点，构造 0×0 矩形交给 BasePopover，避让/翻转/收边照常生效。
+// 失败（如 view 已销毁）返回 null，回退到 position 点模式。
+function anchorRectFromView(view: EditorView, pos: number): DOMRect | null {
   try {
-    const { node } = view.domAtPos(pos)
-    const el = node.nodeType === Node.TEXT_NODE ? node.parentElement : (node as HTMLElement)
-    return el ?? null
+    const c = view.coordsAtPos(pos)
+    return new DOMRect(c.left, c.bottom, 0, 0)
   } catch {
     return null
   }
 }
 
 // 锚点 getter（ADR-0038）：未触发时返回 undefined，BasePopover 走 position 兜底；
-// 触发后返回一个每次重新反查光标的 getter，使滚动时面板实时跟随而不遮挡输入框。
-const anchorElProp = computed<HTMLElement | (() => HTMLElement | null) | undefined>(() => {
+// 触发后每次调用都实时重算光标坐标，滚动/布局变动时面板精确跟随光标。
+const anchorElProp = computed<DOMRect | (() => DOMRect | null) | undefined>(() => {
   const view = anchorView.value
-  return view ? () => anchorFromView(view, anchorPos.value) : undefined
+  return view ? () => anchorRectFromView(view, anchorPos.value) : undefined
 })
 
 // 监听键盘事件

@@ -536,6 +536,57 @@ describe('characterization: editor lifecycle', () => {
     expect(setActiveEditorSpy).toHaveBeenCalledWith(null)
     wrapper.unmount()
   })
+  it('skips setActiveEditor when the editor sits in a hidden tab (display:none)', async () => {
+    // 同一 pane 的多个 tab 视图不卸载非活动 tab，只 display:none。其中的同源块仍会因全局
+    // activeBlockId 变化被判成 active 并走到 focusActiveEditor —— 若让它登记，全局
+    // activeEditor 就指向一份没有几何的实例（斜杠面板拿它算光标恒得 (0,0)，面板跑左上角）。
+    const blockStore = useBlockStore()
+    const editorStore = useEditorStore()
+    blockStore.blocks = [{
+      id: 'b1', pageId: 'p1', parentId: null, pos: 0,
+      content: '', format: {}, type: 'bullet',
+      createdAt: 0, updatedAt: 0
+    }]
+    const setActiveEditorSpy = vi.spyOn(editorStore, 'setActiveEditor')
+
+    const hiddenTab = document.createElement('div')
+    hiddenTab.style.display = 'none'
+    document.body.appendChild(hiddenTab)
+    const hiddenEditorDom = document.createElement('div')
+    hiddenTab.appendChild(hiddenEditorDom)
+
+    const HiddenTabStubEditor = defineComponent({
+      name: 'Editor',
+      setup(_, { expose }) {
+        expose({
+          getEditor: () => ({ view: { dom: hiddenEditorDom } }),
+          focus: () => {},
+          focusAtCoords: () => {},
+          markSaved: () => {},
+          getText: () => '',
+          syncContent: () => {},
+          cancelDebouncedSave: () => {}
+        })
+        return () => h('div', { class: 'stub-editor' })
+      }
+    })
+
+    const node: TreeNode = { id: 'b1', block: blockStore.blocks[0], children: [] }
+    const wrapper = mount(Block, {
+      props: { node, pageId: 'p1', depth: 0 },
+      attachTo: hiddenTab,
+      global: { stubs: { BulletRender: StubBulletRender, Editor: HiddenTabStubEditor } }
+    })
+    await flushPromises()
+    editorStore.activateBlock('b1', 0)
+    await flushPromises()
+    await new Promise(r => requestAnimationFrame(r))
+    await flushPromises()
+
+    expect(setActiveEditorSpy).not.toHaveBeenCalled()
+    wrapper.unmount()
+    hiddenTab.remove()
+  })
 })
 
 describe('characterization: save', () => {

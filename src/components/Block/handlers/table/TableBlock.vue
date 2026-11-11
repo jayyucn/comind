@@ -1449,7 +1449,8 @@ function onRootMouseMove(e: MouseEvent) {
     const belowTable = my > box.top + box.height + 1
     for (const s of rowStrips.value) {
       if (belowTable) break
-      if (s.hidden || s.index < bodyStart.value) continue
+      // 表头行底边的「+」同样要有热区：它负责在表头下方插入第一行数据
+      if (s.hidden) continue
       if (near(s.left + s.width / 2, s.top + s.height)) {
         next = { kind: 'row', index: s.index }
         break
@@ -1890,6 +1891,19 @@ watch(
   },
 )
 
+/**
+ * 祖先 transform 的缩放系数（布局宽度不受 transform 影响，视口矩形受影响）。
+ *
+ * 每个新挂载的 block 都播 block-enter（300ms，scale 0.96 → 1，见 _block.scss）。
+ * 挂载那一帧量到的视口坐标全被缩小了，而条 / 色块用的是「相对块根的 inline px」
+ * （布局坐标）：直接写进去，动画结束后会永久偏小一圈。ResizeObserver 只报 border-box，
+ * transform 不改变布局尺寸，不会兜底重测，所以必须在测量时自己换算。
+ */
+function viewportScaleOf(table: HTMLElement): number {
+  const layoutWidth = table.offsetWidth
+  return layoutWidth > 0 ? table.getBoundingClientRect().width / layoutWidth : 1
+}
+
 /** 量格选区色块（块根坐标）。行列越界 / 不属于本块时清空。 */
 function measureCellSelection() {
   const sel = selection?.cellSelection.value
@@ -1901,6 +1915,7 @@ function measureCellSelection() {
   }
   const range = normalizeCellRange(sel.anchor, sel.head)
   const rootRect = root.getBoundingClientRect()
+  const scale = viewportScaleOf(table)
   const boxes: Array<{ left: number; top: number; width: number; height: number }> = []
   // 被合并覆盖的格没有 DOM：按合并区左上格去重，一个合并区只画一整块，
   // 否则「只选了合并区里的一格」会一条带都画不出来（缺格）或重复叠色。
@@ -1915,10 +1930,10 @@ function measureCellSelection() {
       drawn.add(key)
       const box = td.getBoundingClientRect()
       boxes.push({
-        left: box.left - rootRect.left,
-        top: box.top - rootRect.top,
-        width: box.width,
-        height: box.height,
+        left: (box.left - rootRect.left) / scale,
+        top: (box.top - rootRect.top) / scale,
+        width: box.width / scale,
+        height: box.height / scale,
       })
     }
   }
@@ -1966,7 +1981,7 @@ const HSCROLL_MIN_THUMB = 36
 const HSCROLL_GAP = 2
 
 /** 只有真的溢出才给滚动条：差 1px 以内算不溢出，避免无溢出时凭空多出一条 */
-function measureHScroll(rootRect: DOMRect, tableRect: DOMRect) {
+function measureHScroll(rootRect: DOMRect, tableRect: DOMRect, scale: number) {
   const scroll = scrollEl.value
   if (!scroll) return
   const max = scroll.scrollWidth - scroll.clientWidth
@@ -1977,8 +1992,8 @@ function measureHScroll(rootRect: DOMRect, tableRect: DOMRect) {
   const trackWidth = scroll.clientWidth
   const width = Math.min(trackWidth, Math.max(HSCROLL_MIN_THUMB, (trackWidth * trackWidth) / scroll.scrollWidth))
   const shift = max > 0 ? (scroll.scrollLeft / max) * (trackWidth - width) : 0
-  const left = scroll.getBoundingClientRect().left + scroll.clientLeft - rootRect.left + shift
-  const top = tableRect.bottom - rootRect.top + HSCROLL_GAP
+  const left = (scroll.getBoundingClientRect().left - rootRect.left) / scale + scroll.clientLeft + shift
+  const top = (tableRect.bottom - rootRect.top) / scale + HSCROLL_GAP
   const prev = hScroll.value
   if (
     prev
@@ -2006,8 +2021,13 @@ function measureStrips() {
   if (!root || !table) return
   const rootRect = root.getBoundingClientRect()
   const tableRect = table.getBoundingClientRect()
+  // 下面所有 inline px 都是「相对块根的布局坐标」，而 rect 是视口坐标。祖先带 transform 缩放时
+  // 两者差一个 scale（block-enter 动画首帧 = 0.96），必须先换算，否则动画结束条就永久错位。
+  const scale = viewportScaleOf(table)
+  const localX = (clientX: number) => (clientX - rootRect.left) / scale
+  const localY = (clientY: number) => (clientY - rootRect.top) / scale
   // 滚动条与编辑无关：只读表格同样可能列超宽，必须在只读早退之前测
-  measureHScroll(rootRect, tableRect)
+  measureHScroll(rootRect, tableRect, scale)
   // 格选区色块同理：拖拽发生在渲染态（readonly），早退之后测就永远画不出来
   measureCellSelection()
   // 行列条与菜单入口两态一致（渲染态 hover 同样要出条），因此这里不再区分 readonly：
@@ -2015,10 +2035,10 @@ function measureStrips() {
   // 一切几何都以表格边框盒为唯一基准：滚动容器的盒子比表格宽（含左侧 gutter 与右侧余量），
   // 用它算出来的条会左溢 / 悬空 / 右超。
   tableBox.value = {
-    left: tableRect.left - rootRect.left,
-    top: tableRect.top - rootRect.top,
-    width: tableRect.width,
-    height: tableRect.height,
+    left: localX(tableRect.left),
+    top: localY(tableRect.top),
+    width: tableRect.width / scale,
+    height: tableRect.height / scale,
   }
   const box = tableBox.value
 
@@ -2026,10 +2046,10 @@ function measureStrips() {
   // 可视区 = 滚动容器客户区 ∩ 表格盒子，取并集会在窄表时把条拉长。
   const scrollRect = scroll ? scroll.getBoundingClientRect() : null
   const viewLeft = scrollRect
-    ? Math.max(scrollRect.left + scroll!.clientLeft, tableRect.left) - rootRect.left
+    ? Math.max(localX(scrollRect.left) + scroll!.clientLeft, box.left)
     : box.left
   const viewRight = scrollRect
-    ? Math.min(scrollRect.left + scroll!.clientLeft + scroll!.clientWidth, tableRect.right) - rootRect.left
+    ? Math.min(localX(scrollRect.left) + scroll!.clientLeft + scroll!.clientWidth, box.left + box.width)
     : box.left + box.width
   visibleBox.value = { left: viewLeft, right: viewRight }
 
@@ -2049,9 +2069,9 @@ function measureStrips() {
     if (!rect) continue
     nextCols.push({
       index: col,
-      left: rect.left - rootRect.left,
+      left: localX(rect.left),
       top: box.top - ENTRY_THICKNESS,
-      width: rect.width,
+      width: rect.width / scale,
       height: ENTRY_THICKNESS,
       hidden: false,
       clipped: false,
@@ -2089,9 +2109,9 @@ function measureStrips() {
       // 行条贴的是「表格此刻可见的左缘」而不是内容左缘：横向滚动后内容左缘会跑到屏幕外，
       // 用它算行条会跟着内容一起左移、直接消失
       left: viewLeft - ENTRY_THICKNESS,
-      top: r.top - rootRect.top,
+      top: localY(r.top),
       width: ENTRY_THICKNESS,
-      height: r.height,
+      height: r.height / scale,
       hidden: false,
       clipped: false,
       first: false,
@@ -2537,8 +2557,9 @@ defineExpose({
       @mouseleave="clearActiveRow"
       @click.stop="openStripMenu($event, 'row', strip.index)"
     >
+      <!-- 表头行的「+」= 在表头下方插入第一行数据；纯表头表全靠它开张，
+           所以不能按 bodyStart 把 index 0 的入口屏蔽掉。 -->
       <span
-        v-if="strip.index >= bodyStart"
         class="strip-plus"
         role="button"
         aria-label="插入行"
