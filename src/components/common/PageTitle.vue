@@ -47,8 +47,9 @@ defineProps<{
 /* 标题 + 副标题竖排占位，操作区因此被推向最右 */
 .page-title-text {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
+  flex-direction: row;
+  align-items: flex-end;
+  gap: var(--space-3);
   min-width: 0;
 }
 

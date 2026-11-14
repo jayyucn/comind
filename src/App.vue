@@ -6,6 +6,7 @@ import { useRoute } from 'vue-router'
 import { useEmbedSelector } from './app/useEmbedSelector'
 import { useGlobalHotkeys } from './app/useGlobalHotkeys'
 import { useGraphSidebarToggle } from './app/useGraphSidebarToggle'
+import { scheduleOrphanViewCleanup } from './app/useOrphanViewCleanup'
 import { usePaneRouterSync } from './app/usePaneRouterSync'
 import { useSyncPeerToast } from './app/useSyncPeerToast'
 import { useTrashedPageRestore } from './app/useTrashedPageRestore'
@@ -229,6 +230,8 @@ onMounted(async () => {
   document.addEventListener('keydown', handleGlobalUndoRedoKeyDown, true)
   // Alt+←/→ 活动 pane 后退/前进
   document.addEventListener('keydown', handlePaneNavKeydown)
+  // 孤儿查询块视图核销：首屏之后空闲时跑（后台数据卫生，不占启动关键路径）
+  scheduleOrphanViewCleanup()
 })
 
 onBeforeUnmount(() => {

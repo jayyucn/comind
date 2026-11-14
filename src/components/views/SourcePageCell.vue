@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+
 import { usePageStore } from '../../stores/pages'
-import type { CellRendererProps } from './types'
 import type { BlockCard } from '../../wasm/types'
+import type { CellRendererProps } from './types'
 
 // 来源页单元格（ADR-0050 D7）：`BlockCard.page_id` 经 TS pages store 映射为页标题
 // （内置 `page` 字段只给 id，role='link' 又只渲染图钉按钮，都不足以读出「来自哪一页」）。
@@ -33,5 +34,14 @@ const title = computed(() => {
   white-space: nowrap;
   text-overflow: ellipsis;
   color: var(--text-secondary);
+  /* 整格点击由 TableView 上报 cellClick、业务层跳页（标签聚合页 / 查询块同一契约），
+     故这里给可点的视觉暗示；hover 提示落在文字上即可，不必让整格变色。 */
+  cursor: pointer;
+
+  &:hover {
+    color: var(--accent);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
 }
 </style>

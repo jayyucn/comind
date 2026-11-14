@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 
 import type { BatchOperation } from '@/wasm/types'
 
+import { markQueryViewOrphan } from '../services/query-view-namespace'
 import { renderedOffsetToEncodedOffset } from '../services/render-text'
 import { normalizeTextRange, type TextRange } from '../services/text-range'
 import type { Block, BlockClipPayload } from '../types/block'
@@ -1461,12 +1462,20 @@ export const useBlockStore = defineStore('blocks', () => {
 
     // 3. 立即从 reactive 数组移除（同步，触发 tree rebuild）
     const blockCardStore = useBlockCardStore()
+    // 查询块把视图配置挂在 `screen_view` 的 per-block 命名空间上，块删了它就成孤儿。
+    // 收口在本方法（所有删除路径 —— Backspace / 菜单 / 剪切 / 批量 —— 都经过这里）：
+    // 挂到各调用方必漏，删块不清理配置的行会永久留在库里。
+    const orphanQueryIds = [...toDelete].filter(
+      id => blocks.value.find(b => b.id === id)?.type === 'query',
+    )
     for (const id of toDelete) {
       pendingSaves.get(id)?.cancel()
       pendingSaves.delete(id)
       blockCardStore.invalidate(id)
     }
     blocks.value = blocks.value.filter(b => !toDelete.has(b.id))
+    // 异步标记（只改命名空间归属，不改内容）——撤销复活后配置原样回来
+    for (const id of orphanQueryIds) void markQueryViewOrphan(id)
 
     // 折叠不变量对账（ADR-0045 D2）：本次删除可能掏空某些【存活】父块 ——
     // 含「至少留一块」闸门保留下来的那块（其子节点已全部进入 toDelete）。

@@ -238,6 +238,53 @@ async function insertTable({ editor, blockId }: CommandProps) {
 }
 
 /**
+ * 插入查询块（块内嵌查询页外壳，数据源为全量块，每块独立命名空间）
+ *
+ * - 空内容且无子块：就地转换当前块为 query（斜杠文本已由菜单清除）
+ * - 其余情况：保留文本与子块，在完整子树之后插入兄弟查询块
+ * - 根块（页面根 / BlockModal 根）不能有兄弟：新块作为其子块
+ */
+async function insertQuery({ editor, blockId }: CommandProps) {
+  if (!blockId) return
+
+  const blockStore = useBlockStore()
+  const editorStore = useEditorStore()
+  const anchor = blockStore.getBlock(blockId)
+  if (!anchor) return
+
+  const text = editor.getText().trim()
+  const hasChildren = blockStore.getChildren(blockId).length > 0
+
+  if (text === '' && !hasChildren) {
+    await blockStore.updateBlockContent(blockId, '')
+    await blockStore.updateBlockType(blockId, 'query')
+    editorStore.activateBlock(blockId)
+    return
+  }
+
+  const isRoot = anchor.parentId === null || anchor.id === editorStore.blockModalBlockId
+  if (isRoot) {
+    await blockStore.createBlock({
+      pageId: anchor.pageId,
+      parentId: anchor.id,
+      content: '',
+      type: 'query',
+    })
+    return
+  }
+
+  const created = await blockStore.insertAtPosition(
+    anchor.pageId,
+    anchor.parentId,
+    '',
+    anchor,
+    [],
+    false,
+  )
+  await blockStore.updateBlockType(created.id, 'query')
+}
+
+/**
  * MVP 命令列表（18 个）
  */
 export const commands: Command[] = [
@@ -534,6 +581,14 @@ export const commands: Command[] = [
     group: '文本格式',
     icon: '▦',
     action: insertTable
+  },
+  {
+    id: 'query',
+    name: 'Query',
+    alias: ['query', '查询', '查询块', 'qb'],
+    group: '文本格式',
+    icon: '🔍',
+    action: insertQuery
   },
   {
     id: 'embed',

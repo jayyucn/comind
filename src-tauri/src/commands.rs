@@ -2,7 +2,7 @@ use crate::assets::{asset_extension, asset_file_path, is_safe_asset_component, n
 use comind_core::{
     services::{
         build_page_with_blocks, BlockService, BlockWriteService,
-        BookService, DateRefService, FieldValueService, FilterService, LinkService, PageService,
+        BookService, DateRefService, FieldValueService, FilterService, LinkService, OrphanCleanupReport, PageService,
         RelationshipTypeService, SnapshotService, TemplateService,
     },
     storage::{SQLiteAdapter, StorageAdapter, TransactionalStorageAdapter},
@@ -292,6 +292,34 @@ pub async fn set_default_screen(
 ) -> Result<ScreenView, String> {
     execute_with_adapter(db, |storage| {
         FilterService::set_default_screen(storage, &id)
+    })
+    .await
+}
+
+/// 孤儿查询块视图的标记：把 `live_prefix + blockId` 命名空间下的视图行改挂到孤儿前缀。
+/// 快路径（块删除时同步调用），只改 entity 不改内容 —— 撤销复活时配置原样可用。
+#[tauri::command]
+pub async fn mark_orphan_screen_views(
+    db: State<'_, super::state::DatabaseConnection>,
+    live_prefix: String,
+    orphan_prefix: String,
+    block_id: String,
+) -> Result<usize, String> {
+    execute_with_adapter(db, |storage| {
+        FilterService::mark_orphan_screen_views(storage, &live_prefix, &orphan_prefix, &block_id)
+    })
+    .await
+}
+
+/// 孤儿视图核销：启动后异步调用。前缀命中且块已不存在 → 删；块存在 → 改回活前缀。
+#[tauri::command]
+pub async fn cleanup_orphan_screen_views(
+    db: State<'_, super::state::DatabaseConnection>,
+    orphan_prefix: String,
+    live_prefix: String,
+) -> Result<OrphanCleanupReport, String> {
+    execute_with_adapter(db, |storage| {
+        FilterService::cleanup_orphan_screen_views(storage, &orphan_prefix, &live_prefix)
     })
     .await
 }

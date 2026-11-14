@@ -2981,8 +2981,8 @@ defineExpose({
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 14px;
+  width: var(--block-entry-size);
+  height: var(--block-entry-size);
   padding: 0;
   border: 0;
   border-radius: var(--radius-xs);

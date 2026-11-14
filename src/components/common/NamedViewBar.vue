@@ -582,7 +582,7 @@ onBeforeUnmount(() => {
   // 不留水平内边距：本条的横向内容（分段控件 / 右侧工具栏）需与主内容区的卡片同缘
   // （QueryPageFrame 已用 padding: 0 var(--space-8) 提供外缘；再加内边距会让两者各错 10px）
   padding: 0;
-  margin-top: var(--space-4);
+  // margin-top: var(--space-4);
   // border: 1px solid var(--border);
   // border-top-left-radius: var(--radius-md);
   // border-top-right-radius: var(--radius-md);

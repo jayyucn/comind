@@ -63,3 +63,4 @@ dist.old-**
 target-debug/
 .dumate/
 .**/
+target-check/

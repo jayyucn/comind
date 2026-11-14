@@ -219,3 +219,47 @@ describe('QueryPageFrame 列管理动作的写回基准', () => {
     ])
   })
 })
+
+/**
+ * 嵌入查询块（Block/handlers/query/QueryBlock）复用的两个开关。
+ * 消费方是块内的第二次装配：标题由宿主正文承担（hideTitle），高度由宿主 max-height 夹住（embedded）。
+ * 缺省（任务中心 / 页面库 / 标签聚合页）行为必须一字不变 —— 后一例即为此设。
+ */
+describe('QueryPageFrame 嵌入开关（hideTitle / embedded）', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    mockUpdateTab.mockClear()
+    setupStore()
+  })
+
+  it('hideTitle：不渲染 PageTitle 容器，视图管理条与主内容区仍在', async () => {
+    const { wrapper } = await mountFrame({ hideTitle: true })
+
+    expect(wrapper.find('.page-title-container').exists()).toBe(false)
+    // 骨架其余部分不受影响：外壳根、主内容区、消费方注入的 slot 都还在
+    expect(wrapper.find('.query-page-frame').exists()).toBe(true)
+    expect(wrapper.find('.lib-body').exists()).toBe(true)
+    expect(wrapper.find('.slot-probe').exists()).toBe(true)
+
+    wrapper.unmount()
+  })
+
+  it('hideTitle 缺省仍渲染标题（现有三个查询页的路径不变）', async () => {
+    const { wrapper } = await mountFrame()
+
+    expect(wrapper.find('.page-title-container').exists()).toBe(true)
+    expect(wrapper.text()).toContain('#demo')
+
+    wrapper.unmount()
+  })
+
+  it('embedded：根节点带 is-embedded；缺省不带', async () => {
+    const embedded = await mountFrame({ embedded: true })
+    expect(embedded.wrapper.find('.query-page-frame').classes()).toContain('is-embedded')
+    embedded.wrapper.unmount()
+
+    const plain = await mountFrame()
+    expect(plain.wrapper.find('.query-page-frame').classes()).not.toContain('is-embedded')
+    plain.wrapper.unmount()
+  })
+})

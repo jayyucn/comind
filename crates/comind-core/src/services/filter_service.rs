@@ -124,4 +124,92 @@ impl FilterService {
     ) -> Result<(), Box<dyn Error>> {
         repository::ScreenViewRepository::reorder(storage.screen_views(), entity, parent_id, ordered_ids)
     }
+
+    /// 把某查询块命名空间（`live_prefix + block_id`）下的全部视图行改挂到孤儿前缀。
+    ///
+    /// 由块删除的写路径调用：块是软删且可撤销的，所以这里**只标记不删**——撤销把块复活后，
+    /// 配置必须原样回来（回滚窗口内数据不动，超出窗口由 `cleanup_orphan_views` 核销）。
+    /// `live_prefix` / `orphan_prefix` 由调用方给出，Rust 侧不持有命名空间字面量（单一来源在 TS）。
+    pub fn mark_orphan_screen_views(
+        storage: &mut dyn StorageAdapter,
+        live_prefix: &str,
+        orphan_prefix: &str,
+        block_id: &str,
+    ) -> Result<usize, Box<dyn Error>> {
+        let live_entity = format!("{live_prefix}{block_id}");
+        let orphan_entity = format!("{orphan_prefix}{block_id}");
+        let rows = repository::ScreenViewRepository::get_all_by_entity(storage.screen_views(), &live_entity)?;
+        let now = chrono::Utc::now().timestamp_millis();
+        for row in &rows {
+            repository::ScreenViewRepository::set_entity(storage.screen_views(), &row.id, &orphan_entity, now)?;
+        }
+        Ok(rows.len())
+    }
+
+    /// 核销孤儿视图（启动时一次性）：扫孤儿前缀逐条核对所属块 ——
+    /// - 块仍存在（撤销已复活）→ 改回活前缀，配置保留；这是「标记而非删除」的必然配套。
+    /// - 块不存在 / 已软删 → 删掉整个 Screen（`delete_screen` 级联其下 Tabs）。
+    ///
+    /// 判据只看块本身是否存在，不看 `deleted_at` 之外的任何状态：软删块在重启后永远不会被
+    /// 撤销栈复活（栈是会话内内存），故与「不存在」等价。
+    pub fn cleanup_orphan_screen_views(
+        storage: &mut dyn StorageAdapter,
+        orphan_prefix: &str,
+        live_prefix: &str,
+    ) -> Result<OrphanCleanupReport, Box<dyn Error>> {
+        let rows = repository::ScreenViewRepository::get_all(storage.screen_views())?;
+        let now = chrono::Utc::now().timestamp_millis();
+
+        // 先按 blockId 归组再决策：同一命名空间下的 Screen 与其 Tabs 必须**一起**处理。
+        // 逐行判断会踩到「删 Screen 级联掉 Tabs，但快照里 Tab 还在、于是又判一次」的双重处置。
+        let mut groups: std::collections::BTreeMap<String, Vec<(String, bool)>> = Default::default();
+        for row in &rows {
+            let Some(block_id) = row.entity.strip_prefix(orphan_prefix) else {
+                continue;
+            };
+            if block_id.is_empty() {
+                continue;
+            }
+            groups
+                .entry(block_id.to_string())
+                .or_default()
+                .push((row.id.clone(), row.parent_id.is_empty()));
+        }
+
+        let mut report = OrphanCleanupReport::default();
+        for (block_id, items) in groups {
+            let alive = repository::BlockRepository::get_by_id(storage.blocks(), &block_id).is_ok();
+            if alive {
+                // 块被撤销复活了：整组改回活命名空间，配置一个字不动
+                let live_entity = format!("{live_prefix}{block_id}");
+                for (id, _) in &items {
+                    repository::ScreenViewRepository::set_entity(storage.screen_views(), id, &live_entity, now)?;
+                }
+                report.restored += items.len();
+                continue;
+            }
+            // 先删 Screen（级联其下 Tabs），再清残留 Tab 行（上一轮中途失败留下的半截）
+            for (id, is_screen) in &items {
+                if *is_screen {
+                    Self::delete_screen(storage, id)?;
+                    report.deleted_screens += 1;
+                }
+            }
+            for (id, is_screen) in &items {
+                if !*is_screen {
+                    repository::ScreenViewRepository::delete(storage.screen_views(), id)?;
+                    report.deleted_tabs += 1;
+                }
+            }
+        }
+        Ok(report)
+    }
+}
+
+/// 孤儿视图核销结果。三个计数分开报，失败半截时能看出停在哪一步。
+#[derive(Debug, Clone, Default, serde::Serialize)]
+pub struct OrphanCleanupReport {
+    pub deleted_screens: usize,
+    pub deleted_tabs: usize,
+    pub restored: usize,
 }

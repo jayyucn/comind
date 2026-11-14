@@ -18,6 +18,7 @@ import './handlers/bullet'
 import './handlers/code'
 import './handlers/embed'
 import './handlers/image'
+import './handlers/query'
 import './handlers/table'
 
 import type { EditorView } from '@codemirror/view'
@@ -73,7 +74,7 @@ const { navigateToPage } = useNavigateToPage()
 
 // 注入拖拽结束落库回调（由 BlockList / BlockModal 提供，syncTreeToStore 完整树 diff）
 const onDragEnd = inject<(intent: DragEndIntent | null) => void>('onDragEnd')
-const selection = inject<CrossBlockSelection>('crossBlockSelection')
+const selection = inject<CrossBlockSelection | null>('crossBlockSelection', null)
 // 是否处于 BlockModal 子树编辑器内（由 BlockModal provide）。弹窗内 dot 点击为 no-op，避免递归开弹窗。
 const inBlockModal = inject<boolean>('inBlockModal', false)
 // 所属 pane id（由 ViewHost provide 下发）。双 pane 同页靠它区分活动块；不在 pane 内为 undefined。
@@ -606,8 +607,9 @@ async function onLanguageChange(lang: string) {
 /** bullet dot 点击：打开单块子树编辑弹窗；弹窗内（inBlockModal）为 no-op（ADR-0039） */
 function onBulletClick() {
   if (inBlockModal) return
-  // 表格块不能作为 BlockModal 根：点击圆点直接聚焦首格
-  if (block.value.type === 'table') {
+  // 表格 / 查询块不能作为 BlockModal 根（子树弹窗会与块内自有交互打架）：
+  // 点击圆点只做激活，焦点交给块内视图自己（query 块的 focus 是空实现）。
+  if (block.value.type === 'table' || block.value.type === 'query') {
     if (editorStore.activeBlockId === blockId.value) {
       // 点击本身会让 textarea 失焦，等浏览器完成这次 click 的焦点处理后再聚焦首格
       requestAnimationFrame(() => editorRef.value?.focus('start'))

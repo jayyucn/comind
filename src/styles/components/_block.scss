@@ -652,6 +652,11 @@
 }
 
 // ===== 跨 Block 选中遮罩 =====
+// 层级：内容层最上沿（$z-sticky - 1），不是 1。遮罩要盖住块内**全部**内容，而表头是
+// sticky + z-index:2 的自成层叠上下文（表格视图 / 块内查询块的 `<thead>`）——放 1 时表头
+// 会浮在蓝色选区之上，选中整块时中间横着一条不着色的表带（真机实证）。
+// 上限卡在 $z-sticky 之下：该层及以上属 chrome（bullet/chevron = +2、表格行列条、
+// 拖拽柄、文本选区矩形），选区色不该染到这些可交互物上。pointer-events: none 不影响命中。
 .block.cb-selected::after {
   content: '';
   position: absolute;
@@ -659,7 +664,7 @@
   background: var(--selection-bg);
   pointer-events: none;
   border-radius: 0;
-  z-index: 1;
+  z-index: $z-sticky - 1;
 }
 
 // 图片块选中时不改变整块背景色，仅保留 .image-frame 的描边提示

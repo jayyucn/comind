@@ -42,7 +42,7 @@ const props = withDefaults(
 
 const blockStore = useBlockStore()
 const editorStore = useEditorStore()
-const selection = inject<CrossBlockSelection>('crossBlockSelection')
+const selection = inject<CrossBlockSelection | null>('crossBlockSelection', null)
 
 const IMAGE_REGEX = /!\[([^\]]*)\]\(([^)]+)\)/
 function parseImage(content: string): { alt: string; url: string } | null {

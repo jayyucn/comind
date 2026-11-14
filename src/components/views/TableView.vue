@@ -1,14 +1,15 @@
 <script setup lang="ts" generic="T">
-import { ChevronDown, MapPin } from 'lucide-vue-next';
-import type { Component } from 'vue';
-import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
-import type { FieldDescriptor, Group, Option, SortRule } from '../../core/query';
-import type { TableColumnConfig, TableConfig } from '../../core/view';
-import BasePopover from '../common/BasePopover.vue';
-import Icon from '../Icons/Icon.vue';
-import PaginationFooter from './PaginationFooter.vue';
-import { distributeColumnWidths } from './tableWidths';
-import type { CellRegistry } from './types';
+import { ChevronDown, MapPin } from 'lucide-vue-next'
+import type { Component } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+
+import type { FieldDescriptor, Group, Option, SortRule } from '../../core/query'
+import type { TableColumnConfig, TableConfig } from '../../core/view'
+import BasePopover from '../common/BasePopover.vue'
+import Icon from '../Icons/Icon.vue'
+import PaginationFooter from './PaginationFooter.vue'
+import { distributeColumnWidths } from './tableWidths'
+import type { CellRegistry } from './types'
 
 /** 缺省每页行数。 */
 const DEFAULT_PAGE_SIZE = 50
@@ -38,10 +39,11 @@ const emit = defineEmits<{
   /** 单元格编辑（boolean/select 可编辑列触发）。 */
   cellChange: [itemId: string, fieldKey: string, value: unknown]
   /**
-   * 单元格点击：上报「点了哪个记录的哪个字段」的事实（itemId + fieldKey）。
+   * 单元格点击：上报「点了哪个记录的哪个字段」的事实（itemId + fieldKey + 原始鼠标事件）。
    * 组件不表达任何业务意图、不判断列角色；是否跳转/如何处理由业务方按字段 key 裁决。
+   * `event` 透出只为让业务方读到修饰键（如 Ctrl/⌘+Click 分屏打开），组件自身不解释它。
    */
-  cellClick: [itemId: string, fieldKey: string]
+  cellClick: [itemId: string, fieldKey: string, event: MouseEvent]
   /**
    * 列宽拖拽缩放（表头手柄，ADR-0013 边界联动）：上报本次拖拽涉及的列宽变更集合。
    * 拖宽本列时紧邻的下一列同步变窄（总宽恒定），故一次性带回本列与下一列的最终像素宽。
@@ -336,10 +338,10 @@ function isDoneRow(item: T): boolean {
   return valueOf(item, statusCol) === 'Done'
 }
 
-function onCellClick(item: T, col: TableColumnConfig) {
-  // 只上报「点了哪个记录的哪个字段」的事实（itemId + fieldKey）；可编辑控件（checkbox/select）
-  // 已在控件上 stopPropagation，不会误报。跳转与否由业务方按字段 key 裁决。
-  emit('cellClick', idOf(item), col.key)
+function onCellClick(item: T, col: TableColumnConfig, e: MouseEvent) {
+  // 只上报「点了哪个记录的哪个字段」的事实（itemId + fieldKey + 原始事件）；可编辑控件
+  // （checkbox/select）已在控件上 stopPropagation，不会误报。跳转与否由业务方按字段 key 裁决。
+  emit('cellClick', idOf(item), col.key, e)
 }
 
 /** td 整体点击：根据字段类型分发——status 角色列循环切换、select + editable 直接唤起菜单；其余走 onCellClick。
@@ -354,7 +356,7 @@ function onCellMaybeOpenSelect(item: T, col: TableColumnConfig, e: MouseEvent) {
     openSelectMenu(item, col, e)
     return
   }
-  onCellClick(item, col)
+  onCellClick(item, col, e)
 }
 
 /** 该 cell 是否处于 select 菜单打开态（用于视觉指示 .open 类）。 */
@@ -828,7 +830,7 @@ function groupTotal(key: string): number {
   overflow: auto;
 }
 
-.table-section {
+.table-section:not(:last-child) {
   margin-bottom: 16px;
 }
 

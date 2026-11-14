@@ -26,10 +26,21 @@ defineOptions({ name: 'QueryPageFrame' })
  * 零业务依赖（ADR-0009）：不 import 任何视图组件 / 实体 store / registry。
  */
 const props = defineProps<{
-  /** 页面标题（PageTitle）。 */
-  title: string
-  /** 页面副标题（PageTitle，如「32 个任务」）。 */
-  subtitle: string
+  /**
+   * 不渲染 PageTitle（`.page-title-container`）。
+   * 嵌入块内时宿主已提供上下文（正文位置即标题），再来一个大标题是重复信息。
+   */
+  hideTitle?: boolean
+  /**
+   * 嵌入模式：高度交给宿主容器，而非整页 `height: 100%`。
+   * 宿主以 `max-height` + `overflow: hidden` 给出上限；内容超出时由 `.lib-body` 内部滚动
+   * （外壳保留 `overflow: hidden`，滚动仍发生在主内容区，不会溢出到块外）。
+   */
+  embedded?: boolean
+  /** 页面标题（PageTitle）。`hideTitle` 为真时可省略。 */
+  title?: string
+  /** 页面副标题（PageTitle，如「32 个任务」）。`hideTitle` 为真时可省略。 */
+  subtitle?: string
   /** screen_view 命名空间（NamedViewBar / 命名视图 store）。兼作查询引擎实体命名空间（ADR-0023 D3）。 */
   entityKey: string
   /**
@@ -231,13 +242,17 @@ const toolbarCandidateFields = computed(() =>
 </script>
 
 <template>
-  <div class="query-page-frame">
+  <div
+    class="query-page-frame"
+    :class="{ 'is-embedded': embedded }"
+  >
     <!-- 面包屑（可选）：需位于大标题之上的导航，由消费方注入（如标签聚合页「标签 / #x」） -->
     <slot name="breadcrumb" />
 
     <PageTitle
-      :title="title"
-      :subtitle="subtitle"
+      v-if="!hideTitle"
+      :title="title ?? ''"
+      :subtitle="subtitle ?? ''"
     />
 
     <!-- 标题下扩展区（可选）：大标题与视图管理条之间的自有内容（如标签聚合页的统计卡） -->
@@ -319,17 +334,39 @@ const toolbarCandidateFields = computed(() =>
   height: 100%;
   overflow: hidden;
   padding: 0 var(--space-8);
+
+  /* 嵌入块内：宿主（.query-block）用 max-height + flex column 给出上限，
+     外壳不再声明 100% 高度 —— 内容少时按内容收缩，超出时 .lib-body 内部滚动。
+     padding 归宿主（块已有描边与内缩），否则外壳的左右留白与块边界叠成双层。 */
+  &.is-embedded {
+    height: auto;
+    flex: 1 1 auto;
+    min-height: 0;
+    padding: 0;
+
+    /* 嵌入块的滚动全在主内容区：上下留白必须从 padding 换成 margin。
+       padding 属于滚动容器的可滚动区域，滚动时内容会画进这条留白里——
+       块内 sticky 表头上方那条 12px 带会露出半截行文字（真机实证）；
+       margin 在滚动口之外，内容到边缘即被裁掉。
+       横轴余量（ADR-0013 比例列宽的 1~2px 越界）直接裁掉，免得块内多出一条拖不动的横条。 */
+    .lib-body {
+      padding: 0;
+      margin: 12px 0 0;
+      overflow-x: hidden;
+    }
+  }
 }
 
 /* 主内容区不自带边框：视图自身即卡片（表格描边圆角、看板列、日历格），
    外壳再框一层会让卡片落进框里形成「框里套卡」（ADR-0050 D7 聚合页设计稿）。
-   内边距保留：board / calendar 等视图靠它留白，且卡片与外缘的间隙即页面底。 */
+   内边距保留：board / calendar 等视图靠它留白，且卡片与外缘的间隙即页面底。
+   （嵌入模式下这条留白必须换成 margin，见 `.is-embedded` 的说明。） */
 .lib-body {
   flex: 1;
   min-height: 0;
   overflow: auto;
   padding: 12px 0;
-  margin-bottom: var(--space-4);
+  // margin-bottom: var(--space-4);
 }
 
 .view-empty {

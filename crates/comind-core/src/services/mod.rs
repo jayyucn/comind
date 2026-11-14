@@ -32,6 +32,9 @@ pub mod link_service_test;
 pub mod field_value_service_test;
 
 #[cfg(test)]
+pub mod filter_service_test;
+
+#[cfg(test)]
 pub mod book_service_test;
 
 #[cfg(test)]
@@ -49,7 +52,7 @@ pub use template_service::TemplateService;
 pub use field_definition_service::{CascadeDeleteReport, FieldDefinitionService};
 pub use date_ref_service::DateRefService;
 pub use block_projection_service::*;
-pub use filter_service::FilterService;
+pub use filter_service::{FilterService, OrphanCleanupReport};
 pub use content_parse_service::*;
 pub use notification_service::NotificationService;
 pub use block_write::BlockWriteService;

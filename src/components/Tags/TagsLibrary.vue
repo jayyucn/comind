@@ -21,7 +21,7 @@
  * - 字段定义是全局共享的，故只有**自身声明**的字段可在此编辑（继承方无权改他人定义）。
  * - 进聚合页的入口在左栏每个标签行内（`/tags/:tagId`）。
  */
-import { CornerUpRight, GripVertical, Layers, Link2, Plus, Search, X } from 'lucide-vue-next'
+import { CornerUpRight, GripVertical, Layers, Link2, Network, Plus, Search, X } from 'lucide-vue-next'
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { VueDraggable } from 'vue-draggable-plus'
 

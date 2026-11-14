@@ -239,19 +239,29 @@ describe('TableView (generic, field-driven)', () => {
   it('emits cellClick with field key when title cell clicked', async () => {
     const wrapper = mountTable({ items: [makeCard({ block_id: 'b1' })] })
     await wrapper.find('tbody .col-content').trigger('click')
-    expect(wrapper.emitted('cellClick')![0]).toEqual(['b1', 'content'])
+    expect(wrapper.emitted('cellClick')![0]).toEqual(['b1', 'content', expect.anything()])
   })
 
   it('emits cellClick with field key for plain cells', async () => {
     const wrapper = mountTable({ items: [makeCard({ block_id: 'b1' })] })
     await wrapper.find('tbody .col-project').trigger('click')
-    expect(wrapper.emitted('cellClick')![0]).toEqual(['b1', 'project'])
+    expect(wrapper.emitted('cellClick')![0]).toEqual(['b1', 'project', expect.anything()])
   })
 
   it('emits cellClick with field key when link button clicked (bubbles to td)', async () => {
     const wrapper = mountTable({ items: [makeCard({ block_id: 'b1' })] })
     await wrapper.find('.link-btn').trigger('click')
-    expect(wrapper.emitted('cellClick')![0]).toEqual(['b1', 'page'])
+    expect(wrapper.emitted('cellClick')![0]).toEqual(['b1', 'page', expect.anything()])
+  })
+
+  // 修饰键只透传、不解释：分屏与否是业务方的裁决（查询块据此 Ctrl/⌘+Click 开另一栏）
+  it('passes the mouse event through so callers can read modifiers', async () => {
+    const wrapper = mountTable({ items: [makeCard({ block_id: 'b1' })] })
+    await wrapper.find('tbody .col-page').trigger('click', { ctrlKey: true })
+    const [id, key, event] = wrapper.emitted('cellClick')![0] as [string, string, MouseEvent]
+    expect(id).toBe('b1')
+    expect(key).toBe('page')
+    expect(event.ctrlKey).toBe(true)
   })
 
   it('does not emit cellClick when status icon clicked (cycles instead)', async () => {
@@ -506,7 +516,7 @@ describe('TableView (generic, field-driven)', () => {
     // 点击只读 cell 不弹下拉菜单（业务方仍可通过 cellClick 事件处理跳转/预览）
     await stageTd.trigger('click')
     expect(document.body.querySelector('[data-testid="select-menu"]')).toBeFalsy()
-    expect(wrapper.emitted('cellClick')![0]).toEqual(['b1', 'stage'])
+    expect(wrapper.emitted('cellClick')![0]).toEqual(['b1', 'stage', expect.anything()])
   })
 
   it('renders boolean as read-only check when editable=false', () => {
@@ -595,7 +605,7 @@ describe('TableView custom cell (ADR-0010)', () => {
       cellRegistry: { 'block-content': StubCell },
     })
     await wrapper.find('tbody .col-content').trigger('click')
-    expect(wrapper.emitted('cellClick')![0]).toEqual(['b1', 'content'])
+    expect(wrapper.emitted('cellClick')![0]).toEqual(['b1', 'content', expect.anything()])
   })
 })
 

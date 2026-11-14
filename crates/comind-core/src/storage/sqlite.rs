@@ -25,7 +25,7 @@ use crate::storage::entity::notification::{notification_batch_create, notificati
 #[cfg(not(target_arch = "wasm32"))]
 use crate::storage::entity::saved_filter::{saved_filter_create, saved_filter_delete, saved_filter_get_all, saved_filter_get_by_id, saved_filter_update};
 #[cfg(not(target_arch = "wasm32"))]
-use crate::storage::entity::screen_view::{screen_view_create, screen_view_delete, screen_view_get_all_by_entity, screen_view_get_by_id, screen_view_reorder, screen_view_update};
+use crate::storage::entity::screen_view::{screen_view_create, screen_view_delete, screen_view_get_all, screen_view_get_all_by_entity, screen_view_get_by_id, screen_view_reorder, screen_view_set_entity, screen_view_update};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::storage::entity::notification_config::{notification_config_get, notification_config_save};
 #[cfg(not(target_arch = "wasm32"))]
@@ -1128,6 +1128,14 @@ impl ScreenViewRepository for SQLiteAdapter {
         screen_view_get_all_by_entity(&self.conn, entity)
     }
 
+    fn get_all(&self) -> Result<Vec<ScreenView>, Box<dyn Error>> {
+        screen_view_get_all(&self.conn)
+    }
+
+    fn set_entity(&mut self, id: &str, entity: &str, updated_at: i64) -> Result<(), Box<dyn Error>> {
+        screen_view_set_entity(&self.conn, id, entity, updated_at)
+    }
+
     fn get_by_id(&self, id: &str) -> Result<ScreenView, Box<dyn Error>> {
         screen_view_get_by_id(&self.conn, id)
     }
@@ -2070,6 +2078,14 @@ impl<'a> SavedFilterRepository for TxContext<'a> {
 impl<'a> ScreenViewRepository for TxContext<'a> {
     fn get_all_by_entity(&self, entity: &str) -> Result<Vec<ScreenView>, Box<dyn Error>> {
         screen_view_get_all_by_entity(&self.conn, entity)
+    }
+
+    fn get_all(&self) -> Result<Vec<ScreenView>, Box<dyn Error>> {
+        screen_view_get_all(&self.conn)
+    }
+
+    fn set_entity(&mut self, id: &str, entity: &str, updated_at: i64) -> Result<(), Box<dyn Error>> {
+        screen_view_set_entity(&self.conn, id, entity, updated_at)
     }
 
     fn get_by_id(&self, id: &str) -> Result<ScreenView, Box<dyn Error>> {

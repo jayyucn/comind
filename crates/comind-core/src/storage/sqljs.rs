@@ -1631,6 +1631,17 @@ impl ScreenViewRepository for SqlJsAdapter {
         Ok(result.into_iter().map(|r| row_to_screen_view_js(&r)).collect())
     }
 
+    fn get_all(&self) -> Result<Vec<ScreenView>, Box<dyn std::error::Error>> {
+        let result = Self::query(&self.db, &format!("SELECT {} FROM screen_view ORDER BY entity ASC, sort_order ASC, created_at DESC", screen_view_select_cols()), &[])?;
+        Ok(result.into_iter().map(|r| row_to_screen_view_js(&r)).collect())
+    }
+
+    fn set_entity(&mut self, id: &str, entity: &str, updated_at: i64) -> Result<(), Box<dyn std::error::Error>> {
+        let ts = updated_at.to_string();
+        Self::run_with_params(&self.db, "UPDATE screen_view SET entity = ?, updated_at = ? WHERE id = ?", &[entity, &ts, id])?;
+        Ok(())
+    }
+
     fn get_by_id(&self, id: &str) -> Result<ScreenView, Box<dyn std::error::Error>> {
         let result = Self::query(&self.db, &format!("SELECT {} FROM screen_view WHERE id = ?", screen_view_select_cols()), &[id])?;
         if result.is_empty() {

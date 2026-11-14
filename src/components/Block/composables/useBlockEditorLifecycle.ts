@@ -415,7 +415,12 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
     // 表格的字符偏移是「所有单元格按行优先拼接」，跨格没有语义——从 A 格往下拖到
     // A 下方的格，在偏移坐标里已经越过整行后面的 B 格，于是 B 凭空入选；
     // 且两套选区并存会互相覆盖，表格内还会退化成「能高亮、复制为空」。
-    const isTableBlock = blockStore.getBlock(blockId.value)?.type === 'table'
+    const blockType = blockStore.getBlock(blockId.value)?.type
+    const isTableBlock = blockType === 'table'
+    const isQueryBlock = blockType === 'query'
+    // 查询块同理：块内是完整的查询视图（表格 / 看板 / 日历），拖拽与点击归视图自身，
+    // 与跨块文本选区并存会互相覆盖（表格块的既有理由逐条适用）。
+    const ownsInnerDrag = isTableBlock || isQueryBlock
     // .block-link 与 .rel-type-label 与 .date-ref 与 .block-tag 都由 handleContentClick 处理点击，
     // 不要让 mousedown 触发激活导致 BulletRender 被替换、
     // 进而让后续 click 事件落在新挂载的 Editor 上。
@@ -430,6 +435,10 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
     }
 
     if (e.ctrlKey || e.metaKey) {
+      // 「页面」列的 Ctrl/Cmd+Click = 在另一栏打开该页（ADR-0059），是**单元格手势**，
+      // 不该顺带切整块选中（ADR-0035 D6）：否则点一下页面列就把整块染进蓝色选区。
+      // 让位范围只限这一处——查询块其余区域（表头空白、其它列）的 ctrl 仍按原语义切块多选。
+      if (isQueryBlock && target.closest('.source-page-cell')) return
       if (selection) {
         selection.toggleBlock(blockId.value, pageStore.currentPageId)
         e.preventDefault()
@@ -445,7 +454,7 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
     // DOM selection 往往已被 PM 从原光标延伸到点击处——caretBlockOffsetFromDomSelection
     // 取 anchor（= 原光标位）即为此设计；起选后立即失活编辑器，维持「PM 挂载与
     // comind 文本选区不并存」不变量。
-    if (e.shiftKey && selection && !isTableBlock) {
+    if (e.shiftKey && selection && !ownsInnerDrag) {
       const head = blockOffsetFromPoint(e.clientX, e.clientY)
       if (selection.textRange.value) {
         if (head) {
@@ -472,7 +481,7 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
       editorStore.setClickCoords(e.clientX, e.clientY)
     }
 
-    if (selection && !isTableBlock) {
+    if (selection && !ownsInnerDrag) {
       // 内容区 mousedown 启动文本选区拖拽（ADR-0035 D1）：定位起始字符偏移。
       //
       // 已激活块同样走这里（旧实现提前 return）：否则起始于激活块内时 ProseMirror

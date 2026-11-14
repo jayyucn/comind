@@ -788,6 +788,51 @@ describe('useBlockEditorLifecycle', () => {
       expect(startTextTracking).toHaveBeenCalledWith({ blockId: 'b1', offset: 0 }, { x: 10, y: 20 })
     })
 
+    // ── Ctrl/Cmd+Click：默认切块多选；仅查询块的「页面」列让位给分屏打开 ──
+
+    /** ctrl+左键 mousedown；insidePageCell 模拟点在「页面」列（.source-page-cell）内 */
+    function ctrlMousedown(pd: () => void = () => {}, insidePageCell = false): MouseEvent {
+      return {
+        target: { closest: (sel: string) => (insidePageCell && sel === '.source-page-cell' ? {} : null) },
+        button: 0,
+        ctrlKey: true, metaKey: false,
+        clientX: 10, clientY: 20,
+        preventDefault: pd
+      } as unknown as MouseEvent
+    }
+
+    it('普通块：Ctrl+Click 切换块选区（对照组，ADR-0035 D6）', () => {
+      const toggleBlock = vi.fn()
+      const { lifecycle } = setup({ startTextTracking: vi.fn(), toggleBlock })
+
+      lifecycle.handleContentMousedown(ctrlMousedown())
+
+      expect(toggleBlock).toHaveBeenCalledWith('b1', expect.anything())
+    })
+
+    it('查询块 + 页面列：Ctrl+Click 不切块选区（分屏打开，不染蓝整块）', () => {
+      const toggleBlock = vi.fn()
+      const pd = vi.fn()
+      const { lifecycle, blockStore } = setup({ startTextTracking: vi.fn(), toggleBlock })
+      blockStore.blocks[0].type = 'query'
+
+      lifecycle.handleContentMousedown(ctrlMousedown(pd, true))
+
+      expect(toggleBlock).not.toHaveBeenCalled()
+      // 也不许 preventDefault：页面列的 click 仍要照常派发，否则分屏打开会被吞
+      expect(pd).not.toHaveBeenCalled()
+    })
+
+    it('查询块 + 其它区域：Ctrl+Click 仍切块选区（让位只限页面列）', () => {
+      const toggleBlock = vi.fn()
+      const { lifecycle, blockStore } = setup({ startTextTracking: vi.fn(), toggleBlock })
+      blockStore.blocks[0].type = 'query'
+
+      lifecycle.handleContentMousedown(ctrlMousedown(() => {}, false))
+
+      expect(toggleBlock).toHaveBeenCalledWith('b1', expect.anything())
+    })
+
     // ── shift+click：延伸已有文本选区（ADR-0035 D10）──
 
     /** shift+左键 mousedown */

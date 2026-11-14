@@ -192,9 +192,13 @@ pub trait SavedFilterRepository {
 
 pub trait ScreenViewRepository {
     fn get_all_by_entity(&self, entity: &str) -> Result<Vec<ScreenView>, Box<dyn Error>>;
+    /// 全表列举（不分实体）—— 孤儿命名空间核销用；业务读取一律走 `get_all_by_entity`。
+    fn get_all(&self) -> Result<Vec<ScreenView>, Box<dyn Error>>;
     fn get_by_id(&self, id: &str) -> Result<ScreenView, Box<dyn Error>>;
     fn create(&mut self, view: &ScreenView) -> Result<ScreenView, Box<dyn Error>>;
     fn update(&mut self, view: &ScreenView) -> Result<ScreenView, Box<dyn Error>>;
+    /// 改写命名空间归属（孤儿标记 / 复原）。`update` 不碰 entity 列，故单列一条。
+    fn set_entity(&mut self, id: &str, entity: &str, updated_at: i64) -> Result<(), Box<dyn Error>>;
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>>;
     /// 批量原子重排 `(entity, parent_id)` 下子项顺序（ADR-0044，Tabs 拖拽持久化）。
     fn reorder(&mut self, entity: &str, parent_id: &str, ordered_ids: &[String]) -> Result<(), Box<dyn Error>>;

@@ -28,6 +28,13 @@ PageWithBlocks, RelationshipType, SavedFilterRust, ScreenViewRust,
 SearchResult, SyncConfig,
   UserTemplate} from './types'
 
+/** `cleanup_orphan_screen_views` 的返回值（Rust `OrphanCleanupReport` 的 serde 形状）。 */
+export interface OrphanCleanupReportRust {
+  deleted_screens: number
+  deleted_tabs: number
+  restored: number
+}
+
 export interface CoreClient {
   getBlock(blockId: string): Promise<Block>
   getBlocksByPage(pageId: string): Promise<Block[]>
@@ -149,6 +156,13 @@ export interface CoreClient {
   setDefaultScreen(id: string): Promise<ScreenViewRust>
   /** 批量原子重排某 (entity, parentId) 下 Tabs 顺序（ADR-0044，拖拽持久化）。 */
   reorderScreenViews(entity: string, parentId: string, orderedIds: string[]): Promise<void>
+  /**
+   * 孤儿查询块视图的标记：把 `<livePrefix><blockId>` 命名空间下的全部行改挂到 orphan 前缀。
+   * 块删除时调用；只改 entity 不改内容 ⇒ 撤销复活后配置原样可用。
+   */
+  markOrphanScreenViews(livePrefix: string, orphanPrefix: string, blockId: string): Promise<number>
+  /** 孤儿视图核销（启动时一次性）：块已不存在 → 删；块仍在 → 改回 live 前缀。 */
+  cleanupOrphanScreenViews(orphanPrefix: string, livePrefix: string): Promise<OrphanCleanupReportRust>
 
   // Book highlights & progress（ADR-0040：仅桌面本地，不入 SyncTable）
   upsertBookHighlight(highlight: BookHighlightRust): Promise<BookHighlightRust>
@@ -253,6 +267,14 @@ class TauriClient implements CoreClient {
 
   async reorderScreenViews(entity: string, parentId: string, orderedIds: string[]): Promise<void> {
     return invoke('reorder_screen_views', { entity, parentId, orderedIds })
+  }
+
+  async markOrphanScreenViews(livePrefix: string, orphanPrefix: string, blockId: string): Promise<number> {
+    return invoke('mark_orphan_screen_views', { livePrefix, orphanPrefix, blockId })
+  }
+
+  async cleanupOrphanScreenViews(orphanPrefix: string, livePrefix: string): Promise<OrphanCleanupReportRust> {
+    return invoke('cleanup_orphan_screen_views', { orphanPrefix, livePrefix })
   }
 
   async saveBlockTree(blocks: BlockUpdate[]): Promise<BlockSaveResult[]> {
@@ -659,6 +681,16 @@ class WasmClientAdapter implements CoreClient {
 
   async reorderScreenViews(_entity: string, _parentId: string, _orderedIds: string[]): Promise<void> {
     throw new Error('WASM: screens not supported')
+  }
+
+  // 网页端 screen_view 本身就是空实现（getScreenViews 返回 []），孤儿清理无对象可清 —— 静默跳过，
+  // 不抛错以免启动钩子在 dev/网页端反复打红。
+  async markOrphanScreenViews(_livePrefix: string, _orphanPrefix: string, _blockId: string): Promise<number> {
+    return 0
+  }
+
+  async cleanupOrphanScreenViews(_orphanPrefix: string, _livePrefix: string): Promise<OrphanCleanupReportRust> {
+    return { deleted_screens: 0, deleted_tabs: 0, restored: 0 }
   }
 
   async saveBlockTree(blocks: BlockUpdate[]): Promise<BlockSaveResult[]> {
