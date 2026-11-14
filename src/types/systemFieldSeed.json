@@ -84,10 +84,10 @@
       "key": "sourceBlockId",
       "title": "来源块 ID",
       "type": "string",
-      "isSystem": false,
+      "isSystem": true,
       "isPreset": true,
       "defaultValue": null,
-      "hideWhen": "never",
+      "hideWhen": "always",
       "description": "摘录来源块的内部 ID，用于回跳原块"
     },
     {
@@ -95,10 +95,10 @@
       "key": "sourcePageId",
       "title": "来源页面 ID",
       "type": "string",
-      "isSystem": false,
+      "isSystem": true,
       "isPreset": true,
       "defaultValue": null,
-      "hideWhen": "never",
+      "hideWhen": "always",
       "description": "摘录来源页面的内部 ID，用于回跳原页面"
     },
     {
@@ -106,10 +106,10 @@
       "key": "language",
       "title": "语言",
       "type": "string",
-      "isSystem": false,
+      "isSystem": true,
       "isPreset": true,
       "defaultValue": null,
-      "hideWhen": "never",
+      "hideWhen": "always",
       "description": "书籍或笔记的语言（如 zh-CN / en）"
     }
   ],
