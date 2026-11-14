@@ -25,7 +25,14 @@ export function computeDepthDelta(
   return 0
 }
 
-export function computeSortPosition(cursorY: number, bulletRect: DragRect): 'before' | 'after' {
-  const bulletCenterY = bulletRect.top + bulletRect.height / 2
-  return cursorY < bulletCenterY ? 'before' : 'after'
+/**
+ * 纵向落位：光标落在目标块的上半 ⇒ before，下半 ⇒ after。
+ *
+ * 传进来的必须是**整块外框**，不能是 bullet 的矩形。bullet 钉在首行后，
+ * 长块（16 行表格 500px）的 bullet 中线贴着顶部，用它判定等于把「插到前面」
+ * 压缩成顶部一条缝。此前 bullet 垂直居中恰好让两者重合，属于巧合而非契约。
+ */
+export function computeSortPosition(cursorY: number, blockRect: DragRect): 'before' | 'after' {
+  const centerY = blockRect.top + blockRect.height / 2
+  return cursorY < centerY ? 'before' : 'after'
 }

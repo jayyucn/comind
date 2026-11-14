@@ -13,7 +13,8 @@
  * inject('onDragEnd') → syncTreeToStore（完整树 diff）完成。
  */
 import { ref } from 'vue'
-import { VueDraggable, type DraggableEvent } from 'vue-draggable-plus'
+import { type DraggableEvent,VueDraggable } from 'vue-draggable-plus'
+
 import { useBlockStore } from '../../../stores/blocks'
 import { useEditorStore } from '../../../stores/editor'
 import type { TreeNode } from '../../../types/block'
@@ -81,7 +82,7 @@ defineExpose({
     tag="div"
     :group="{ name: 'blocks-' + pageId, pull: true, put: true }"
     :sort="true"
-    handle=".bullet-dot"
+    handle=".block-bullet"
     filter=".bullet-chevron"
     :prevent-on-filter="false"
     :fallback-tolerance="5"

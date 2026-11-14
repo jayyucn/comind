@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { Editor } from '@tiptap/vue-3'
-import { CalendarDays, ClipboardPaste, Columns, Copy, IndentDecrease, IndentIncrease, LayoutGrid, Scissors, SlidersHorizontal, Table, Trash2 } from 'lucide-vue-next'
+import { CalendarDays, ClipboardPaste, Columns, Copy, IndentDecrease, IndentIncrease, LayoutGrid, Scissors, Table, Trash2 } from 'lucide-vue-next'
 import { computed, markRaw, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
@@ -222,19 +222,19 @@ function handleCellClick(blockId: string, fieldKey: string, event?: MouseEvent) 
   router.push({ name: 'page', params: { pageId } })
 }
 
-// ── 块级菜单（左上 gutter 入口 → BasePopover）───────────────────────
-// 与 table 块同形同位置：块内容左外侧的 gutter 上一枚图标，hover 显现，点开才是菜单。
-// 差异只有一处：query 块为了 `max-height` 裁剪而带 `overflow: hidden`，负 left 会被裁掉，
-// 所以 gutter 用 padding 自建（入口 `left: 0`），代价是内容整体右移 20px。
+// ── 块级菜单（入口在 Block 外壳，菜单本体留在这里 → BasePopover）──────────
+// 入口图标由 .block-bullet 统一渲染（兼拖拽手柄），点击时把那个元素当锚点传进来；
+// 菜单项依赖本块 store 状态，不外泄给外壳。
 const menuOpen = ref(false)
-const entryEl = ref<HTMLButtonElement | null>(null)
+const menuAnchor = ref<HTMLElement | null>(null)
 
 const currentBlock = computed<Block | undefined>(() => blockStore.getBlock(props.blockId))
 /** 顶级块没有「减少缩进」可言；其余状态不在这里判定，交给 store 的 no-op 兜底。 */
 const canOutdent = computed(() => !!currentBlock.value?.parentId)
 
-function toggleMenu() {
-  menuOpen.value = !menuOpen.value
+function openEntryMenu(anchorEl: HTMLElement) {
+  menuAnchor.value = anchorEl
+  menuOpen.value = true
 }
 
 function indentBlock() {
@@ -375,32 +375,18 @@ defineExpose({
   markSaved: () => {},
   getEditor: () => undefined as unknown as Editor,
   cancelDebouncedSave: () => {},
+  /** 入口菜单：Block 外壳渲染图标，点击时把该元素当锚点传进来 */
+  openEntryMenu,
 })
 </script>
 
 <template>
   <div class="query-block">
-    <!-- 左上角入口：浮在块左侧 gutter，hover 显现。与 table 块同形同位置。 -->
-    <div class="query-entry">
-      <button
-        ref="entryEl"
-        type="button"
-        class="query-menu-entry"
-        title="查询块菜单"
-        aria-label="查询块菜单"
-        @mousedown.prevent
-        @click.stop="toggleMenu"
-      >
-        <SlidersHorizontal
-          :size="12"
-          :stroke-width="1.8"
-        />
-      </button>
-    </div>
-
+    <!-- 入口图标不在这里：已上提到 Block/index.vue 的 .block-bullet（类型图标兼拖拽手柄），
+         点图标调本组件的 openEntryMenu(el)，锚点从外面传进来。 -->
     <BasePopover
       :visible="menuOpen"
-      :anchor-el="entryEl"
+      :anchor-el="menuAnchor"
       placement="bottom"
       @close="menuOpen = false"
     >
@@ -550,11 +536,10 @@ defineExpose({
   flex-direction: column;
   min-height: var(--query-block-min-height);
   max-height: var(--query-block-max-height);
-  /* 左侧 20px gutter 从块外借（负 margin 抵消 padding）：内容起点与宽度都不变，
-     入口才有地方站。只给 padding 不给负 margin 会把整块内容右移 20px，
-     与其它块的正文左缘对不齐。 */
-  margin: var(--space-1) 0 var(--space-1) calc(-1 * var(--block-entry-size));
-  padding: var(--query-block-pad-top) 0 0 var(--block-entry-size);
+  /* 不再向左侧借 20px gutter：入口已上提到 .block-bullet（Block 外壳统一渲染）， */
+  /* 内容起点直接落在块内容左缘，与其它块正文对齐。 */
+  margin: var(--space-1) 0;
+  padding: var(--query-block-pad-top) 0 0;
   // border: 1px solid var(--border-color);
   // border-radius: var(--radius-md);
   overflow: hidden;
@@ -572,50 +557,6 @@ defineExpose({
   :deep(.table-scroll) {
     overflow: visible;
   }
-}
-
-/* 块级入口：默认透明且不吃指针（opacity:0 仍可点的隐形热区会与表头首格抢点击）。
-   显隐挂在**块**的 hover 上而不是自身 —— 自己 pointer-events:none 时永远触发不了
-   :hover（table 块同款写法）。 */
-.query-entry {
-  position: absolute;
-  top: 0;
-  left: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: var(--block-entry-size);
-  height: var(--block-entry-size);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity var(--dur-fast) var(--ease-out) 240ms;
-}
-
-.query-block:hover .query-entry,
-.query-entry:hover {
-  opacity: 1;
-  pointer-events: auto;
-  transition-delay: 0s;
-}
-
-.query-menu-entry {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: var(--block-entry-size);
-  height: var(--block-entry-size);
-  padding: 0;
-  border: 0;
-  border-radius: var(--radius-xs);
-  background: transparent;
-  color: var(--text-tertiary);
-  cursor: pointer;
-  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
-}
-
-.query-menu-entry:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
 }
 
 /* 菜单（BasePopover 内）：与 table 块菜单同尺度同色 */

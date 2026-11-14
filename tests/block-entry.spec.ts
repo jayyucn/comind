@@ -1,0 +1,217 @@
+/**
+ * 块入口（block entry）回归网：table/query 的左上角入口已上提到 Block 外壳的
+ * `.block-bullet`，由 handler 的 `entryIcon` 驱动渲染，替代 bullet dot。
+ *
+ * 钉死的行为：
+ * 1. table/query 块**不再渲染** `.bullet-dot`，改为渲染 `.block-entry-icon`；
+ * 2. 图标仅 hover 显现（dot 是常显弱提示，图标的显隐挂在 `.block-row:hover` 上，
+ *    自身 `pointer-events:none` 时永远触发不了 `:hover`，所以必须有块那一路）；
+ * 3. 点图标开本块菜单 —— 菜单本体仍由 TableBlock 自己渲染，锚点是外壳那个图标；
+ * 4. 图标同时是拖拽手柄（`handle=".block-bullet"`），按下即能起拖；
+ * 5. 文本块不受影响：仍是 `.bullet-dot`，点击开 BlockModal。
+ *
+ * 运行：`npm run dev`（已起则复用）后
+ * `npx playwright test tests/block-entry.spec.ts`
+ */
+import { test, expect, type Page } from '@playwright/test'
+
+const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+
+/** 在首块用 slash 菜单造一个表格块，并填两个格（内容非空才进渲染态） */
+async function createTable(page: Page) {
+  await page.locator('.block').first().click()
+  await wait(300)
+  await page.keyboard.type('/table', { delay: 30 })
+  await wait(400)
+  await page.keyboard.press('Enter')
+  await wait(800)
+  for (let i = 0; i < 2; i += 1) {
+    await page.locator(`.table-block .cell-input[data-row="0"][data-col="${i}"]`).first().click()
+    await page.keyboard.type(`C${i}`, { delay: 5 })
+  }
+  await wait(400)
+}
+
+/** 造一个查询块（slash 菜单要先等条目渲染完再回车） */
+async function createQuery(page: Page) {
+  await page.locator('.block').first().click()
+  await wait(300)
+  await page.keyboard.type('/query', { delay: 30 })
+  await page.locator('.slash-command-menu .slash-command-item').first().waitFor({ state: 'visible' })
+  await page.keyboard.press('Enter')
+  await wait(800)
+}
+
+/** 某元素的 computed opacity */
+const opacityOf = (page: Page, selector: string) => page.evaluate(
+  sel => Number(Number(getComputedStyle(document.querySelector(sel) as HTMLElement).opacity).toFixed(2)),
+  selector,
+)
+
+test('表格块：入口是类型图标，bullet dot 不再渲染', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto('/')
+  await page.waitForLoadState('networkidle')
+  await wait(600)
+  await createTable(page)
+
+  const tableBlock = page.locator('.block:has(.table-block)').first()
+  await expect(tableBlock.locator('.block-entry-icon')).toHaveCount(1)
+  // 整个块树里不该再有 dot —— 包括表格块自己
+  await expect(tableBlock.locator('> .block-row > .block-inner > .block-bullet > .bullet-dot')).toHaveCount(0)
+})
+
+test('入口图标仅 hover 显现', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto('/')
+  await page.waitForLoadState('networkidle')
+  await wait(600)
+  await createTable(page)
+  await page.keyboard.press('Escape')
+  await wait(500)
+
+  const icon = page.locator('.block-entry-icon').first()
+  // 鼠标挪到页面空白处：块不 hover，图标隐藏
+  await page.mouse.move(5, 5)
+  await wait(400)
+  expect(await opacityOf(page, '.block-entry-icon')).toBe(0)
+
+  // 移到表格块上（不直接移图标）：显隐挂在块 hover 上
+  await page.locator('.table-block').first().hover()
+  await wait(400)
+  expect(await opacityOf(page, '.block-entry-icon')).toBe(1)
+  await expect(icon).toBeVisible()
+})
+
+test('点入口图标打开表格菜单', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto('/')
+  await page.waitForLoadState('networkidle')
+  await wait(600)
+  await createTable(page)
+  await page.keyboard.press('Escape')
+  await wait(500)
+
+  const tableBlock = page.locator('.block:has(.table-block)').first()
+  await tableBlock.locator('.table-block').hover()
+  await wait(300)
+  await tableBlock.locator('.block-entry-icon').click()
+  await wait(500)
+
+  // 菜单本体仍由 TableBlock 渲染（data-table-menu 是它的句柄，也是格选区豁免标识）
+  await expect(page.locator('.table-menu')).toBeVisible()
+})
+
+test('从入口图标按下即可起拖（图标即拖拽手柄）', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto('/')
+  await page.waitForLoadState('networkidle')
+  await wait(600)
+  await createTable(page)
+  await page.keyboard.press('Escape')
+  await wait(500)
+
+  const box = await page.locator('.block-entry-icon').first().boundingBox()
+  if (!box) throw new Error('量不到入口图标')
+
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await wait(250)
+  await page.mouse.down()
+  // Sortable 有拖动阈值，分步移动才能触发 dragstart
+  await page.mouse.move(box.x + box.width / 2 + 6, box.y + box.height / 2 + 10, { steps: 4 })
+  await page.mouse.move(box.x + box.width / 2 + 10, box.y + box.height / 2 + 40, { steps: 6 })
+  await wait(250)
+  // drag-class="block-drag"：Sortable 拖拽期的本体类名
+  await expect(page.locator('.block-bullet.block-drag, .block-drag')).toHaveCount(1)
+  await page.mouse.up()
+  await wait(400)
+})
+
+test('入口图标住角块：不压首行操作条、不缩小、不左移', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto('/')
+  await page.waitForLoadState('networkidle')
+  await wait(600)
+  await createTable(page)
+
+  // 表格块的入口图标住在「角块」：表格左上角、列条左端、首行条上方那块空白。
+  // 它必须在纵向让出首行条（条带 33px 高，bullet 抬层后 z 高于条带，压上去就点不到），
+  // 同时保持整格 20px 宽（图标居中于 bullet 列，不左移、不缩小）。
+  await page.locator('.table-block').first().hover()
+  await wait(400)
+
+  const geo = await page.evaluate(() => {
+    const iconEl = document.querySelector('.block-row:has(.table-block) .block-entry-icon')
+    const stripEl = document.querySelector('.table-block .strip--row.is-first')
+    const bulletEl = document.querySelector('.block-row:has(.table-block) .block-bullet')
+    if (!iconEl || !stripEl || !bulletEl) return null
+    const icon = iconEl.getBoundingClientRect()
+    const strip = stripEl.getBoundingClientRect()
+    const bullet = bulletEl.getBoundingClientRect()
+    const hit = (x: number, y: number) => {
+      const el = document.elementFromPoint(x, y) as HTMLElement | null
+      return el ? String(el.className) : 'none'
+    }
+    const cx = strip.left + strip.width / 2
+    return {
+      iconW: icon.width,
+      iconH: icon.height,
+      iconLeft: icon.left,
+      iconRight: icon.right,
+      iconBottom: icon.bottom,
+      bulletLeft: bullet.left,
+      bulletW: bullet.width,
+      stripLeft: strip.left,
+      stripRight: strip.right,
+      stripTop: strip.top,
+      stripWidth: strip.width,
+      // 条带顶（+3px，避开圆角）与中点都必须命中条自己
+      hitTop: hit(cx, strip.top + 3),
+      hitMid: hit(cx, strip.top + strip.height / 2),
+      click: { x: cx, y: strip.top + strip.height / 2 },
+    }
+  })
+  if (!geo) throw new Error('量不到入口图标或首行条')
+
+  // 不缩小：与 bullet 格同宽（20px），横向位置就是 bullet 列
+  expect(geo.bulletW).toBeCloseTo(20, 0)
+  expect(geo.iconW).toBeCloseTo(20, 0)
+  expect(geo.iconLeft).toBeCloseTo(geo.bulletLeft, 0)
+  // 不左移：图标右缘落在表格左缘（也就是行条右缘）上，整格横向盖住条带所在的列
+  expect(Math.abs(geo.iconRight - geo.stripRight)).toBeLessThanOrEqual(1)
+  // 让出条带：图标底边不越过条带顶（允许 2px 的圆角膜差）
+  expect(geo.iconBottom).toBeLessThanOrEqual(geo.stripTop + 2)
+  // 角块高度只为容下一个字形，不是整行高
+  expect(geo.iconH).toBeLessThanOrEqual(14)
+
+  expect(geo.stripWidth).toBeGreaterThanOrEqual(9)
+  expect(geo.hitTop).toContain('strip')
+  expect(geo.hitMid).toContain('strip')
+
+  // 点下去必须开的是行/范围菜单（图标抢走的话会开表格菜单，或什么都不开）
+  await page.mouse.click(geo.click.x, geo.click.y)
+  await expect(page.locator('.range-menu')).toBeVisible()
+})
+
+test('文本块不受影响：仍是 bullet dot，没有入口图标', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto('/')
+  await page.waitForLoadState('networkidle')
+  await wait(600)
+
+  const bulletBlock = page.locator('.block[data-block-id]').first()
+  await expect(bulletBlock.locator('.bullet-dot').first()).toHaveCount(1)
+  await expect(bulletBlock.locator('.block-entry-icon')).toHaveCount(0)
+})
+
+test('查询块：入口同样是类型图标而非 dot', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto('/')
+  await page.waitForLoadState('networkidle')
+  await wait(600)
+  await createQuery(page)
+
+  const queryBlock = page.locator('.block:has(.query-block)').first()
+  await expect(queryBlock.locator('.block-entry-icon')).toHaveCount(1)
+  await expect(queryBlock.locator('> .block-row > .block-inner > .block-bullet > .bullet-dot')).toHaveCount(0)
+})

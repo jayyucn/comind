@@ -2,8 +2,8 @@
  * 查询块块级菜单（左上 gutter 入口 → BasePopover）。
  *
  * 覆盖三件用户可见的事：
- * 1. 入口默认不可见、块 hover 才显现（与 table 块同款显隐，pointer-events 也随之切换，
- *    否则透明态会埋一个隐形热区抢表头首格的点击）；
+ * 1. 入口默认不可见、块 hover 才显现（入口是 Block 外壳的 `.block-entry-icon`，
+ *    显隐挂块的 hover、pointer-events 随之切换，否则透明态会埋一个隐形热区抢表头首格的点击）；
  * 2. 菜单是 table 块那套块级操作：缩进 ×2 / 复制 / 剪切 / 粘贴 / 删除，顺序与分组一致；
  * 3. 顶级块「减少缩进」置灰，删除后块从文档消失。
  *
@@ -20,7 +20,8 @@ test('查询块左上入口 hover 显现，菜单六项齐全，删除生效', a
   await insertQueryBlock(page)
 
   const block = page.locator('.block:has(.query-block)').last()
-  const entry = block.locator('.query-entry')
+  // 入口已上提到 Block 外壳的 .block-bullet：类型图标替代 bullet dot，兼拖拽手柄
+  const entry = block.locator('.block-entry-icon')
 
   // 默认透明且不吃指针
   await expect
@@ -36,7 +37,7 @@ test('查询块左上入口 hover 显现，菜单六项齐全，删除生效', a
     .poll(async () => entry.evaluate((el) => getComputedStyle(el).opacity))
     .toBe('1')
 
-  await block.locator('.query-menu-entry').click()
+  await block.locator('.block-entry-icon').click()
 
   const menu = page.locator('.query-menu').last()
   await expect(menu).toBeVisible()
@@ -61,10 +62,12 @@ test('查询块左上入口 hover 显现，菜单六项齐全，删除生效', a
 })
 
 /**
- * 入口的 gutter 必须从块外借：`margin-left: -20px` 抵消 `padding-left: 20px`。
- * 只给 padding 会把整块内容右移 20px，正文左缘与其它块对不齐（已发生过一次）。
+ * 入口已上提到 Block 外壳的 `.block-bullet`，query 块不再为入口向左侧借 gutter
+ * （旧实现是 `margin-left: -20px` 抵消 `padding-left: 20px`）。
+ * 契约不变：**正文左缘必须与普通块对齐** —— 撤掉外延后靠「不留 padding」达成，
+ * 这条断言防的是「哪天又给 query 块补回 padding 把正文推右 20px」。
  */
-test('入口 gutter 不移动块内容：正文左缘与普通块对齐', async ({ page }) => {
+test('入口不再借 gutter：query 正文左缘仍与普通块对齐', async ({ page }) => {
   await page.goto('/')
   await insertQueryBlock(page)
 
@@ -75,11 +78,13 @@ test('入口 gutter 不移动块内容：正文左缘与普通块对齐', async 
     ) as HTMLElement
     return {
       marginLeft: getComputedStyle(q).marginLeft,
+      paddingLeft: getComputedStyle(q).paddingLeft,
       contentLeft: q.querySelector('.lib-body')!.getBoundingClientRect().left,
       siblingLeft: other.getBoundingClientRect().left,
     }
   })
 
-  expect(geo.marginLeft).toBe('-20px')
+  expect(geo.marginLeft).toBe('0px')
+  expect(geo.paddingLeft).toBe('0px')
   expect(Math.abs(geo.contentLeft - geo.siblingLeft)).toBeLessThanOrEqual(1)
 })

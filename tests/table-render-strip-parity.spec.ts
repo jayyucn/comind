@@ -16,8 +16,8 @@ import { test, expect, type Page } from '@playwright/test'
 
 const COL = '.strip--col'
 const ROW = '.strip--row'
-/** 显隐做在包裹层 `.table-entry` 上（子按钮自身不声明 opacity，量它会恒为 1） */
-const ENTRY = '.table-entry'
+/** 入口图标（Block 外壳的 .block-bullet，类型图标替代了 bullet dot） */
+const ENTRY = '.block-entry-icon'
 
 /** 每段条的 computed opacity（按渲染顺序，取两位小数） */
 async function opacities(page: Page, selector: string) {
@@ -124,7 +124,7 @@ test('渲染态表格菜单可用：关掉首行表头，表格立即变为无�
     async () => page.locator(ENTRY).evaluate(el => Number(getComputedStyle(el).opacity)),
     { timeout: 3000 },
   ).toBe(1)
-  await page.locator('.table-menu-entry').click()
+  await page.locator('.block-entry-icon').click()
   await expect(page.locator('.table-menu')).toBeVisible()
 
   await page.locator('.table-menu .menu-row', { hasText: '首行表头' }).click()
@@ -133,7 +133,7 @@ test('渲染态表格菜单可用：关掉首行表头，表格立即变为无�
   await expect(page.locator('.table-block.is-readonly')).toBeVisible()
 })
 
-test('渲染态 hover 出条时，左侧 bullet dot 仍可点（条没有盖住它）', async ({ page }) => {
+test('渲染态 hover 出条时，左侧入口图标仍可点（条没有盖住它）', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto('/')
   await page.waitForLoadState('networkidle')
@@ -141,20 +141,22 @@ test('渲染态 hover 出条时，左侧 bullet dot 仍可点（条没有盖住�
   await seedRenderTable(page)
 
   await hoverBlock(page)
-  const dot = page.locator('.block-row:has(.table-block) .bullet-dot').first()
-  const box = await dot.boundingBox()
-  if (!box) throw new Error('量不到 bullet dot')
+  const entry = page.locator('.block-row:has(.table-block) .block-entry-icon').first()
+  const box = await entry.boundingBox()
+  if (!box) throw new Error('量不到入口图标')
 
-  // 条带与 dot 在左侧 gutter 重叠 3px：渲染态也出条之后，dot 必须仍在这条重叠带上命中
+  // 条带与入口在左侧 gutter 重叠：渲染态也出条之后，图标必须仍在这条重叠带上命中
   const hit = await page.evaluate(([x, y]) => {
     const el = document.elementFromPoint(x, y) as HTMLElement | null
+    if (el?.closest('.block-entry-icon')) return 'block-entry-icon'
     return el?.className ?? ''
   }, [box.x + box.width / 2, box.y + box.height / 2] as const)
-  expect(String(hit)).toContain('bullet-dot')
+  expect(String(hit)).toContain('block-entry-icon')
 
+  // 入口图标点开的是表格菜单 —— 原来 dot 的「激活块并聚焦首格」已随 dot 一起移交
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
   await page.waitForTimeout(800)
-  await expect(page.locator('.table-block .cell-input').first()).toBeVisible()
+  await expect(page.locator('.table-menu')).toBeVisible()
 })
 
 test('渲染态点「+」：插入一行并激活块，光标落到新行首格', async ({ page }) => {

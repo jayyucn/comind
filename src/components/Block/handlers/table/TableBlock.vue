@@ -111,6 +111,8 @@ const props = defineProps<{
   blockFormat?: Record<string, unknown>
   readonly?: boolean
   showPlaceholder?: boolean
+  /** 脱离 Block 外壳使用时（Ideas 快照）自带入口按钮；外壳内由 .block-bullet 统一渲染 */
+  standaloneEntry?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -189,8 +191,10 @@ const bodyRowIndexes = computed(() =>
   Array.from({ length: Math.max(0, rows.value.length - bodyStart.value) }, (_, i) => bodyStart.value + i),
 )
 const tableMinWidth = computed(() => `${Math.max(1, cols.value) * 120}px`)
-/** 左上角入口按钮：锚点给 BasePopover 定位悬浮菜单 */
+/** standalone 入口按钮：锚点给 BasePopover 定位悬浮菜单 */
 const entryEl = ref<HTMLButtonElement | null>(null)
+/** 菜单锚点：入口在 Block 外壳时由 openEntryMenu(el) 传入，standalone 时是自己的按钮 */
+const menuAnchor = ref<HTMLElement | null>(null)
 const menuOpen = ref(false)
 
 const tableEl = ref<HTMLElement | null>(null)
@@ -1017,8 +1021,23 @@ function resetMenuColors() {
 
 // ── 结构操作 ──────────────────────────────────────────────────────
 
-function toggleMenu() {
-  menuOpen.value = !menuOpen.value
+/**
+ * 外壳入口点击（Block/index.vue 的 .block-bullet 类型图标）：
+ * 图标由外壳渲染，锚点也从外壳传进来；菜单本体与表内状态仍归本组件。
+ */
+function openEntryMenu(anchorEl: HTMLElement) {
+  menuAnchor.value = anchorEl
+  menuOpen.value = true
+}
+
+/** standalone 入口按钮点击（Ideas 快照等脱离外壳的场景）：显式切换 */
+function toggleStandaloneMenu() {
+  if (menuOpen.value) {
+    menuOpen.value = false
+    return
+  }
+  menuAnchor.value = entryEl.value
+  menuOpen.value = true
 }
 
 function toggleHeader() {
@@ -2334,6 +2353,8 @@ defineExpose({
   getText: () => props.content ?? '',
   markSaved: () => {},
   getEditor: () => undefined as unknown as Editor,
+  /** 入口菜单：Block 外壳渲染图标，点击时把该元素当锚点传进来 */
+  openEntryMenu,
   cancelDebouncedSave: () => {
     if (saveTimer !== undefined) window.clearTimeout(saveTimer)
     saveTimer = undefined
@@ -2378,9 +2399,13 @@ defineExpose({
     @mousemove="onRootMouseMove"
     @mouseleave="clearActive"
   >
-    <!-- 左上角入口：浮在表格左侧 gutter，点击才弹出悬浮菜单。
-         渲染态同样渲染：未激活的表格块 hover 时也要看得见入口与行列条，两态表现一致。 -->
-    <div class="table-entry">
+    <!-- 自带入口：仅 standaloneEntry 时渲染（Ideas 快照这类脱离 Block 外壳的场景）。
+         外壳内入口统一由 Block/index.vue 的 .block-bullet 渲染（类型图标兼拖拽手柄），
+         那边点图标调本组件的 openEntryMenu(el)，锚点从外面传进来。 -->
+    <div
+      v-if="standaloneEntry"
+      class="table-entry"
+    >
       <button
         ref="entryEl"
         type="button"
@@ -2388,7 +2413,7 @@ defineExpose({
         title="表格菜单"
         aria-label="表格菜单"
         @mousedown.prevent
-        @click.stop="toggleMenu"
+        @click.stop="toggleStandaloneMenu"
       >
         <TableProperties
           :size="12"
@@ -2399,7 +2424,7 @@ defineExpose({
 
     <BasePopover
       :visible="menuOpen"
-      :anchor-el="entryEl"
+      :anchor-el="menuAnchor"
       placement="bottom"
       @close="menuOpen = false"
     >
@@ -2940,16 +2965,15 @@ defineExpose({
 <style scoped>
 .table-block {
   /* 上留白比下留白大 8px：上方 16px 槽位供「列操作入口条」吸附表头时不压到上一个块 */
-  --table-pad-top: 16px;
+  --table-pad-top: 8px;
   --table-pad-y: 8px;
-  /* 左侧 20px gutter 计入盒子：行条贴在表格左缘外，必须落在块 hover 判定域内，
-     否则鼠标一碰到条就会让 .table-block:hover 失效、条自己消失。
-     margin 负值抵消 padding，内容区起点与宽度都不变。 */
-  --table-gutter: 20px;
+  /* 不再向左侧借 gutter：入口已上提到 .block-bullet（Block 外壳统一渲染），
+     盒子只覆盖自己的内容区。行列条仍贴在表格左缘外 10px（absolute 可溢出），
+     显隐改由 .strip:hover 自持，不再依赖块盒子把它们圈进 :hover 判定域。 */
   position: relative;
   /* 表格块上下比普通块（2px）更需要呼吸：否则单元格边框紧贴相邻块文本 */
-  margin: 2px 0 2px calc(-1 * var(--table-gutter));
-  padding: var(--table-pad-top) 0 var(--table-pad-y) var(--table-gutter);
+  margin: 2px 0;
+  padding: var(--table-pad-top) 0 var(--table-pad-y);
 }
 
 /* 表格菜单入口：接在列条左端的角块，与条同高、垂直居中于顶带。
@@ -3242,7 +3266,10 @@ defineExpose({
 /* ── 行 / 列操作条 ── */
 
 /* 条本体：贴表格边框外侧的纯色窄带，位置与尺寸全部由 inline style 给出（随行高 / 列宽变化）。
-   默认透明且不吃指针；块 hover 时整排基座浮现，某一段被压住才升档。
+   默认透明观感、但**恒吃指针**：条带落在表格盒子之外（左缘 -10px），块 hover 已覆盖不到它，
+   只能靠条带自己 :hover 接力。若隐藏态 pointer-events:none，鼠标一移到条上就穿透，
+   条的 :hover 永远不成立 —— 带子闪一帧就消失。（透明热区与表格左缘外的空白重叠，
+   鼠标一进去条立刻显现，不存在「点了看不见的东西」的窗口。）
    圆角只给整条的两个外端（见下），段与段之间保持直角，拼起来才是一条连续的带子。 */
 .strip {
   position: absolute;
@@ -3254,7 +3281,7 @@ defineExpose({
   background: var(--table-strip-bg);
   cursor: pointer;
   opacity: 0;
-  pointer-events: none;
+  pointer-events: auto;
   transition: opacity var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out);
 }
 
@@ -3280,9 +3307,12 @@ defineExpose({
   border-bottom-right-radius: var(--radius-sm);
 }
 
-.table-block:hover .strip {
+/* 条带自持显隐：块 hover 与条带自身 hover 任一成立即显现。
+   撤掉左侧 gutter 外延后，条带已不在块盒子内，只写 .table-block:hover 会让鼠标碰到条时
+   块 hover 断开、条自己消失（点不到也看不见）。 */
+.table-block:hover .strip,
+.strip:hover {
   opacity: 1;
-  pointer-events: auto;
 }
 
 /* 菜单打开期间整排条一起亮：弹层 Teleport 到 body，鼠标移进菜单后 `.table-block:hover`

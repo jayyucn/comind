@@ -1,6 +1,7 @@
-import { getCurrentInstance, onBeforeUnmount, ref } from 'vue'
 import type { MoveEvent } from 'sortablejs'
+import { getCurrentInstance, onBeforeUnmount, ref } from 'vue'
 import type { DraggableEvent } from 'vue-draggable-plus'
+
 import type { DragRect } from '../../../composables/useDragDrop'
 import { computeDepthDelta, computeSortPosition } from '../../../composables/useDragDrop'
 import type { useBlockStore } from '../../../stores/blocks'
@@ -49,6 +50,11 @@ export interface DropTargetGeometry {
   firstChildId: string | null
   /** 目标块 bullet 的矩形；null 表示无 bullet，不可作为放置目标 */
   bulletRect: DragRect | null
+  /**
+   * 目标块**本行**外框（`.block-row`，不含子树）：纵向 before/after 的判定基准。
+   * 不能用 bullet 的矩形——入口钉在首行后，长块要拿整行中线才判得出上下半。
+   */
+  rowRect: DragRect | null
 }
 
 /**
@@ -73,6 +79,7 @@ export function resolveDropAction(
 ): DropTarget | null {
   const {
     bulletRect,
+    rowRect,
     blockId,
     parentId,
     grandparentId,
@@ -83,7 +90,8 @@ export function resolveDropAction(
   if (!bulletRect || !blockId) return null
 
   const delta = computeDepthDelta(cursor.x, bulletRect.left, INDENT_TOTAL_PER_LEVEL)
-  const before = computeSortPosition(cursor.y, bulletRect) === 'before'
+  // 纵向基准优先用整行外框；行 rect 缺失（极端 DOM 状况）才退回 bullet，宁可退化成窄区也不失效
+  const before = computeSortPosition(cursor.y, rowRect ?? bulletRect) === 'before'
 
   // 右列：成为 T 的子节点。上半区 → 长子位（firstChildId 为锚点；无子时 null = 追加）
   if (delta === 1) {
@@ -326,7 +334,8 @@ export function useBlockDragDrop(options: UseBlockDragDropOptions) {
       nextSiblingId: siblingBlockId(targetBlockEl.nextElementSibling),
       parentNextSiblingId: siblingBlockId(parentBlock?.nextElementSibling ?? null),
       firstChildId: childContainer ? siblingBlockId(firstBlockChild(childContainer)) : null,
-      bulletRect: bullet ? bullet.getBoundingClientRect() : null
+      bulletRect: bullet ? bullet.getBoundingClientRect() : null,
+      rowRect: readRowRect(targetBlockEl)
     }
   }
 

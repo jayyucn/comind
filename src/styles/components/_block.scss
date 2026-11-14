@@ -111,11 +111,17 @@
 
 // ===== 子弹点 / Chevron（bullet 区域） =====
 // Bullet 区域
+// 纵向钉在**首行**：容器在 .block-inner 里改 flex-start（见下），本格自持 1.8em 首行高度，
+// 中心即首行中线。长块（表格/查询/代码/图片）不再让 dot 飘到整块垂直中线。
+// --block-entry-top 供有内边距的类型（table 16px / query 8px）把入口压到表头行上，
+// 由 handler 的 entryTop 输出，外壳写在 .block 上。
 .block-bullet {
   position: relative;
   flex-shrink: 0;
+  align-self: flex-start;
   width: 20px;
   height: 1.8em;
+  margin-top: var(--block-entry-top, 0px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -132,6 +138,61 @@
   opacity: var(--block-bullet-opacity);
   transition: opacity var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
   flex-shrink: 0;
+}
+
+// 非文本块的入口图标（table/query）：替代 bullet dot，兼「块菜单按钮」与「拖拽手柄」。
+// 仅 hover 显现 —— dot 是常显的弱提示，图标有类型标识作用，但整列常显会变成一束图标墙。
+// 显隐挂 .block-row:hover 而不是自身：自身 pointer-events:none 时永远触发不了 :hover。
+// cursor: grab 是这个元素唯一能表达「这里可以拖」的线索（它不再是圆点）。
+.block-entry-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  border-radius: $radius-sm;
+  color: var(--text-tertiary);
+  opacity: 0;
+  pointer-events: none;
+  cursor: grab;
+  transition: opacity var(--dur-fast) var(--ease-out) 240ms, background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+
+  &:active {
+    cursor: grabbing;
+  }
+}
+
+.block-row:hover .block-entry-icon,
+.block-bullet:hover .block-entry-icon {
+  opacity: 1;
+  pointer-events: auto;
+  transition-delay: 0s;
+}
+
+.block-entry-icon:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+// 表格块的入口图标住进「角块」：表格左上角、列条左端、行条上方的那块空白。
+// 为什么是那儿：行/列条从表格内容起点才开始画（列条带 = 表格顶那 10px，行条带从首行
+// 顶部往下），角块里没有任何别人的东西 —— 图标既不必缩小，也不必左移，位置还正好是
+// 表格自己的「全选角」。
+// 落位：bullet 格的 margin-top 由 handler 的 entryTop 给出（table 16px，为的是与表头文字
+// 同行），这里**抵消**它把图标抬回块顶；盒子高度收到 12px（= 字形高），于是命中面就是
+// 这 20×12 的角块，不会往下伸进首行条（条高 33px，从角块下沿再往下开始）。
+// 宽度保持整格 20px（图标居中于 bullet 列，与文本块圆点同列）。
+$block-entry-corner-height: 12px;
+
+.block-row:has(.table-block) .block-bullet:has(> .block-entry-icon) > .block-entry-icon {
+  align-self: flex-start;
+  height: $block-entry-corner-height;
+  margin-top: calc(-1 * var(--block-entry-top, 0px));
+
+  // 字形不参与命中：命中面严格等于上面那个角块，字形溢出的部分不会抢条带的点击。
+  > svg {
+    pointer-events: none;
+  }
 }
 
 // 空 block 且非首行/尾行：未激活且未 hover 时隐藏圆点（保留布局空间）
@@ -178,18 +239,21 @@
   }
 }
 
-// 表格块（编辑态，行/列操作条已渲染）：左侧 20px gutter 被条带占用（TableBlock 的
-// --table-gutter 用负 margin 把盒子铺进 bullet 这块空间），条带 [内容左缘-10, 内容左缘]
-// 与 bullet dot（[内容左缘-13, -7]）重叠且带 z-index: $z-sticky —— 不抬层的话鼠标落在
-// dot 上命中的是行条（点 dot 变成打开行菜单），dot 也被条带吃掉一半。
+// 表格块（条带已渲染）：bullet 的 20px 格就是表格左侧那 20px gutter，行/列条带
+// （宽 10px，贴表格左缘）正好压在格的右半，且条带 z-index: $z-sticky —— 不抬层的话
+// 鼠标落在 dot 上命中的是行条（点 dot 变成打开行菜单），dot 也被条带吃掉一半。
 // 容器让位：抬层后 20px 宽的容器会整段盖住 10px 宽的条带，条带就点不到了；只让
 // dot / chevron 这两个子元素恢复指针。限定到条带存在时，渲染态不受影响。
+// 图标入口类型的图标盒已缩到格的左半（见上方 .block-entry-icon 段），与条带不重叠，
+// 抬层对它只剩下「子元素不吃指针」这一条意义。
 // 只限表格块：图片块的左中缩放把手同样贴在本区域中线，全局抬层会把它盖掉。
 .block-row:has(.table-block):has(.strip) .block-bullet {
   z-index: $z-block-chrome;
   pointer-events: none;
 
-  > * {
+  // 入口图标例外：它自己的 pointer-events 由显隐规则控制（隐藏时不占指针），
+  // 否则 opacity:0 的图标仍会吃掉 dot 附近那块热区。
+  > *:not(.block-entry-icon) {
     pointer-events: auto;
   }
 }

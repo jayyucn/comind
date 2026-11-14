@@ -127,6 +127,11 @@ const isSelected = computed(() => {
 })
 const handler = computed(() => getHandler(block.value.type))
 
+/** 入口类型图标：有则替代 bullet dot（点击开本块菜单，同时是拖拽手柄） */
+const entryIcon = computed(() => handler.value?.entryIcon)
+/** 入口相对块顶的下偏移：让图标压在本类型首行（表头行等）上 */
+const entryTop = computed(() => handler.value?.entryTop)
+
 const decodedContent = computed(() => {
   // 编辑态显示中文 label：存储 type → 显示 label（decode）
   return decodeRelationshipContentWithMeta(block.value.content ?? '')
@@ -199,6 +204,10 @@ const isSingleEmptyBlock = computed(() => {
 })
 
 const editorRef = ref<BlockTypeEditorExposed | null>(null)
+/** 渲染态（未激活）的组件实例：table/query 两态同组件，渲染态同样要能开入口菜单 */
+const renderRef = ref<{ openEntryMenu?: (anchorEl: HTMLElement) => void } | null>(null)
+/** 入口图标元素：既是要传给菜单的锚点，也是拖拽手柄（handle=".block-bullet"） */
+const entryEl = ref<HTMLElement | null>(null)
 const cursorPos = ref(0)
 
 // ── 常量配置 ──────────────────────────────────────────────
@@ -604,20 +613,20 @@ async function onLanguageChange(lang: string) {
   }
 }
 
+/**
+ * 入口图标点击：菜单内容与表内状态都留在组件里，外壳只负责渲染图标并把自身元素当锚点传进去。
+ * 两态同组件但挂在不同分支上（editorRef / renderRef），未激活时走渲染态实例。
+ */
+function onEntryClick() {
+  const host = isActive.value ? editorRef.value : renderRef.value
+  const el = entryEl.value
+  if (!el || !host?.openEntryMenu) return
+  host.openEntryMenu(el)
+}
+
 /** bullet dot 点击：打开单块子树编辑弹窗；弹窗内（inBlockModal）为 no-op（ADR-0039） */
 function onBulletClick() {
   if (inBlockModal) return
-  // 表格 / 查询块不能作为 BlockModal 根（子树弹窗会与块内自有交互打架）：
-  // 点击圆点只做激活，焦点交给块内视图自己（query 块的 focus 是空实现）。
-  if (block.value.type === 'table' || block.value.type === 'query') {
-    if (editorStore.activeBlockId === blockId.value) {
-      // 点击本身会让 textarea 失焦，等浏览器完成这次 click 的焦点处理后再聚焦首格
-      requestAnimationFrame(() => editorRef.value?.focus('start'))
-    } else {
-      editorStore.activateBlock(blockId.value)
-    }
-    return
-  }
   editorStore.openBlockModal(blockId.value)
 }
 
@@ -648,7 +657,7 @@ watch(isActive, (active) => {
     class="block"
     :class="[priorityClass, statusClass, { active: isActive, 'cb-selected': isSelected && !hasSelectedAncestor, 'is-collapsed': collapsed, 'is-animating': isAnimating }]"
     :data-block-id="blockId"
-    :style="{ '--block-indent': indentWidth, '--indent-depth': depth }"
+    :style="{ '--block-indent': indentWidth, '--indent-depth': depth, '--block-entry-top': entryTop }"
     @mousedown="onBlockMousedown"
   >
     <div class="block-row">
@@ -660,12 +669,15 @@ watch(isActive, (active) => {
 
       <!-- 内容区域（bullet + content）- 选中时边框只应用到此容器 -->
       <div class="block-inner">
-        <!-- Bullet：dot 常显，点击打开单块子树编辑弹窗（BlockModal）；
+        <!-- Bullet 区域（也是拖拽手柄 handle=".block-bullet"）：
+             有 entryIcon 的类型（table/query）渲染类型图标，替代 bullet dot ——
+             图标同时承担三件事：类型标识、点开本块菜单、按下拖动即拖拽。
+             无 entryIcon 的类型仍是 dot：常显，点击打开单块子树编辑弹窗（BlockModal）。
              chevron 在有子块**或有字段行**时（canCollapse，ADR-0045 折叠范围扩展）且 hover 时显现，
              点击负责折叠/展开（ADR-0039） -->
         <span
           class="block-bullet"
-          :class="{ collapsed, 'hide-empty-bullet': hideBulletForEmpty }"
+          :class="{ collapsed, 'hide-empty-bullet': !entryIcon && hideBulletForEmpty }"
         >
           <span
             v-if="canCollapse"
@@ -682,6 +694,21 @@ watch(isActive, (active) => {
             />
           </span>
           <span
+            v-if="entryIcon"
+            ref="entryEl"
+            class="block-entry-icon"
+            :title="handler?.entryLabel"
+            :aria-label="handler?.entryLabel"
+            @click.stop="onEntryClick"
+          >
+            <component
+              :is="entryIcon"
+              :size="12"
+              :stroke-width="1.8"
+            />
+          </span>
+          <span
+            v-else
             class="bullet-dot"
             title="打开块详情"
             @click.stop="onBulletClick"
@@ -732,6 +759,7 @@ watch(isActive, (active) => {
             <component
               :is="handler.renderComponent"
               v-else-if="handler"
+              ref="renderRef"
               :block-id="blockId"
               :content="block.content"
               :block-format="block.format"

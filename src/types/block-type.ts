@@ -10,6 +10,15 @@ export interface BlockTypeHandler {
   label: string
   editorComponent: Component
   renderComponent: Component
+  /**
+   * 块左侧入口的类型图标。给了就在 `.block-bullet` 里渲染它（替代 bullet dot），
+   * 同时充当：块菜单按钮（点击）+ 拖拽手柄（按下拖动）。缺省 = 渲染 bullet dot。
+   */
+  entryIcon?: Component
+  /** 入口图标的 title / aria-label */
+  entryLabel?: string
+  /** 入口相对块顶的下偏移（CSS 长度）：让图标压在本类型首行（如表头行）上 */
+  entryTop?: string
   /** 类型特化钩子，可选。返回该类型实例需要的事件处理器 */
   setupBlock?: (ctx: BlockSetupContext) => BlockTypeHooks | void
 }
@@ -68,9 +77,16 @@ export interface BlockTypeEditorExposed {
   getEditor: () => Editor
   cancelDebouncedSave?: () => void
   focusAtCoords?: (x: number, y: number) => void
+  /**
+   * 打开本块的自定义菜单。入口图标由 Block 外壳渲染（`.block-bullet`），
+   * 外壳把该元素当作锚点传进来，菜单本体仍留在组件内（表内状态不外泄）。
+   */
+  openEntryMenu?: (anchorEl: HTMLElement) => void
 }
 
 export interface BlockTypeRenderExposed {
   content: string
   showPlaceholder?: boolean
+  /** 同 BlockTypeEditorExposed.openEntryMenu：渲染态（未激活）也要能开菜单 */
+  openEntryMenu?: (anchorEl: HTMLElement) => void
 }
