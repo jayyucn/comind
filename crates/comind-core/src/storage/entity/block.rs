@@ -98,9 +98,20 @@ pub fn block_get_by_id<E: Executor>(exec: &E, id: &str) -> Result<Block, Box<dyn
     })
 }
 
+/// 含软删的单块查询：不过滤 `deleted_at`，用于「剪切后粘贴」的搬移判定。
+/// 返回的 `Block.deleted_at` 由调用方判断（`Some` = 仍处于软删状态）。
 #[cfg(not(target_arch = "wasm32"))]
-pub fn block_get_by_page_id<E: Executor>(exec: &E, page_id: &str) -> Result<Vec<Block>, Box<dyn Error>> {
-    let sql = format!(
+pub fn block_get_by_id_including_deleted<E: Executor>(exec: &E, id: &str) -> Result<Block, Box<dyn Error>> {
+    let sql = format!("SELECT {} FROM Block WHERE id = ?1", block_select_cols());
+    let params: Vec<&dyn ToSql> = vec![&id];
+    let rows = exec.query_map(&sql, &params, |row| row_to_block_native(row)).map_err(bx)?;
+    rows.into_iter().next().ok_or_else(|| {
+        Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "Block not found")) as Box<dyn Error>
+    })
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn block_get_by_page_id<E: Executor>(exec: &E, page_id: &str) -> Result<Vec<Block>, Box<dyn Error>> {    let sql = format!(
         "SELECT {} FROM Block WHERE page_id = ?1 AND deleted_at IS NULL ORDER BY pos",
         block_select_cols()
     );

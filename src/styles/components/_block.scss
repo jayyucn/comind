@@ -195,12 +195,28 @@ $block-entry-corner-height: 12px;
   }
 }
 
+// 块入口菜单的容器与分隔线（table / query 共用，见 Block/components/BlockMenuCommon.vue）。
+// 放全局而不是各自的 scoped style：容器与分隔线是纯几何，两个 handler 的类型专属段
+// 与通用段组件三处都要用同一套；行内按钮的样式在 common/BlockMenuItem.vue（scoped）。
+// 浮层 Teleport 到 body，所以这条规则不能依赖任何块内祖先选择器。
+.block-entry-menu {
+  display: flex;
+  flex-direction: column;
+  min-width: 156px;
+  padding: 4px;
+
+  .menu-sep {
+    display: block;
+    height: 1px;
+    margin: 4px 2px;
+    background: var(--border);
+  }
+}
+
 // 空 block 且非首行/尾行：未激活且未 hover 时隐藏圆点（保留布局空间）
 .block-bullet.hide-empty-bullet .bullet-dot {
   visibility: hidden;
-}
-
-.block-bullet.hide-empty-bullet:hover .bullet-dot,
+}.block-bullet.hide-empty-bullet:hover .bullet-dot,
 .block.active>.block-row .block-bullet.hide-empty-bullet .bullet-dot {
   visibility: visible;
 }

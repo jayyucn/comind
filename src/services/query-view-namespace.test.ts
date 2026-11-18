@@ -4,6 +4,8 @@ const mockClient = {
   getScreenViews: vi.fn(),
   createScreen: vi.fn(),
   createTab: vi.fn(),
+  deleteScreen: vi.fn(),
+  deleteScreenView: vi.fn(),
   markOrphanScreenViews: vi.fn(),
   cleanupOrphanScreenViews: vi.fn(),
 }
@@ -114,6 +116,58 @@ describe('query-view-namespace — 复制块的配置克隆', () => {
     await cloneQueryViewNamespace('src', 'dst')
     expect(mockClient.createScreen).not.toHaveBeenCalled()
     expect(mockClient.createTab).not.toHaveBeenCalled()
+  })
+
+  test('源刚被剪切（配置整组在孤儿前缀）→ 回退读孤儿命名空间再克隆', async () => {
+    // 剪切 = 复制 + 删除，删除时 markQueryViewOrphan 已把源块的行改挂孤儿前缀。
+    // 只读活前缀的话「剪切 → 立刻粘贴」会掉回默认三列（复制 → 粘贴不受影响）。
+    mockClient.getScreenViews.mockImplementation(async (entity: string) =>
+      entity === 'query-orphan:src'
+        ? [screen({ id: 's1', entity }), screen({ id: 't1', entity, parent_id: 's1', name: '全部' })]
+        : [],
+    )
+
+    await cloneQueryViewNamespace('src', 'dst')
+
+    expect(mockClient.getScreenViews).toHaveBeenCalledWith('query-block:src')
+    expect(mockClient.getScreenViews).toHaveBeenCalledWith('query-orphan:src')
+    expect(mockClient.createScreen).toHaveBeenCalledWith('query-block:dst', '查询', 'table', 0, '{"columns":[]}')
+    expect(mockClient.createTab).toHaveBeenCalledTimes(1)
+  })
+
+  test('活前缀优先：源块还在时不去摸孤儿前缀（撤销复活后两处都有行，不能抄错）', async () => {
+    mockClient.getScreenViews.mockImplementation(async (entity: string) =>
+      entity === 'query-block:src' ? [screen({ id: 's1' })] : [],
+    )
+
+    await cloneQueryViewNamespace('src', 'dst')
+
+    expect(mockClient.getScreenViews).not.toHaveBeenCalledWith('query-orphan:src')
+  })
+
+  test('目标命名空间先清空：副本挂载时已 seed 一套默认 Screen+Tab，留着会叠成两组', async () => {
+    mockClient.getScreenViews.mockImplementation(async (entity: string) => {
+      if (entity === 'query-block:src') {
+        return [screen({ id: 's1' }), screen({ id: 't1', parent_id: 's1', name: '全部' })]
+      }
+      if (entity === 'query-block:dst') {
+        return [
+          screen({ id: 'seed-s', entity, is_default: 1 }),
+          screen({ id: 'seed-t', entity, parent_id: 'seed-s' }),
+        ]
+      }
+      return []
+    })
+
+    await cloneQueryViewNamespace('src', 'dst')
+
+    // 只删 Screen（Tabs 由 delete_screen 级联）；逐条删已随级联消失的 Tab 会抛错
+    expect(mockClient.deleteScreen).toHaveBeenCalledWith('seed-s')
+    expect(mockClient.deleteScreenView).not.toHaveBeenCalled()
+    // 清空在先、重建在后
+    expect(mockClient.deleteScreen.mock.invocationCallOrder[0]).toBeLessThan(
+      mockClient.createScreen.mock.invocationCallOrder[0],
+    )
   })
 
   test('源与目标相同（或空 id）→ 跳过，避免自己克隆自己', async () => {

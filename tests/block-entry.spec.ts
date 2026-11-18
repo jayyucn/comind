@@ -99,7 +99,30 @@ test('点入口图标打开表格菜单', async ({ page }) => {
   await wait(500)
 
   // 菜单本体仍由 TableBlock 渲染（data-table-menu 是它的句柄，也是格选区豁免标识）
-  await expect(page.locator('.table-menu')).toBeVisible()
+  await expect(page.locator('.block-entry-menu')).toBeVisible()
+
+  // 菜单项顺序：类型专属项（表头开关 / 均分列宽）在前，通用段在后，删除收尾。
+  // 通用段与 query 块共用 BlockMenuCommon，所以只有这里能锁住表格的插入位置。
+  const items = await page
+    .locator('.block-entry-menu [data-block-menu-item]')
+    .evaluateAll((els) => els.map((el) => el.getAttribute('data-block-menu-item')))
+  expect(items).toEqual([
+    'header',
+    'equal-columns',
+    'insert-above',
+    'insert-below',
+    'indent',
+    'outdent',
+    'copy',
+    'cut',
+    'paste',
+    'reset-text',
+    'delete',
+  ])
+
+  // 六条分隔线：表头开关后、专属段与通用段之间、插入组后、缩进组后、剪贴板组后、重置后。
+  // 专属段后那条由通用段自带（noDividerTop 未置），缺了就是「布尔 prop 省略被转 false」的老毛病。
+  await expect(page.locator('.block-entry-menu .menu-sep')).toHaveCount(6)
 })
 
 test('从入口图标按下即可起拖（图标即拖拽手柄）', async ({ page }) => {
@@ -214,4 +237,87 @@ test('查询块：入口同样是类型图标而非 dot', async ({ page }) => {
   const queryBlock = page.locator('.block:has(.query-block)').first()
   await expect(queryBlock.locator('.block-entry-icon')).toHaveCount(1)
   await expect(queryBlock.locator('> .block-row > .block-inner > .block-bullet > .bullet-dot')).toHaveCount(0)
+})
+
+/** 打开某块的入口菜单（入口只在块 hover 时可见可点） */
+async function openMenu(page: Page, blockSelector: string) {
+  const block = page.locator(blockSelector).first()
+  await block.locator('.table-block, .query-block').first().hover()
+  await wait(250)
+  await block.locator('.block-entry-icon').click()
+  await expect(page.locator('.block-entry-menu')).toBeVisible()
+}
+
+test('通用菜单项：在下方插入新块，落在表格块紧邻位置并接管光标', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto('/')
+  await page.waitForLoadState('networkidle')
+  await wait(600)
+  await createTable(page)
+  await page.keyboard.press('Escape')
+  await wait(500)
+
+  const before = await page.locator('.block').count()
+  await openMenu(page, '.block:has(.table-block)')
+  await page.locator('[data-block-menu-item="insert-below"]').click()
+  await wait(600)
+
+  await expect.poll(async () => page.locator('.block').count()).toBe(before + 1)
+  // 表格块在前，新块紧随其后：空文本块（dot 而非类型图标）、且直接进编辑态
+  const blocks = page.locator('.block')
+  await expect(blocks.first().locator('.table-block')).toHaveCount(1)
+  const inserted = blocks.nth(1)
+  await expect(inserted.locator('.table-block')).toHaveCount(0)
+  await expect(inserted.locator('> .block-row > .block-inner > .block-bullet > .bullet-dot')).toHaveCount(1)
+  await expect(inserted).toHaveClass(/active/)
+})
+
+test('通用菜单项：在上方插入新块，落在表格块之前', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto('/')
+  await page.waitForLoadState('networkidle')
+  await wait(600)
+  await createTable(page)
+  await page.keyboard.press('Escape')
+  await wait(500)
+
+  await openMenu(page, '.block:has(.table-block)')
+  await page.locator('[data-block-menu-item="insert-above"]').click()
+  await wait(600)
+
+  const blocks = page.locator('.block')
+  await expect(blocks.first().locator('.table-block')).toHaveCount(0)
+  await expect(blocks.nth(1).locator('.table-block')).toHaveCount(1)
+  await expect(page.locator('.table-block')).toHaveCount(1)
+})
+
+test('通用菜单项：重置为文本块 → 表格消失成空文本块；Ctrl+Z 把表格整体找回', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto('/')
+  await page.waitForLoadState('networkidle')
+  await wait(600)
+  await createTable(page)
+  await page.keyboard.press('Escape')
+  await wait(500)
+
+  const cellText = await page.locator('.table-block').first().innerText()
+  expect(cellText).toContain('C0')
+
+  await openMenu(page, '.block:has(.table-block)')
+  await page.locator('[data-block-menu-item="reset-text"]').click()
+  await wait(800)
+
+  // 删块 + 同位置新建：表格没了，那一行变成普通文本块
+  await expect(page.locator('.table-block')).toHaveCount(0)
+  await expect(page.locator('.block-entry-icon')).toHaveCount(0)
+  await expect(page.locator('.bullet-dot').first()).toBeVisible()
+
+  // 撤销：块连同表格配置一起回来（删除与新建在同一个快照步里）
+  await page.keyboard.press('Escape')
+  await wait(200)
+  await page.keyboard.press('Control+z')
+  await expect(page.locator('.table-block')).toHaveCount(1)
+  await expect
+    .poll(async () => page.locator('.table-block').first().innerText())
+    .toContain('C0')
 })

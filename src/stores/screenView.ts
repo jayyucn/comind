@@ -1,7 +1,8 @@
 import { defineStore } from 'pinia'
 import { computed, reactive, ref } from 'vue'
+
 import type { Condition, ConditionValue, SortRule, ViewQuery } from '../core/query'
-import { parseLayoutConfig, type LayoutConfig, type TableColumnConfig, type TableConfig, type ViewKind } from '../core/view'
+import { type LayoutConfig, parseLayoutConfig, type TableColumnConfig, type TableConfig, type ViewKind } from '../core/view'
 import { defaultViewNameForEntity } from '../core/view/management'
 import type { CoreClient } from '../wasm/client'
 import { initCoreClient } from '../wasm/client'
@@ -497,4 +498,16 @@ export function useScreenViewStore(entityKey: string = 'block', options: ScreenV
   const def = makeScreenViewStore(id, entityKey, defaultViewName, defaultViewType, options.defaultConfig)
   storeRegistry.set(id, def)
   return def()
+}
+
+/**
+ * 取**已存在**的命名空间 store，不存在返回 null（不创建、不 seed）。
+ *
+ * 供「库里的行被别人换掉了」的旁路使用：粘贴查询块时克隆会先清空目标命名空间再重建，
+ * 而副本挂载时已经把被清掉的那套 seed 行读进了内存（`views` / `currentTabId` 都指向死 id，
+ * 接着改列宽就写向已删除的 tab）。此时需要判断「这个命名空间是否已在内存里」再决定要不要
+ * 重读 —— 用 `useScreenViewStore` 会顺手造一个 store，两个 load 并发就可能 seed 两套默认屏。
+ */
+export function peekScreenViewStore(entityKey: string = 'block'): ScreenViewStore | null {
+  return storeRegistry.get(`screenView:${entityKey}`)?.() ?? null
 }

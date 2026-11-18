@@ -10,6 +10,12 @@ pub trait BlockRepository {
     fn get_children_including_deleted(&self, parent_id: &str) -> Result<Vec<Block>, Box<dyn Error>>;
     /// 批量按 ID 查询 block（用于 checkAndFire 批量化，避免 N+1 IPC）
     fn get_by_ids(&self, ids: &[String]) -> Result<Vec<Block>, Box<dyn Error>>;
+    /// 按 ID 查询**含软删**块（不过滤 `deleted_at`）。
+    ///
+    /// 只服务于「剪切后粘贴」的搬移判定：要区分「这块是我刚剪的（仍软删）」与
+    /// 「这块还活着（复制，或已被回收站恢复）」，而 `get_by_id` 对软删块报 NotFound，
+    /// 两者都会落到同一条错误分支，判不出来。
+    fn get_by_id_including_deleted(&self, id: &str) -> Result<Block, Box<dyn Error>>;
     /// 撤销软删除：将 deleted_at 置 NULL（版本 +1、刷新 updated_at），返回复活后的块。
     fn undelete(&mut self, id: &str) -> Result<Block, Box<dyn Error>>;
     /// 仅刷新 updated_at（不 bump version）——字段值写入的派生时间戳收口。

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { Editor } from '@tiptap/vue-3'
-import { CalendarDays, ClipboardPaste, Columns, Copy, IndentDecrease, IndentIncrease, LayoutGrid, Scissors, Table, Trash2 } from 'lucide-vue-next'
+import { CalendarDays, Columns, LayoutGrid, Table } from 'lucide-vue-next'
 import { computed, markRaw, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
@@ -11,8 +11,6 @@ import type { ViewQuery } from '../../../../core/query'
 import { createQueryEngine } from '../../../../core/query'
 import { type BoardConfig, type CalendarConfig, type LayoutConfig, parseLayoutConfig, type QuadrantConfig, type TableConfig, type ViewKind } from '../../../../core/view'
 import type { ViewTypeOption } from '../../../../core/view/management'
-import { COMIND_BLOCK_MIME, serializeBlocks, writeClipboardPayload } from '../../../../services/block-clipboard'
-import { resolveClipboardForest } from '../../../../services/external-paste-parse'
 import { cloneQueryViewNamespace, queryViewEntity } from '../../../../services/query-view-namespace'
 import { useBlockCardStore } from '../../../../stores/blockCard'
 import { useBlockStore } from '../../../../stores/blocks'
@@ -20,10 +18,8 @@ import { useEditorStore } from '../../../../stores/editor'
 import { useFieldValueStore } from '../../../../stores/fieldValue'
 import { usePageStore } from '../../../../stores/pages'
 import { usePanesStore } from '../../../../stores/panes'
-import { useScreenViewStore } from '../../../../stores/screenView'
+import { peekScreenViewStore, useScreenViewStore } from '../../../../stores/screenView'
 import type { Block } from '../../../../types/block'
-import type { FieldValue } from '../../../../types/field-value'
-import { decodeFieldValueData } from '../../../../utils/field-value-codec'
 import type { BlockCard } from '../../../../wasm/types'
 import BasePopover from '../../../common/BasePopover.vue'
 import QueryPageFrame from '../../../common/QueryPageFrame.vue'
@@ -35,6 +31,7 @@ import QuadrantView from '../../../views/QuadrantView.vue'
 import SourcePageCell from '../../../views/SourcePageCell.vue'
 import TableView from '../../../views/TableView.vue'
 import type { CellRegistry } from '../../../views/types'
+import BlockMenuCommon from '../../components/BlockMenuCommon.vue'
 import { normalizePageColumn } from './page-column'
 import { excludeEmptyCards } from './source-cards'
 
@@ -224,129 +221,32 @@ function handleCellClick(blockId: string, fieldKey: string, event?: MouseEvent) 
 
 // ── 块级菜单（入口在 Block 外壳，菜单本体留在这里 → BasePopover）──────────
 // 入口图标由 .block-bullet 统一渲染（兼拖拽手柄），点击时把那个元素当锚点传进来；
-// 菜单项依赖本块 store 状态，不外泄给外壳。
+// 菜单内容依赖本块 store 状态，不外泄给外壳。通用五项（缩进/复制/剪切/粘贴/删除）
+// 由 BlockMenuCommon 渲染，本组件只提供 query 专属的粘贴收尾。
 const menuOpen = ref(false)
 const menuAnchor = ref<HTMLElement | null>(null)
-
-const currentBlock = computed<Block | undefined>(() => blockStore.getBlock(props.blockId))
-/** 顶级块没有「减少缩进」可言；其余状态不在这里判定，交给 store 的 no-op 兜底。 */
-const canOutdent = computed(() => !!currentBlock.value?.parentId)
 
 function openEntryMenu(anchorEl: HTMLElement) {
   menuAnchor.value = anchorEl
   menuOpen.value = true
 }
 
-function indentBlock() {
-  menuOpen.value = false
-  void blockStore.indent(props.blockId)
-}
-
-function outdentBlock() {
-  menuOpen.value = false
-  void blockStore.outdent(props.blockId)
-}
-
-/** 字段值随行（与块复制同口径）：fieldValueStore 实时缓存优先，回退块上的快照。 */
-function blockPropsRecord(block: Block): Record<string, { value: string; type: string }> | null {
-  let props: FieldValue[] = fieldValueStore.getBlockFieldValues(block.id)
-  if (props.length === 0 && block.properties && block.properties.length > 0) {
-    props = block.properties
-  }
-  if (props.length === 0) return null
-  const record: Record<string, { value: string; type: string }> = {}
-  for (const p of props) {
-    const value = decodeFieldValueData(p.value_json, p.value_type)
-    record[p.key] = {
-      value: typeof value === 'string' ? value : JSON.stringify(value),
-      type: p.value_type,
-    }
-  }
-  return record
-}
-
-/** 复制整块进块级剪贴板：子树 + 字段值随行，视图配置在粘贴时另行克隆（不走剪贴板）。 */
-async function copyBlock(): Promise<void> {
-  menuOpen.value = false
-  const block = currentBlock.value
-  if (!block) return
-  const payload = serializeBlocks([block], {
-    resolveChildren: (b) => blockStore.getChildren(b.id),
-    resolveProperties: blockPropsRecord,
-  })
-  await writeClipboardPayload(payload)
-}
-
-async function cutBlock(): Promise<void> {
-  menuOpen.value = false
-  const block = currentBlock.value
-  if (!block) return
-  const payload = serializeBlocks([block], {
-    resolveChildren: (b) => blockStore.getChildren(b.id),
-    resolveProperties: blockPropsRecord,
-  })
-  await writeClipboardPayload(payload)
-  editorStore.deactivateBlock()
-  await blockStore.deleteBlock(props.blockId)
-}
-
 /**
- * 读取系统剪贴板里可供块粘贴的数据。只取三种类型（内部 MIME / html / plain），
- * 其余（图片等）不参与 —— 判断与解析全交给 `resolveClipboardForest`。
- * 读权限被拒（Tauri WebView 常见）时退化为纯文本读取，至少还能粘文本。
- */
-async function readClipboardData(): Promise<Record<string, string>> {
-  const data: Record<string, string> = {}
-  try {
-    const items = await navigator.clipboard.read()
-    for (const item of items) {
-      for (const type of item.types) {
-        if (type === COMIND_BLOCK_MIME || type === 'text/plain' || type === 'text/html') {
-          data[type] = await (await item.getType(type)).text()
-        }
-      }
-    }
-    return data
-  } catch {
-    /* 退化到 readText */
-  }
-  try {
-    data['text/plain'] = await navigator.clipboard.readText()
-  } catch {
-    /* 彻底不可读：当作空剪贴板 */
-  }
-  return data
-}
-
-/**
- * 粘贴到本块**下方**（与普通块 Ctrl+V 同一落点语义）。
+ * 粘贴收尾（类型专属）：粘进来的是查询块副本时，把源块的命名视图克隆到新块键。
+ * 配置不在剪贴板上，不显式搬一次，副本会掉回默认三列，看起来像「复制漏了东西」。
+ * 通用段只负责「复制/粘贴整块」，不认识 query 这个类型 —— 所以这一步留在类型侧。
  *
- * 粘进来的是查询块副本时，再把源块的命名视图克隆到新块键 —— 配置不在剪贴板上，
- * 不显式搬一次，副本会掉回默认三列，看起来像「复制漏了东西」。
+ * 克隆是「清空目标命名空间 + 重建」：副本早在挂载时就 seed 并把那套默认行的 id 读进了自己的
+ * store（`views` / `currentTabId`），库里的行被换掉后内存仍指向死 id —— 接着改列宽就会写向
+ * 已删除的 tab。故克隆后按新块键重读一次；副本尚未挂载时跳过（它挂载时的 load 会读到新行，
+ * 此处再造一个 store 反而可能和它并发 seed 两套默认屏）。
  */
-async function pasteBlock(): Promise<void> {
-  menuOpen.value = false
-  const pageId = currentBlock.value?.pageId
-  if (!pageId) return
-  const data = await readClipboardData()
-  const forest = resolveClipboardForest((mime) => data[mime] ?? '')
-  if (!forest || forest.length === 0) return
-  const created = await blockStore.pasteBlocks(forest, {
-    pageId,
-    anchorBlockId: props.blockId,
-    fallbackParentId: null,
-  })
-  const sourceId = forest[0]?.id
+async function afterPaste(created: Block[], sourceIds: string[]): Promise<void> {
+  const sourceId = sourceIds[0]
   const copy = created[0]
-  if (sourceId && copy && copy.type === 'query') {
-    await cloneQueryViewNamespace(sourceId, copy.id)
-  }
-}
-
-async function deleteBlock() {
-  menuOpen.value = false
-  editorStore.deactivateBlock()
-  await blockStore.deleteBlock(props.blockId)
+  if (!sourceId || !copy || copy.type !== 'query') return
+  await cloneQueryViewNamespace(sourceId, copy.id)
+  await peekScreenViewStore(queryViewEntity(copy.id))?.load()
 }
 
 /** 矩阵新增任务：落今日 Ideas 页（与任务中心同一落点，ADR-0042 T1）。 */async function handleQuadrantAdd(priority: string, title: string) {
@@ -391,55 +291,17 @@ defineExpose({
       @close="menuOpen = false"
     >
       <div
-        class="query-menu"
-        :data-query-menu="blockId"
+        class="block-entry-menu"
         @mousedown.prevent
       >
-        <button
-          type="button"
-          class="menu-row"
-          @click="indentBlock"
-        >
-          <IndentIncrease :size="13" />增加缩进
-        </button>
-        <button
-          type="button"
-          class="menu-row"
-          :disabled="!canOutdent"
-          @click="outdentBlock"
-        >
-          <IndentDecrease :size="13" />减少缩进
-        </button>
-        <span class="menu-sep" />
-        <button
-          type="button"
-          class="menu-row"
-          @click="copyBlock"
-        >
-          <Copy :size="13" />复制
-        </button>
-        <button
-          type="button"
-          class="menu-row"
-          @click="cutBlock"
-        >
-          <Scissors :size="13" />剪切
-        </button>
-        <button
-          type="button"
-          class="menu-row"
-          @click="pasteBlock"
-        >
-          <ClipboardPaste :size="13" />粘贴
-        </button>
-        <span class="menu-sep" />
-        <button
-          type="button"
-          class="menu-row is-danger"
-          @click="deleteBlock"
-        >
-          <Trash2 :size="13" />删除查询块
-        </button>
+        <!-- 通用段（缩进 / 复制剪切粘贴 / 删除）与 table 块共用同一份实现。
+             query 块没有类型专属项，所以不要前置分隔线（否则菜单顶部横着一条空线）。 -->
+        <BlockMenuCommon
+          :block-id="blockId"
+          no-divider-top
+          :after-paste="afterPaste"
+          @close="menuOpen = false"
+        />
       </div>
     </BasePopover>
 
@@ -559,47 +421,7 @@ defineExpose({
   }
 }
 
-/* 菜单（BasePopover 内）：与 table 块菜单同尺度同色 */
-.query-menu {
-  display: flex;
-  flex-direction: column;
-  min-width: 156px;
-  padding: 4px;
-}
-
-.menu-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 5px 8px;
-  border: 0;
-  border-radius: var(--radius-xs);
-  background: transparent;
-  color: var(--text-secondary);
-  font: inherit;
-  font-size: var(--text-xs);
-  line-height: 1.5;
-  text-align: left;
-  white-space: nowrap;
-  cursor: pointer;
-  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
-}
-
-.menu-row:hover:not(:disabled) {
-  background: var(--accent-subtle);
-  color: var(--accent);
-}
-
-.menu-row:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-
-.menu-sep {
-  display: block;
-  height: 1px;
-  margin: 4px 2px;
-  background: var(--border);
-}
+/* 菜单（BasePopover 内）的样式全部收口，本组件不再持有：
+   - 容器与分隔线 → src/styles/components/_block.scss 的 .block-entry-menu
+   - 菜单行       → src/components/common/BlockMenuItem.vue */
 </style>

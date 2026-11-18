@@ -4,7 +4,9 @@
  * 覆盖三件用户可见的事：
  * 1. 入口默认不可见、块 hover 才显现（入口是 Block 外壳的 `.block-entry-icon`，
  *    显隐挂块的 hover、pointer-events 随之切换，否则透明态会埋一个隐形热区抢表头首格的点击）；
- * 2. 菜单是 table 块那套块级操作：缩进 ×2 / 复制 / 剪切 / 粘贴 / 删除，顺序与分组一致；
+ * 2. 菜单是「通用段」那一套块级操作：上下插入 / 缩进 ×2 / 复制 / 剪切 / 粘贴 / 重置为文本块 / 删除，
+ *    与 table 块菜单同源
+ *    （`Block/components/BlockMenuCommon.vue`）。顺序用 `data-block-menu-item` 断言，不再绑中文文案；
  * 3. 顶级块「减少缩进」置灰，删除后块从文档消失。
  *
  * 注：dev 网页端的 `getBlockCards()` 返回空数组（WASM 不支持全量投影），所以块内表格是空态 ——
@@ -15,7 +17,7 @@ import { expect, test } from '@playwright/test'
 
 import { insertQueryBlock } from './query-block-helpers'
 
-test('查询块左上入口 hover 显现，菜单六项齐全，删除生效', async ({ page }) => {
+test('查询块左上入口 hover 显现，菜单九项齐全，删除生效', async ({ page }) => {
   await page.goto('/')
   await insertQueryBlock(page)
 
@@ -39,25 +41,35 @@ test('查询块左上入口 hover 显现，菜单六项齐全，删除生效', a
 
   await block.locator('.block-entry-icon').click()
 
-  const menu = page.locator('.query-menu').last()
+  const menu = page.locator('.block-entry-menu').last()
   await expect(menu).toBeVisible()
   await expect(menu.locator('.menu-row')).toHaveText([
+    '上方插入',
+    '下方插入',
     '增加缩进',
     '减少缩进',
     '复制',
     '剪切',
     '粘贴',
-    '删除查询块',
+    '重置为文本块',
+    '删除',
   ])
+  // 顺序与身份用句柄锁（文案以后可以改，顺序不能乱）
+  expect(
+    await menu.locator('[data-block-menu-item]').evaluateAll((els) =>
+      els.map((el) => el.getAttribute('data-block-menu-item')),
+    ),
+  ).toEqual(['insert-above', 'insert-below', 'indent', 'outdent', 'copy', 'cut', 'paste', 'reset-text', 'delete'])
 
-  // 分三组：缩进 / 剪贴板 / 销毁（与 table 块菜单同一分组节奏）
-  await expect(menu.locator('.menu-sep')).toHaveCount(2)
+  // 分五组：插入 / 缩进 / 剪贴板 / 重置 / 销毁（重置与删除各占一组 —— 两者都真的删东西，
+  // 只差一次误点，靠分隔线守住距离）
+  await expect(menu.locator('.menu-sep')).toHaveCount(4)
 
   // 顶级块：没有父块就没有「减少缩进」可言
   await expect(menu.locator('.menu-row', { hasText: '减少缩进' })).toBeDisabled()
 
   const before = await page.locator('.query-block').count()
-  await menu.locator('.menu-row', { hasText: '删除查询块' }).click()
+  await menu.locator('[data-block-menu-item="delete"]').click()
   await expect.poll(async () => page.locator('.query-block').count()).toBe(before - 1)
 })
 

@@ -125,9 +125,9 @@ test('渲染态表格菜单可用：关掉首行表头，表格立即变为无�
     { timeout: 3000 },
   ).toBe(1)
   await page.locator('.block-entry-icon').click()
-  await expect(page.locator('.table-menu')).toBeVisible()
+  await expect(page.locator('.block-entry-menu')).toBeVisible()
 
-  await page.locator('.table-menu .menu-row', { hasText: '首行表头' }).click()
+  await page.locator('.block-entry-menu .menu-row', { hasText: '首行表头' }).click()
   await expect(page.locator('.table-block thead')).toHaveCount(0)
   // 菜单项直接作用于数据，不把块切成编辑态
   await expect(page.locator('.table-block.is-readonly')).toBeVisible()
@@ -156,7 +156,7 @@ test('渲染态 hover 出条时，左侧入口图标仍可点（条没有盖住�
   // 入口图标点开的是表格菜单 —— 原来 dot 的「激活块并聚焦首格」已随 dot 一起移交
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
   await page.waitForTimeout(800)
-  await expect(page.locator('.table-menu')).toBeVisible()
+  await expect(page.locator('.block-entry-menu')).toBeVisible()
 })
 
 test('渲染态点「+」：插入一行并激活块，光标落到新行首格', async ({ page }) => {

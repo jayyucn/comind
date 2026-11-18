@@ -92,6 +92,7 @@ function createMockClient(overrides: Record<string, unknown> = {}) {
 
 describe('screenView store (two-level Screen→Tab)', () => {
   let useScreenViewStore: typeof import('../screenView').useScreenViewStore
+  let peekScreenViewStore: typeof import('../screenView').peekScreenViewStore
 
   beforeEach(async () => {
     vi.resetModules()
@@ -103,7 +104,9 @@ describe('screenView store (two-level Screen→Tab)', () => {
       getCoreClient: vi.fn(),
     }))
 
-    useScreenViewStore = (await import('../screenView')).useScreenViewStore
+    const mod = await import('../screenView')
+    useScreenViewStore = mod.useScreenViewStore
+    peekScreenViewStore = mod.peekScreenViewStore
 
     mockGetScreenViews.mockResolvedValue([])
     mockCreateScreen.mockImplementation(async (_entity: string, name: string, viewType: string, _sort: number, config: string) =>
@@ -687,6 +690,21 @@ describe('screenView store (two-level Screen→Tab)', () => {
         const cols = JSON.parse(call[4]).columns as { key: string }[]
         expect(cols.map((c) => c.key)).toEqual(['content', 'page', 'amount', 'newField'])
       }
+    })
+  })
+
+  // ── peek（旁路重读用）──
+
+  describe('peekScreenViewStore', () => {
+    it('已存在的命名空间返回同一实例（不能另造一个，否则两处状态各自漂移）', async () => {
+      const store = useScreenViewStore()
+      expect(peekScreenViewStore()).toBe(store)
+    })
+
+    it('不存在的命名空间返回 null，且不建 store、不 seed（并发 load 会 seed 两套默认屏）', async () => {
+      expect(peekScreenViewStore('query-block:never')).toBeNull()
+      expect(mockGetScreenViews).not.toHaveBeenCalled()
+      expect(mockCreateScreen).not.toHaveBeenCalled()
     })
   })
 })

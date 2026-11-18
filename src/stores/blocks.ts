@@ -1659,6 +1659,49 @@ export const useBlockStore = defineStore('blocks', () => {
   }
 
   /**
+   * 重置为空白文本块（块入口菜单「重置为文本块」）。
+   *
+   * 语义是「删掉、在同一位置建一个新的」，不是「就地改字段」：
+   * - 就地改只能清 content / type / format，块上仍挂着字段值（status、priority…）与
+   *   标签绑定，看起来并不「空」；而那些字段值属于块类型独有的配置，用户要的是干净重来。
+   * - 删除走 `deleteBlocks`（唯一删除收口）：级联软删子树 + 字段值 + 查询块的命名视图
+   *   命名空间（`markQueryViewOrphan`），一处也不漏。
+   * - 可撤销性由 ADR-0046 的整页快照栈兜住：删除与新建落在同一个 idle 窗口内，合成
+   *   一步，Ctrl+Z 把块连同字段值、子树一起原样找回（恢复侧走 `undelete` + 字段值重设）。
+   *
+   * 新块沿用旧块的 parentId / pos：同层级、同位置，视觉上就是「原地清空」。
+   *
+   * 页里只剩这一块时 `deleteBlocks` 的不变量闸门会**保留**它（只清正文），那条路径
+   * 改为就地重置 + 显式删掉字段值行，收尾同样是「一个空白文本块」。
+   */
+  async function resetBlockToText(blockId: string): Promise<Block | null> {
+    const block = blocks.value.find(b => b.id === blockId)
+    if (!block) return null
+    const { pageId, parentId, pos } = block
+
+    await deleteBlocks([blockId])
+
+    // 闸门保留下来的同一块（页里唯一顶层块）：没有「删除」可依赖，就地收尾
+    const survivor = blocks.value.find(b => b.id === blockId)
+    if (survivor) {
+      survivor.type = 'bullet'
+      survivor.format = {}
+      survivor.properties = []
+      survivor.renderSegments = undefined
+      survivor.updatedAt = Date.now()
+      _scheduleSave(survivor)
+      const fieldValueStore = useFieldValueStore()
+      for (const row of [...fieldValueStore.getBlockFieldValues(blockId)]) {
+        await fieldValueStore.deleteFieldValue(row.id, blockId)
+      }
+      useBlockCardStore().invalidate(blockId)
+      return survivor
+    }
+
+    return createBlock({ pageId, content: '', parentId, pos, type: 'bullet', format: {} })
+  }
+
+  /**
    * 粘贴 block 森林（ADR-0025 D6/D7/D8/D11）
    *
    * - id：一律重生成；content 中指向子树内部的自引用按「旧 id → 新 id」重映射，
@@ -1828,6 +1871,7 @@ export const useBlockStore = defineStore('blocks', () => {
     updateBlockContent,
     updateBlockFormat,
     updateBlockType,
+    resetBlockToText,
     updateBlockFieldValues,
     systemTaskTagId,
     scheduleSave,

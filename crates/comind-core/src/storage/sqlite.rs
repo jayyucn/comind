@@ -879,6 +879,10 @@ impl BlockRepository for SQLiteAdapter {
         block_get_by_ids(&self.conn, ids)
     }
 
+    fn get_by_id_including_deleted(&self, id: &str) -> Result<Block, Box<dyn Error>> {
+        block_get_by_id_including_deleted(&self.conn, id)
+    }
+
     fn create(&mut self, block: &Block) -> Result<Block, Box<dyn Error>> {
         block_insert(&self.conn, block)?;
         self.update_search_index(block)?;
@@ -1596,6 +1600,10 @@ impl<'a> BlockRepository for TxContext<'a> {
 
     fn get_by_ids(&self, ids: &[String]) -> Result<Vec<Block>, Box<dyn Error>> {
         block_get_by_ids(&self.conn, ids)
+    }
+
+    fn get_by_id_including_deleted(&self, id: &str) -> Result<Block, Box<dyn Error>> {
+        block_get_by_id_including_deleted(&self.conn, id)
     }
 
     fn create(&mut self, block: &Block) -> Result<Block, Box<dyn Error>> {

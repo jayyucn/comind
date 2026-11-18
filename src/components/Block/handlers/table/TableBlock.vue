@@ -19,8 +19,6 @@ import {
   Columns3,
   Copy,
   Eraser,
-  IndentDecrease,
-  IndentIncrease,
   Merge,
   Plus,
   Scissors,
@@ -86,7 +84,6 @@ import {
 } from '../../../../services/table-model'
 import { useBlockStore } from '../../../../stores/blocks'
 import { useEditorStore } from '../../../../stores/editor'
-import { getPrevSibling } from '../../../../utils/block-helpers'
 import {
   clearInlineMarkRange,
   type InlineMarkAttrs,
@@ -100,10 +97,12 @@ import {
   setInlineMarkRange,
 } from '../../../../utils/inline-marks'
 import BasePopover from '../../../common/BasePopover.vue'
+import BlockMenuItem from '../../../common/BlockMenuItem.vue'
 import FloatingSubmenu from '../../../common/FloatingSubmenu.vue'
 import SelectionMarkRow from '../../../common/SelectionMarkRow.vue'
 import InlineAlignMenu from '../../../InlineAlignMenu.vue'
 import InlineColorPalette from '../../../InlineColorPalette.vue'
+import BlockMenuCommon from '../../components/BlockMenuCommon.vue'
 
 const props = defineProps<{
   blockId?: string
@@ -1049,38 +1048,6 @@ function toggleHeader() {
   persist()
 }
 
-/** 表格菜单的「复制/剪切/粘贴」作用范围 = 整表 */
-function wholeTableRange(): CellRange {
-  return { row1: 0, row2: rows.value.length - 1, col1: 0, col2: Math.max(0, cols.value - 1) }
-}
-
-const currentBlock = computed(() => (props.blockId ? blockStore.getBlock(props.blockId) : undefined))
-
-/** 有前一个兄弟块才能缩进：直接用 store.indent 的同一守卫，避免两套兄弟序判据漂移 */
-const canIndent = computed(() => {
-  const block = currentBlock.value
-  return !!block && !!getPrevSibling(blockStore.blocks, block)
-})
-
-const canOutdent = computed(() => !!currentBlock.value?.parentId)
-
-function indentTable() {
-  menuOpen.value = false
-  if (props.blockId) void blockStore.indent(props.blockId)
-}
-
-function outdentTable() {
-  menuOpen.value = false
-  if (props.blockId) void blockStore.outdent(props.blockId)
-}
-
-function deleteTable() {
-  menuOpen.value = false
-  if (!props.blockId) return
-  editorStore.deactivateBlock()
-  void blockStore.deleteBlock(props.blockId)
-}
-
 // ── 行 / 列操作条（贴表格外缘的纯色块） ─────────────────────────
 // 三级显隐，三个触发域互不重叠：
 //   L0 鼠标不在块内 → 无控件；
@@ -1697,27 +1664,6 @@ const moveColRightAction = () => runRange(range => moveColumnInRange(range, 1))
 
 function setRangeAlign(align: TableAlign) {
   void runRange(range => alignRange(range, align), { keepOpen: true })
-}
-
-// ── 表格菜单（整表范围）──────────────────────────────────────────
-
-function copyTable() {
-  menuOpen.value = false
-  void copyRange(wholeTableRange())
-}
-
-/** 剪切整表 = 复制 + 删除块（与范围剪切的「复制 + 清空」不同） */
-async function cutTable() {
-  menuOpen.value = false
-  await copyRange(wholeTableRange())
-  if (!props.blockId) return
-  editorStore.deactivateBlock()
-  await blockStore.deleteBlock(props.blockId)
-}
-
-function pasteTable() {
-  menuOpen.value = false
-  pasteRange(wholeTableRange())
 }
 
 // ── 格选区（表格两段式选择）──────────────────────────────────────
@@ -2429,93 +2375,47 @@ defineExpose({
       @close="menuOpen = false"
     >
       <div
-        class="table-menu"
+        class="block-entry-menu"
         :data-table-menu="blockId"
         @mousedown.prevent
       >
-        <!-- 首行表头：开关（整行加粗 + 作为逐格对齐的缺省值） -->
-        <button
-          type="button"
-          class="menu-row"
+        <!-- 类型专属项一律排在通用段上面：表格结构组（表头开关 / 均分列宽）→ 通用段。
+             两行都走 BlockMenuItem，所以 .menu-row 的样式只有一处（common/BlockMenuItem.vue）。 -->
+        <BlockMenuItem
+          data-block-menu-item="header"
+          label="首行表头"
           role="switch"
           :aria-checked="header"
           title="首行设为表头"
           @click="toggleHeader"
         >
-          <span class="menu-label">首行表头</span>
-          <span
-            class="switch"
-            :class="{ 'is-on': header }"
-            aria-hidden="true"
-          >
-            <span class="switch-knob" />
-          </span>
-        </button>
+          <template #trailing>
+            <span
+              class="switch"
+              :class="{ 'is-on': header }"
+              aria-hidden="true"
+            >
+              <span class="switch-knob" />
+            </span>
+          </template>
+        </BlockMenuItem>
 
         <span class="menu-sep" />
 
-        <button
-          type="button"
-          class="menu-row"
-          :disabled="!canIndent"
-          @click="indentTable"
-        >
-          <IndentIncrease :size="13" />增加缩进
-        </button>
-        <button
-          type="button"
-          class="menu-row"
-          :disabled="!canOutdent"
-          @click="outdentTable"
-        >
-          <IndentDecrease :size="13" />减少缩进
-        </button>
-
-        <span class="menu-sep" />
-
-        <button
-          type="button"
-          class="menu-row"
-          @click="copyTable"
-        >
-          <Copy :size="13" />复制
-        </button>
-        <button
-          type="button"
-          class="menu-row"
-          @click="cutTable"
-        >
-          <Scissors :size="13" />剪切
-        </button>
-        <button
-          type="button"
-          class="menu-row"
-          :disabled="!canPasteRange"
-          @click="pasteTable"
-        >
-          <ClipboardPaste :size="13" />粘贴
-        </button>
-
-        <span class="menu-sep" />
-
-        <button
-          type="button"
-          class="menu-row"
+        <BlockMenuItem
+          data-block-menu-item="equal-columns"
+          :icon="Columns3"
+          label="均分列宽"
           disabled
           title="列宽固定等宽，暂不支持调整"
-        >
-          <Columns3 :size="13" />均分列宽
-        </button>
+        />
 
-        <span class="menu-sep" />
-
-        <button
-          type="button"
-          class="menu-row"
-          @click="deleteTable"
-        >
-          <Trash2 :size="13" />删除表格
-        </button>
+        <!-- 通用段（缩进 / 复制剪切粘贴 / 删除）：与 query 块共用同一份实现与同一处顺序定义。
+             类型专属项一律排在它上面，所以这里让通用段自带一条前置分隔线。 -->
+        <BlockMenuCommon
+          :block-id="blockId"
+          @close="menuOpen = false"
+        />
       </div>
     </BasePopover>
 
@@ -3021,54 +2921,10 @@ defineExpose({
   color: var(--text-primary);
 }
 
-/* 表格菜单（BasePopover 内）：纵向列表，一行一项，右侧放开关 */
-.table-menu {
-  display: flex;
-  flex-direction: column;
-  min-width: 156px;
-  padding: 4px;
-}
-
-.menu-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 5px 8px;
-  border: 0;
-  border-radius: var(--radius-xs);
-  background: transparent;
-  color: var(--text-secondary);
-  font: inherit;
-  font-size: var(--text-xs);
-  line-height: 1.5;
-  text-align: left;
-  white-space: nowrap;
-  cursor: pointer;
-  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
-}
-
-.menu-row:hover:not(:disabled) {
-  background: var(--accent-subtle);
-  color: var(--accent);
-}
-
-.menu-row:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-
-/* 开关项：标签占满剩余宽度，把手推到最右 */
-.menu-row .menu-label {
-  flex: 1;
-}
-
-.menu-sep {
-  display: block;
-  height: 1px;
-  margin: 4px 2px;
-  background: var(--border);
-}
+/* 菜单容器 / 菜单行 / 分隔线的样式已收口：
+   - 容器与分隔线 → src/styles/components/_block.scss 的 .block-entry-menu（浮层 Teleport 到 body，全局类）
+   - 菜单行       → src/components/common/BlockMenuItem.vue（scoped）
+   本组件只保留表格独有的内联开关轨道。 */
 
 /* 内联开关（仓库没有通用 switch 组件，单处使用不抽公共件）。
    轨道用 --bg-hover，开启态用 --accent；只走 token，不写死色值。 */
