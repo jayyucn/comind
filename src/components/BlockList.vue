@@ -21,8 +21,8 @@ import type { CrossBlockSelection } from '../composables/useCrossBlockSelection'
 import { useCrossBlockSelection } from '../composables/useCrossBlockSelection'
 import { UNDO_FLASH_MS, useRestoreFlash } from '../composables/useRestoreFlash'
 import { ensureStack } from '../composables/useUndoHistory'
-import { runUndoOrRedo } from '../composables/useUndoRestore'
-import { COMIND_BLOCK_MIME, resolveClipboardForest } from '../services/external-paste-parse'
+import { linkCrossPageMove, runUndoOrRedo } from '../composables/useUndoRestore'
+import { COMIND_BLOCK_MIME, resolveClipboardPayload } from '../services/external-paste-parse'
 import { onLayoutChange } from '../services/layout-change'
 import { ensureWikiLinkTargets, notifyCreatedPages } from '../services/paste-ensure-wiki-targets'
 import { renderedOffsetToEncodedOffset } from '../services/render-text'
@@ -279,9 +279,13 @@ function isNoEditTextBlock(id: string): boolean {
  * 按当前选区类型复制（文本选区优先——两类选区互斥，只会命中其一）；无选区时不做任何事。
  * Ctrl+C 与 Ctrl+X 共用同一分流，保证复制口径单源。
  */
-function copySelectionToClipboard(): void {
+/**
+ * 复制/剪切选中块到剪贴板。
+ * 块选区走块剪贴板（`op` 决定粘贴时能否搬移，ADR-0025 D4b）；文本选区只有纯文本，无意图可言。
+ */
+function copySelectionToClipboard(op: 'cut' | 'copy' = 'copy'): void {
   if (selection.textRange.value) selection.copyTextToClipboard(props.pageId)
-  else if (selection.anchorIds.size > 0) selection.copyToClipboard()
+  else if (selection.anchorIds.size > 0) void selection.copyToClipboard(op)
 }
 
 /**
@@ -421,7 +425,7 @@ async function handleDocKeyDown(e: KeyboardEvent) {
       await selection.deleteCellSelection(props.pageId)
       return
     }
-    if (isCutKey) copySelectionToClipboard()
+    if (isCutKey) copySelectionToClipboard('cut')
     if (selection.textRange.value) {
       e.preventDefault()
       const deleted = await selection.deleteTextSelection(props.pageId)
@@ -791,10 +795,12 @@ async function handleDocPaste(e: ClipboardEvent) {
     html: data.getData('text/html'),
   })
 
-  const forest = resolveClipboardForest(mime => data.getData(mime))
+  const payload = resolveClipboardPayload(mime => data.getData(mime))
   // 无结构化内容（如纯图片）→ 放行默认行为（image 钩子在编辑态先消费）
-  if (!forest || forest.length === 0) return
+  if (!payload || payload.blocks.length === 0) return
+  const forest = payload.blocks
 
+  // 内部载荷才可能带意图；外部内容一律当复制（`resolveClipboardPayload` 已归一）
   const hasInternal = !!data.getData(COMIND_BLOCK_MIME)
   // 外部内容 + 行内光标（块内有文本、无选区）→ TipTap 默认行内粘贴（ADR-0026 D1）；
   // ensure fire-and-forget：wasm 本地毫秒级 + 块保存有 debounce，极端竞争 miss 由后续保存/点击自愈
@@ -829,13 +835,26 @@ async function handleDocPaste(e: ClipboardEvent) {
   const { created } = await ensurePages
   notifyCreatedPages(created, editorStore.showToast)
   const anchorBlockId = resolvePasteAnchor()
-  await blockStore.pasteBlocks(forest, {
+  // 剪切载荷且源块在本库仍软删 ⇒ 这次是「搬走同一个块」（id 不变），否则新建副本。
+  // 两种情况落点一致，所以不用分支，只有收尾（下面对空锚点的清理）要区分。
+  const outcome = await blockStore.pasteBlocksWithOp(forest, {
     pageId: props.pageId,
     anchorBlockId,
     fallbackParentId: rootBlockId.value,
-  })
-  // 粘贴目标为空活动块（无选区）：插入后清掉空壳，避免残留空行（仅限本页块）
-  if (!selection.anchorIds.size && anchorBlockId) {
+  }, payload.op, payload.fromPageId)
+  // 搬移要回报一句：块从源页消失了，用户需要知道它去了哪、为什么回收站里有一份。
+  // 降级为新建时**不提示** —— 跨机/跨库本来就拿不到源行，那不是异常。
+  if (outcome.moved) {
+    const title = pageStore.getPage(props.pageId)?.title
+    const count = outcome.blocks.length
+    editorStore.showToast(title ? `已移动 ${count} 个块到「${title}」` : `已移动 ${count} 个块`)
+    // 两页撤销配成一步：否则要换到源页再按一次 Ctrl+Z，且在错误的顺序下会出现
+    // 同一个 id 在两页并存（见 restoreEntry 的快照 id 剔除）
+    linkCrossPageMove(outcome.movedFromPageId, props.pageId)
+  }
+  // 粘贴目标为空活动块（无选区）：插入后清掉空壳，避免残留空行（仅限本页块）。
+  // 搬移时同样适用 —— 被清掉的是锚点空壳，不是搬来的块。
+  if (outcome.blocks.length > 0 && !selection.anchorIds.size && anchorBlockId) {
     const anchorBlock = blockStore.getBlock(anchorBlockId)
     if (
       anchorBlock

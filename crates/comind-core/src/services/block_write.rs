@@ -2,10 +2,34 @@ use crate::services::{
     build_segments_for_block, BlockService, FieldValueService, LinkService, NotificationService,
     PageService,
 };
-use crate::storage::{StorageAdapter, TransactionalStorageAdapter};
+use crate::storage::{repository, StorageAdapter, TransactionalStorageAdapter};
 use crate::types::{Block, BlockSaveResult, SyncTable};
 use std::collections::HashMap;
 use std::error::Error;
+
+/// 搬移失败的错误码：根块不是「本库仍软删」，无法复活 ⇒ 前端回落新建副本。
+pub const BLOCK_MOVE_NOT_REVIVABLE: &str = "BLOCK_MOVE_NOT_REVIVABLE";
+/// 搬移失败的错误码：目标父块在自己子树内（环）。
+pub const BLOCK_MOVE_INTO_SELF: &str = "BLOCK_MOVE_INTO_SELF";
+
+/// `move_blocks` 的一个目标：把 `block_id` 这棵子树搬到 `page_id` 下的
+/// `parent_id`（`None` = 页面顶层）第 `pos` 位。
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BlockMoveTarget {
+    pub block_id: String,
+    pub page_id: String,
+    pub parent_id: Option<String>,
+    pub pos: i64,
+}
+
+/// 错误码 + 相关 id 拼成一条可被前端字符串匹配的错误（IPC 只透传 `Display`）。
+fn move_error(code: &str, id: &str) -> Box<dyn Error> {
+    Box::new(std::io::Error::new(
+        std::io::ErrorKind::InvalidInput,
+        format!("{}:{}", code, id),
+    ))
+}
 
 /// Outcome of `save_blocks`: per-block results for the frontend, plus the
 /// (table, ids) sets the sync layer must be notified about after commit.
@@ -218,6 +242,108 @@ impl BlockWriteService {
             }
             Ok(sync_changes)
         })
+    }
+
+    /// 搬移一组块（ADR-0025 D4b 的「剪切 → 粘贴 = 搬走同一个块」）。
+    ///
+    /// 语义是**移动**而非复制：id 不变，因此挂在这个 id 上的东西（`(( ))` 引用、
+    /// 查询块的命名视图、字段值、块卡缓存）全部跟着走，不需要任何重建。
+    /// 调用方（前端）负责算好每个根块的目标 `page_id` / `parent_id` / `pos`。
+    ///
+    /// 前置条件是「这些根块此刻仍在本库处于软删状态」（= 刚被剪切）；任一条不满足
+    /// 即返回 `BLOCK_MOVE_NOT_REVIVABLE:<id>`，由前端回落到「新建副本」路径 ——
+    /// 剪贴板是系统级共享资源，可能来自另一台机器/另一个库，不能假定一定能复活。
+    /// 搬进自己的子树返回 `BLOCK_MOVE_INTO_SELF:<id>`（环）。
+    ///
+    /// 整组在**一个事务**里做：任一目标失败全部回滚，不会出现「一半搬了、一半没搬」。
+    /// 子树归属页跟着改（含仍软删的后代 —— 它们不可见，但被回收站恢复后应落在新页）。
+    pub fn move_blocks<S: TransactionalStorageAdapter>(
+        adapter: &mut S,
+        targets: &[BlockMoveTarget],
+    ) -> Result<HashMap<SyncTable, Vec<String>>, Box<dyn Error>> {
+        adapter.transaction(|storage| {
+            // ① 先整组校验，再动任何一行 —— 校验失败时事务里什么都还没写。
+            for t in targets {
+                let root = BlockService::get_by_id_including_deleted(storage, &t.block_id)
+                    .map_err(|_| move_error(BLOCK_MOVE_NOT_REVIVABLE, &t.block_id))?;
+                if root.deleted_at.is_none() {
+                    // 已 live：可能是复制（源块还在）、连粘第二次、或用户已从回收站恢复。
+                    return Err(move_error(BLOCK_MOVE_NOT_REVIVABLE, &t.block_id));
+                }
+                if let Some(parent_id) = &t.parent_id {
+                    if Self::collect_subtree_ids(storage, &t.block_id)?.contains(parent_id) {
+                        return Err(move_error(BLOCK_MOVE_INTO_SELF, &t.block_id));
+                    }
+                    // 目标父块必须在目标页且 live，否则会搬出一个跨页挂着的孤儿。
+                    let parent = BlockService::get_by_id(storage, parent_id)
+                        .map_err(|_| move_error(BLOCK_MOVE_NOT_REVIVABLE, parent_id))?;
+                    if parent.page_id != t.page_id {
+                        return Err(move_error(BLOCK_MOVE_NOT_REVIVABLE, parent_id));
+                    }
+                }
+            }
+
+            let mut sync_changes: HashMap<SyncTable, Vec<String>> = HashMap::new();
+            let mut touched_pages: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+            for t in targets {
+                // ② 复活整棵仍软删的子树（live 子节点不碰，口径同 undelete_blocks）。
+                let source_page = BlockService::get_by_id_including_deleted(storage, &t.block_id)
+                    .map(|b| b.page_id)
+                    .unwrap_or_default();
+                touched_pages.insert(source_page);
+                Self::undelete_block_subtree_inner(storage, &t.block_id, &mut sync_changes)?;
+
+                // ③ 整棵子树改归属页（含仍软删的后代：它们复活后应落在新页）。
+                let ids = Self::collect_subtree_ids(storage, &t.block_id)?;
+                for id in &ids {
+                    let mut block = BlockService::get_by_id_including_deleted(storage, id)?;
+                    if block.page_id == t.page_id {
+                        continue;
+                    }
+                    block.page_id = t.page_id.clone();
+                    repository::BlockRepository::update(storage.blocks(), &block)?;
+                }
+
+                // ④ 根块换父级与位置；后代的 parent_id 不动（子树内部结构原样保留）。
+                let mut root = BlockService::get_by_id(storage, &t.block_id)?;
+                root.parent_id = t.parent_id.clone();
+                root.pos = t.pos;
+                repository::BlockRepository::update(storage.blocks(), &root)?;
+
+                sync_changes
+                    .entry(SyncTable::Block)
+                    .or_insert_with(Vec::new)
+                    .extend(ids);
+                touched_pages.insert(t.page_id.clone());
+            }
+
+            // ⑤ 去重（复活与改页会重复记同一 id），并重算受影响页字数。
+            if let Some(blocks) = sync_changes.get_mut(&SyncTable::Block) {
+                let mut seen = std::collections::HashSet::new();
+                blocks.retain(|id| seen.insert(id.clone()));
+            }
+            for page_id in &touched_pages {
+                let _ = PageService::recount_word_count(storage, page_id);
+            }
+            Ok(sync_changes)
+        })
+    }
+
+    /// 收集一棵子树的全部 id（根在最前），**含仍软删的后代**。
+    fn collect_subtree_ids(
+        storage: &mut dyn StorageAdapter,
+        root_id: &str,
+    ) -> Result<Vec<String>, Box<dyn Error>> {
+        let mut out = Vec::new();
+        let mut stack = vec![root_id.to_string()];
+        while let Some(current) = stack.pop() {
+            out.push(current.clone());
+            for child in BlockService::get_children_including_deleted(storage, &current)? {
+                stack.push(child.id);
+            }
+        }
+        Ok(out)
     }
 
     /// Single-block delete skeleton (ADR-0019 Q8/Q14), shared by
@@ -784,5 +910,149 @@ mod tests {
         assert_eq!(sync.get(&SyncTable::Block).unwrap(), &vec!["a1".to_string()]);
         let b1 = BlockService::get_by_id(&mut adapter, "b1").unwrap();
         assert_eq!(b1.page_id, pb);
+    }
+
+    /// 搬移 = 移动同一个块：id 不变、整棵子树跟着换页、根块换父级与位置。
+    #[test]
+    fn move_blocks_revives_and_reparents_subtree() {
+        let mut adapter = SQLiteAdapter::open_in_memory().unwrap();
+        let pa = seed_page(&mut adapter, "pa");
+        let pb = seed_page(&mut adapter, "pb");
+        save(
+            &mut adapter,
+            vec![
+                block("anchor", &pb, None, 1000),
+                block("a1", &pa, None, 1000),
+                block("a2", &pa, Some("a1"), 1000),
+            ],
+        )
+        .unwrap();
+
+        // 剪切：软删整棵子树（真实路径是前端逐块删）。
+        BlockWriteService::delete_block_cascade(&mut adapter, "a2").unwrap();
+        BlockWriteService::delete_block_cascade(&mut adapter, "a1").unwrap();
+
+        let sync = BlockWriteService::move_blocks(
+            &mut adapter,
+            &[BlockMoveTarget {
+                block_id: "a1".to_string(),
+                page_id: pb.clone(),
+                parent_id: None,
+                pos: 1500,
+            }],
+        )
+        .unwrap();
+
+        // id 不变 ⇒ 挂在 id 上的引用 / 配置全部还能解析。
+        let a1 = BlockService::get_by_id(&mut adapter, "a1").unwrap();
+        assert_eq!(a1.page_id, pb);
+        assert_eq!(a1.pos, 1500);
+        assert_eq!(a1.parent_id, None);
+        // 子孙跟着换页，但子树内部结构不动。
+        let a2 = BlockService::get_by_id(&mut adapter, "a2").unwrap();
+        assert_eq!(a2.page_id, pb);
+        assert_eq!(a2.parent_id.as_deref(), Some("a1"));
+        // 原页与目标页的顶层数量都对（pb 原有 anchor + 搬来的 a1/a2）。
+        assert!(BlockService::get_by_page_id(&mut adapter, &pa).unwrap().is_empty());
+        assert_eq!(BlockService::get_by_page_id(&mut adapter, &pb).unwrap().len(), 3);
+        assert_eq!(sync.get(&SyncTable::Block).unwrap().len(), 2);
+    }
+
+    /// 根块仍 live（复制语义 / 连粘第二次 / 已被回收站恢复）⇒ 拒绝搬移，且不留副作用。
+    #[test]
+    fn move_blocks_rejects_live_root() {
+        let mut adapter = SQLiteAdapter::open_in_memory().unwrap();
+        let pa = seed_page(&mut adapter, "pa");
+        let pb = seed_page(&mut adapter, "pb");
+        save(&mut adapter, vec![block("a1", &pa, None, 1000)]).unwrap();
+
+        let err = BlockWriteService::move_blocks(
+            &mut adapter,
+            &[BlockMoveTarget {
+                block_id: "a1".to_string(),
+                page_id: pb.clone(),
+                parent_id: None,
+                pos: 1000,
+            }],
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains(BLOCK_MOVE_NOT_REVIVABLE));
+        assert_eq!(BlockService::get_by_id(&mut adapter, "a1").unwrap().page_id, pa);
+    }
+
+    /// 整组原子：第二条不可复活时，第一条也不许搬（事务回滚）。
+    #[test]
+    fn move_blocks_is_atomic_across_targets() {
+        let mut adapter = SQLiteAdapter::open_in_memory().unwrap();
+        let pa = seed_page(&mut adapter, "pa");
+        let pb = seed_page(&mut adapter, "pb");
+        save(
+            &mut adapter,
+            vec![block("a1", &pa, None, 1000), block("a2", &pa, None, 2000)],
+        )
+        .unwrap();
+        // 只剪 a1；a2 保持 live ⇒ 第二个目标必然失败。
+        BlockWriteService::delete_block_cascade(&mut adapter, "a1").unwrap();
+
+        let err = BlockWriteService::move_blocks(
+            &mut adapter,
+            &[
+                BlockMoveTarget {
+                    block_id: "a1".to_string(),
+                    page_id: pb.clone(),
+                    parent_id: None,
+                    pos: 1000,
+                },
+                BlockMoveTarget {
+                    block_id: "a2".to_string(),
+                    page_id: pb.clone(),
+                    parent_id: None,
+                    pos: 2000,
+                },
+            ],
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains(BLOCK_MOVE_NOT_REVIVABLE));
+
+        // a1 必须仍软删、仍在 pa —— 没有出现「一半搬了」。
+        assert!(BlockService::get_by_id(&mut adapter, "a1").is_err());
+        assert_eq!(
+            BlockService::get_by_id_including_deleted(&mut adapter, "a1")
+                .unwrap()
+                .page_id,
+            pa
+        );
+        assert!(BlockService::get_by_page_id(&mut adapter, &pb).unwrap().is_empty());
+    }
+
+    /// 搬进自己的子树 = 环，直接拒绝。
+    #[test]
+    fn move_blocks_rejects_cycle_into_own_subtree() {
+        let mut adapter = SQLiteAdapter::open_in_memory().unwrap();
+        let pa = seed_page(&mut adapter, "pa");
+        let pb = seed_page(&mut adapter, "pb");
+        save(
+            &mut adapter,
+            vec![
+                block("a1", &pa, None, 1000),
+                block("a2", &pa, Some("a1"), 1000),
+            ],
+        )
+        .unwrap();
+        BlockWriteService::delete_block_cascade(&mut adapter, "a2").unwrap();
+        BlockWriteService::delete_block_cascade(&mut adapter, "a1").unwrap();
+
+        let err = BlockWriteService::move_blocks(
+            &mut adapter,
+            &[BlockMoveTarget {
+                block_id: "a1".to_string(),
+                page_id: pb,
+                parent_id: Some("a2".to_string()),
+                pos: 1000,
+            }],
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains(BLOCK_MOVE_INTO_SELF));
+        assert!(BlockService::get_by_id(&mut adapter, "a1").is_err());
     }
 }

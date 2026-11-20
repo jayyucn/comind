@@ -32,7 +32,7 @@ import type { CoreClient } from '../wasm/client'
 import { initCoreClient } from '../wasm/client'
 import type { BatchOperation } from '../wasm/types'
 import type { HistoryEntry, TextViewSelection } from './useUndoHistory'
-import { blockDocumentEqual, canRedo, canUndo, commitNow, redo, undo } from './useUndoHistory'
+import { blockDocumentEqual, canRedo, canUndo, commitNow, crossPagePartner, cursorSeq, linkCrossPageStep, redo, undo } from './useUndoHistory'
 
 let clientPromise: Promise<CoreClient> | null = null
 async function getClient(): Promise<CoreClient> {
@@ -194,9 +194,12 @@ export async function restoreEntry(pageId: string, snapshot: HistoryEntry): Prom
 
   // ---- 乐观更新 reactive 状态（使 UI 立即反映快照）----
   // 整页换新对象：数组与对象身份都变化 → 结构签名（#118 D2）必变 → BlockList 自动重建树。
-  // （旧实现须手动 bump structureVersion，见 #103 T1：不触发则复活块滞留 store 不进 DOM。）
+  // 跨页搬移的块在 store 里挂着**另一个** pageId：若只按 `pageId !== pageId` 过滤，
+  // 它会以旧 id 留在数组里，与快照里那份（含目标 pageId）同时存在 = 同一个 id 两页并存。
+  // 故再按快照 id 集合剔除一遍 —— 落库那侧的 block update 会把 page_id 一并改回来。
+  const snapshotIds = new Set(snapshot.blocks.map((b) => b.id))
   blockStore.blocks = [
-    ...blockStore.blocks.filter((b) => b.pageId !== pageId),
+    ...blockStore.blocks.filter((b) => b.pageId !== pageId && !snapshotIds.has(b.id)),
     ...snapshot.blocks.map((b) => ({ ...b })),
   ]
 
@@ -295,6 +298,39 @@ function restoreSelection(
   return true
 }
 
+/**
+ * 跨页一步撤销（ADR-0025 D4b）：把配对的另侧页面也退/进同一步。
+ *
+ * 只做「最省事的正确版本」：先用 seq 校验对侧没被后续编辑挤走 —— 若用户搬移之后又在
+ * 源页编辑过，对侧栈顶已经不是这一步了，强行连带会退掉一次无关的编辑。这种情况静默放弃，
+ * 退回「两页各自撤销」，比退错干净。
+ */
+async function applyCrossPageStep(
+  step: { partnerPageId: string; partnerAfterSeq: number; partnerBeforeSeq: number | null },
+  chord: 'undo' | 'redo',
+): Promise<void> {
+  const expected = chord === 'undo' ? step.partnerAfterSeq : step.partnerBeforeSeq
+  if (expected === null || cursorSeq(step.partnerPageId) !== expected) return
+  const movable = chord === 'undo' ? canUndo(step.partnerPageId) : canRedo(step.partnerPageId)
+  if (!movable) return
+  const snap = chord === 'undo' ? undo(step.partnerPageId) : redo(step.partnerPageId)
+  if (!snap) return
+  await restoreEntry(step.partnerPageId, snap)
+}
+
+/**
+ * 跨页搬移落库成功后调用：把源页与目标页的撤销步**配成一步**。
+ *
+ * 两页都得先封口（`commitNow`），否则标签会贴到更早那条快照上 —— 那时撤销会连带退掉
+ * 一次无关编辑。同页搬移（`from === to`）不用配：它本来就落在同一条栈里。
+ */
+export function linkCrossPageMove(fromPageId: string | null, toPageId: string): void {
+  if (!fromPageId || fromPageId === toPageId) return
+  commitNow(toPageId)
+  commitNow(fromPageId)
+  linkCrossPageStep(toPageId, fromPageId)
+}
+
 /** 撤销并恢复：移动游标到目标快照并返回受影响块 id；无可撤返回 null */
 export async function undoAndRestore(pageId: string): Promise<string[] | null> {
   const snap = undo(pageId)
@@ -382,7 +418,11 @@ export async function runUndoOrRedo(
   }
   // 第二次封口：承接上一步卸载同步进 store 的文本（回声抑制保证无改动时不重复入栈）
   commitNow(pageId)
+  // 跨页搬移是同一步：撤销看「离开的那一步」，重做看「进入的那一步」，各读一次配对。
+  const partnerBefore = chord === 'undo' ? crossPagePartner(pageId) : null
   const changed = await (chord === 'undo' ? undoAndRestore(pageId) : redoAndRestore(pageId))
+  const partner = chord === 'undo' ? partnerBefore : crossPagePartner(pageId)
+  if (partner) await applyCrossPageStep(partner, chord)
 
   // 恢复后本页**没有**活动块 ⇒ 把用户放回原来那块与光标。两条路会走到这里：
   // ① 这一步 affected 为空（空步：只有折叠态/字段对齐之类的等价快照），落点层因「没有

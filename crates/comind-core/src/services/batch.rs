@@ -118,7 +118,7 @@ fn apply_one(storage: &mut dyn StorageAdapter, op: &Value) -> Result<OpEffect, B
             // 显式 op 更新 = 提交动作，允许按 content 自动建/复活标签
             // （编辑器打字路径走 save_block_tree，携带 create_missing_tags=false）。
             let block: Block = serde_json::from_value(params)?;
-            let updated = BlockService::update(
+            let mut updated = BlockService::update(
                 storage,
                 &block.id,
                 Some(&block.content),
@@ -128,6 +128,16 @@ fn apply_one(storage: &mut dyn StorageAdapter, op: &Value) -> Result<OpEffect, B
                 Some(block.pos),
                 true,
             )?;
+            // 跨页搬移的撤销（ADR-0025 D4b）：`BlockService::update` 的形参根本不含页，
+            // 编辑器打字路径从不换页。但撤销把块退**回源页**时必须改 `page_id`，
+            // 否则「快照里在 A、库里还在 B」—— 块复活了却留在错误的页。
+            // 故此处按整行补写一次（`block_update` 本身是写 page_id 的）。
+            let mut touched_pages = vec![block.page_id.clone()];
+            if updated.page_id != block.page_id {
+                touched_pages.push(updated.page_id.clone());
+                updated.page_id = block.page_id.clone();
+                repository::BlockRepository::update(storage.blocks(), &updated)?;
+            }
             let mut sync = vec![(SyncTable::Block, updated.id.clone())];
             for l in LinkService::get_by_source_block_id(storage, &updated.id).unwrap_or_default() {
                 sync.push((SyncTable::Link, l.id));
@@ -146,7 +156,7 @@ fn apply_one(storage: &mut dyn StorageAdapter, op: &Value) -> Result<OpEffect, B
             Ok(OpEffect {
                 value: serde_json::to_value(&updated)?,
                 sync,
-                page_ids: vec![block.page_id],
+                page_ids: touched_pages,
             })
         }
         ("block", "delete") => {
@@ -849,5 +859,84 @@ fn optional_f64_param(params: &Value, key: &str) -> Option<f64> {
                 None
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::services::BlockWriteService;
+    use crate::storage::SQLiteAdapter;
+
+    fn seed_page(storage: &mut dyn StorageAdapter, title: &str) -> String {
+        PageService::create(storage, "", title, Some("page"), None, None, Some("[]"), None)
+            .unwrap()
+            .id
+    }
+
+    fn block(id: &str, page_id: &str) -> Block {
+        Block {
+            id: id.to_string(),
+            page_id: page_id.to_string(),
+            parent_id: None,
+            pos: 1000,
+            content: "x".to_string(),
+            format: "{}".to_string(),
+            r#type: "table".to_string(),
+            created_at: 1,
+            updated_at: 1,
+            version: 0,
+            deleted_at: None,
+            tags: Vec::new(),
+        }
+    }
+
+    /// 跨页搬移的撤销（ADR-0025 D4b）：快照里的 `page_id` 与现库不同时必须真的换页。
+    ///
+    /// `BlockService::update` 的形参不含页（编辑器打字路径从不换页），若此处只走它，
+    /// 撤销会把块「复活在错误的页」——真机验收就是栽在这条上：块活着、`deleted_at` 为
+    /// 空、`page_id` 却还指着目标页。
+    #[test]
+    fn block_update_moves_block_across_pages() {
+        let mut adapter = SQLiteAdapter::open_in_memory().unwrap();
+        let pa = seed_page(&mut adapter, "A");
+        let pb = seed_page(&mut adapter, "B");
+        BlockWriteService::save_blocks(&mut adapter, vec![block("b1", &pb)], true).unwrap();
+
+        // 撤销：把 b1 退回 A 页
+        let ops = vec![json!({
+            "entity": "block",
+            "action": "update",
+            "params": serde_json::to_value(block("b1", &pa)).unwrap(),
+        })];
+        apply_batch(&mut adapter, &ops).unwrap();
+
+        let after = BlockService::get_by_id(&mut adapter, "b1").unwrap();
+        assert_eq!(after.page_id, pa);
+        assert_eq!(after.deleted_at, None);
+    }
+
+    /// 同页 update 不受影响（不该顺手把页改掉，也不该多一次整行写）。
+    #[test]
+    fn block_update_keeps_page_when_unchanged() {
+        let mut adapter = SQLiteAdapter::open_in_memory().unwrap();
+        let pa = seed_page(&mut adapter, "A");
+        BlockWriteService::save_blocks(&mut adapter, vec![block("b1", &pa)], true).unwrap();
+
+        let mut incoming = block("b1", &pa);
+        incoming.content = "改了正文".to_string();
+        apply_batch(
+            &mut adapter,
+            &[json!({
+                "entity": "block",
+                "action": "update",
+                "params": serde_json::to_value(incoming).unwrap(),
+            })],
+        )
+        .unwrap();
+
+        let after = BlockService::get_by_id(&mut adapter, "b1").unwrap();
+        assert_eq!(after.page_id, pa);
+        assert_eq!(after.content, "改了正文");
     }
 }

@@ -872,6 +872,28 @@ pub async fn undelete_blocks(
 }
 
 #[tauri::command]
+pub async fn move_blocks(
+    db: State<'_, super::state::DatabaseConnection>,
+    sync_server: State<'_, super::state::SyncServerHandle>,
+    targets: Vec<comind_core::services::BlockMoveTarget>,
+) -> Result<(), String> {
+    let adapter_arc = db.adapter_arc();
+    let mut adapter = adapter_arc.lock().await;
+    let sync_changes =
+        BlockWriteService::move_blocks(&mut *adapter, &targets).map_err(|e| e.to_string())?;
+    drop(adapter);
+
+    let sync_server_clone = sync_server.inner().clone();
+    tokio::spawn(async move {
+        for (table, ids) in sync_changes {
+            sync_server_clone.record_and_notify(table, ids).await;
+        }
+    });
+
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn save_page(
     db: State<'_, super::state::DatabaseConnection>,
     sync_server: State<'_, super::state::SyncServerHandle>,

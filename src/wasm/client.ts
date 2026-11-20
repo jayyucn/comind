@@ -35,6 +35,19 @@ export interface OrphanCleanupReportRust {
   restored: number
 }
 
+/**
+ * `moveBlocks` 的一个目标（Rust `BlockMoveTarget` 的 serde 形状，camelCase）。
+ *
+ * 把 `blockId` 这棵子树搬到 `pageId` 下的 `parentId`（`null` = 页面顶层）第 `pos` 位。
+ * 语义是**搬走**（id 不变）而非复制，前置条件是这些根块此刻在本库仍处于软删状态。
+ */
+export interface BlockMoveTargetInput {
+  blockId: string
+  pageId: string
+  parentId: string | null
+  pos: number
+}
+
 export interface CoreClient {
   getBlock(blockId: string): Promise<Block>
   getBlocksByPage(pageId: string): Promise<Block[]>
@@ -42,6 +55,13 @@ export interface CoreClient {
   deleteBlock(blockId: string): Promise<void>
   /** 撤销软删除（ADR-0046 D10）：复活块及其下整棵软删子树 */
   undeleteBlocks(ids: string[]): Promise<void>
+  /**
+   * 搬移一组块（ADR-0025 D4b）：复活 + 换页 + 换父级/位置，id 不变。
+   *
+   * 任一目标不可复活时整组失败，错误串带 `BLOCK_MOVE_NOT_REVIVABLE`（跨机器/跨库、
+   * 连粘第二次、源块已被回收站恢复）或 `BLOCK_MOVE_INTO_SELF`（环），调用方据此回落新建副本。
+   */
+  moveBlocks(targets: BlockMoveTargetInput[]): Promise<void>
 
   getPage(pageId: string): Promise<Page>
   getAllPages(): Promise<Page[]>
@@ -287,6 +307,10 @@ class TauriClient implements CoreClient {
 
   async undeleteBlocks(ids: string[]): Promise<void> {
     return invoke('undelete_blocks', { ids })
+  }
+
+  async moveBlocks(targets: BlockMoveTargetInput[]): Promise<void> {
+    return invoke('move_blocks', { targets })
   }
 
   async getPage(pageId: string): Promise<Page> {
@@ -710,6 +734,10 @@ class WasmClientAdapter implements CoreClient {
 
   async undeleteBlocks(ids: string[]): Promise<void> {
     await this.wasm.undelete_blocks(JSON.stringify(ids))
+  }
+
+  async moveBlocks(targets: BlockMoveTargetInput[]): Promise<void> {
+    await this.wasm.move_blocks(JSON.stringify(targets))
   }
 
   async getPage(pageId: string): Promise<Page> {

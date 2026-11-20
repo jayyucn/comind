@@ -55,7 +55,7 @@ pub use block_projection_service::*;
 pub use filter_service::{FilterService, OrphanCleanupReport};
 pub use content_parse_service::*;
 pub use notification_service::NotificationService;
-pub use block_write::BlockWriteService;
+pub use block_write::{BlockMoveTarget, BlockWriteService};
 pub use snapshot_service::SnapshotService;
 pub mod render_segment_service;
 pub use render_segment_service::{build_page_with_blocks, build_segments_for_block};

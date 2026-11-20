@@ -17,8 +17,8 @@
  * ADR-0061 追加：表格不再展平为逐格 bullet。HTML `<table>`、GFM 管道表格、
  * TSV 三种来源都转成 `table` 块载荷（见 table-paste-parse）。
  */
-import type { BlockClipPayload } from '../types/block'
-import { COMIND_BLOCK_MIME, deserializeClipboardBlocks } from './block-clipboard'
+import type { BlockClipboardOp, BlockClipPayload } from '../types/block'
+import { COMIND_BLOCK_MIME, deserializeClipboardPayload } from './block-clipboard'
 import { parseGfmTable, parseHtmlTableData, parseTsvTable, tablePayload } from './table-paste-parse'
 
 // 内部剪贴板格式 MIME 的唯一来源在 block-clipboard（ADR-0025 D5）；此处转发供既有导入方使用
@@ -198,21 +198,34 @@ function mapListItem(li: Element): BlockClipPayload[] {
 // ── 粘贴分发决策（ADR-0025 D13 + ADR-0026 D8 的纯函数部分） ──────
 
 /**
- * 解析剪贴板数据为待粘贴森林：
- * 1. 命中内部 MIME（application/x-comind-block）→ 委托 block-clipboard 反序列化；
- * 2. 否则按外部规则（html 优先）解析；
+ * 解析剪贴板数据为「待粘贴载荷」：
+ * 1. 命中内部 MIME（application/x-comind-block）→ 委托 block-clipboard 反序列化，
+ *    连意图标记 `op` 一起带出（`'cut'` 才允许粘贴成搬移）；
+ * 2. 否则按外部规则（html 优先）解析 —— 外部内容一律 `'copy'`；
  * 3. 无可解析内容 → null。
  */
-export function resolveClipboardForest(
+export function resolveClipboardPayload(
   getData: (mime: string) => string
-): BlockClipPayload[] | null {
-  const internalBlocks = deserializeClipboardBlocks(getData(COMIND_BLOCK_MIME))
-  if (internalBlocks) return internalBlocks
+): { blocks: BlockClipPayload[]; op: BlockClipboardOp; fromPageId: string | null } | null {
+  const internal = deserializeClipboardPayload(getData(COMIND_BLOCK_MIME))
+  if (internal) {
+    return { blocks: internal.blocks, op: internal.op ?? 'copy', fromPageId: internal.fromPageId ?? null }
+  }
   const forest = parseExternalPaste({
     html: getData('text/html'),
     plain: getData('text/plain'),
   })
-  return forest.length > 0 ? forest : null
+  return forest.length > 0 ? { blocks: forest, op: 'copy', fromPageId: null } : null
+}
+
+/**
+ * 解析剪贴板数据为待粘贴森林（丢掉意图标记）。
+ * 需要知道「这次是剪切还是复制」的调用方改用 `resolveClipboardPayload`。
+ */
+export function resolveClipboardForest(
+  getData: (mime: string) => string
+): BlockClipPayload[] | null {
+  return resolveClipboardPayload(getData)?.blocks ?? null
 }
 
 /** 入口：外部剪贴板 → block 载荷森林（html 优先于 plain，D2） */

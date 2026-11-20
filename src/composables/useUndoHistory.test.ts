@@ -22,6 +22,9 @@ import {
   resetUndoHistory,
   documentState,
   blockDocumentEqual,
+  crossPagePartner,
+  cursorSeq,
+  linkCrossPageStep,
   _debugStats,
 } from './useUndoHistory'
 
@@ -425,5 +428,66 @@ describe('commitNow 封口', () => {
   it('未建栈的页封口 ⇒ 静默 no-op（不抛错、不留下半截栈）', () => {
     expect(() => commitNow('never-visited')).not.toThrow()
     expect(_debugStats().stackSizes['never-visited']).toBeUndefined()
+  })
+})
+
+/**
+ * 跨页搬移的一步撤销（ADR-0025 D4b）：撤销栈按页隔离，搬移会同时改两页 ⇒ 两页各记一步。
+ * `linkCrossPageStep` 把两侧栈顶配成同一步，撤销/重做时 `runUndoOrRedo` 据此连带另一页。
+ */
+describe('跨页一步撤销的配对', () => {
+  it('两页栈顶互指，各自记下对侧的「搬移后 / 搬移前」seq', async () => {
+    const blockStore = useBlockStore()
+    blockStore.blocks = [makeBlock('a1', 'A'), makeBlock('b1', 'B')]
+    ensureStack('A')
+    ensureStack('B')
+
+    // 搬移：a1 换页到 B
+    blockStore.blocks = [makeBlock('b1', 'B'), makeBlock('a1', 'B', { pos: 2000 })]
+    await flushChange()
+    commitNow('A')
+    commitNow('B')
+    linkCrossPageStep('A', 'B')
+
+    const a = crossPagePartner('A')
+    const b = crossPagePartner('B')
+    expect(a?.partnerPageId).toBe('B')
+    expect(b?.partnerPageId).toBe('A')
+    // 两侧「搬移后」的 seq 互指（撤销时据此确认对侧仍停在那一步）
+    expect(a?.partnerAfterSeq).toBe(cursorSeq('B'))
+    expect(b?.partnerAfterSeq).toBe(cursorSeq('A'))
+    // 「搬移前」= 各自游标前一格（两页都还有更早的快照，故都是具体 seq 且不同于「搬移后」）
+    expect(typeof a?.partnerBeforeSeq).toBe('number')
+    expect(typeof b?.partnerBeforeSeq).toBe('number')
+    expect(a?.partnerBeforeSeq).not.toBe(a?.partnerAfterSeq)
+    expect(b?.partnerBeforeSeq).not.toBe(b?.partnerAfterSeq)
+  })
+
+  it('同页 / 缺栈 → 静默不配对（退回两页各撤一步，不会做半套）', () => {
+    const blockStore = useBlockStore()
+    blockStore.blocks = [makeBlock('a1', 'A')]
+    ensureStack('A')
+
+    linkCrossPageStep('A', 'A')
+    expect(crossPagePartner('A')).toBeNull()
+
+    linkCrossPageStep('A', 'missing')
+    expect(crossPagePartner('A')).toBeNull()
+    expect(crossPagePartner('missing')).toBeNull()
+  })
+
+  it('cursorSeq 跟着游标走：撤销后回到前一条', async () => {
+    const blockStore = useBlockStore()
+    blockStore.blocks = [makeBlock('b1', 'p1', { content: 'a' })]
+    ensureStack('p1')
+    blockStore.blocks[0].content = 'b'
+    await flushChange()
+
+    const top = cursorSeq('p1')
+    expect(top).not.toBeNull()
+    undo('p1')
+    const afterUndo = cursorSeq('p1')
+    expect(afterUndo).not.toBeNull()
+    expect(afterUndo).not.toBe(top)
   })
 })

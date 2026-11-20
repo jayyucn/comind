@@ -57,6 +57,9 @@ export interface WasmClient {
   /** 撤销软删除（ADR-0046 D10）：复活块及其下整棵软删子树，返回 sync_changes 的 JSON 串 */
   undelete_blocks(ids_json: string): Promise<string>
 
+  /** 搬移一组块（ADR-0025 D4b）：`BlockMoveTarget[]` 的 JSON 进，sync_changes 的 JSON 出 */
+  move_blocks(targets_json: string): Promise<string>
+
   get_notification(id: string): Promise<Notification>
   get_notifications_by_block(blockId: string): Promise<Notification[]>
   query_unread_notifications(): Promise<Notification[]>
@@ -296,6 +299,10 @@ export async function initWasmClient(): Promise<WasmClient> {
 
     async undelete_blocks(ids_json: string): Promise<string> {
       return wasmModule.undelete_blocks(ids_json)
+    },
+
+    async move_blocks(targets_json: string): Promise<string> {
+      return wasmModule.move_blocks(targets_json)
     },
 
     async get_notification(id: string): Promise<Notification> {

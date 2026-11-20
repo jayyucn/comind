@@ -111,7 +111,8 @@ pub fn block_get_by_id_including_deleted<E: Executor>(exec: &E, id: &str) -> Res
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub fn block_get_by_page_id<E: Executor>(exec: &E, page_id: &str) -> Result<Vec<Block>, Box<dyn Error>> {    let sql = format!(
+pub fn block_get_by_page_id<E: Executor>(exec: &E, page_id: &str) -> Result<Vec<Block>, Box<dyn Error>> {
+    let sql = format!(
         "SELECT {} FROM Block WHERE page_id = ?1 AND deleted_at IS NULL ORDER BY pos",
         block_select_cols()
     );

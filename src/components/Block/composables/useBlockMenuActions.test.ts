@@ -15,11 +15,11 @@ vi.mock('../../../services/block-clipboard', async (importOriginal) => {
 
 vi.mock('../../../services/external-paste-parse', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../services/external-paste-parse')>()
-  return { ...actual, resolveClipboardForest: vi.fn() }
+  return { ...actual, resolveClipboardPayload: vi.fn() }
 })
 
 const { writeClipboardPayload } = await import('../../../services/block-clipboard')
-const { resolveClipboardForest } = await import('../../../services/external-paste-parse')
+const { resolveClipboardPayload } = await import('../../../services/external-paste-parse')
 
 function mkBlock(over: Partial<Block> = {}): Block {
   return {
@@ -239,31 +239,52 @@ describe('useBlockMenuActions — 块入口菜单的通用动作', () => {
     it('粘到本块下方，并把新建块与源 id 交给类型侧收尾', async () => {
       const blockStore = useBlockStore()
       blockStore.blocks = [mkBlock({ id: 'b1', pageId: 'p1' })]
-      vi.mocked(resolveClipboardForest).mockReturnValue([{ id: 'src', content: '源' } as never])
+      const forest = [{ id: 'src', content: '源' } as never]
+      vi.mocked(resolveClipboardPayload).mockReturnValue({ blocks: forest, op: 'copy', fromPageId: null })
       const created = mkBlock({ id: 'new', pageId: 'p1' })
-      const pasteBlocks = vi.spyOn(blockStore, 'pasteBlocks').mockResolvedValue([created])
+      const paste = vi
+        .spyOn(blockStore, 'pasteBlocksWithOp')
+        .mockResolvedValue({ blocks: [created], moved: false })
       const afterPaste = vi.fn()
 
       await useBlockMenuActions(() => 'b1', { afterPaste }).pasteBlock()
 
-      expect(pasteBlocks).toHaveBeenCalledWith([{ id: 'src', content: '源' }], {
+      // 意图标记原样透传：'copy' 永远新建
+      expect(paste).toHaveBeenCalledWith(forest, {
         pageId: 'p1',
         anchorBlockId: 'b1',
         fallbackParentId: null,
-      })
+      }, 'copy', null)
       expect(afterPaste).toHaveBeenCalledWith([created], ['src'])
+    })
+
+    it('剪切载荷被搬走时不再跑类型收尾（配置就挂在同一个 id 上）', async () => {
+      const blockStore = useBlockStore()
+      blockStore.blocks = [mkBlock({ id: 'b1', pageId: 'p1' })]
+      const moved = mkBlock({ id: 'src', pageId: 'p1' })
+      vi.mocked(resolveClipboardPayload).mockReturnValue({
+        blocks: [{ id: 'src', content: '' } as never],
+        op: 'cut',
+        fromPageId: 'p-src',
+      })
+      vi.spyOn(blockStore, 'pasteBlocksWithOp').mockResolvedValue({ blocks: [moved], moved: true })
+      const afterPaste = vi.fn()
+
+      await useBlockMenuActions(() => 'b1', { afterPaste }).pasteBlock()
+
+      expect(afterPaste).not.toHaveBeenCalled()
     })
 
     it('剪贴板里没有可用载荷时不粘贴、也不调收尾', async () => {
       const blockStore = useBlockStore()
       blockStore.blocks = [mkBlock({ id: 'b1' })]
-      vi.mocked(resolveClipboardForest).mockReturnValue(null)
-      const pasteBlocks = vi.spyOn(blockStore, 'pasteBlocks').mockResolvedValue([])
+      vi.mocked(resolveClipboardPayload).mockReturnValue(null)
+      const paste = vi.spyOn(blockStore, 'pasteBlocksWithOp')
       const afterPaste = vi.fn()
 
       await useBlockMenuActions(() => 'b1', { afterPaste }).pasteBlock()
 
-      expect(pasteBlocks).not.toHaveBeenCalled()
+      expect(paste).not.toHaveBeenCalled()
       expect(afterPaste).not.toHaveBeenCalled()
     })
   })

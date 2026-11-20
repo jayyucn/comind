@@ -27,7 +27,7 @@ vi.mock('../wasm/client', () => ({
 
 import { useBlockStore } from '../stores/blocks'
 import { useFieldValueStore } from '../stores/fieldValue'
-import { restoreEntry, redoAndRestore, undoAndRestore } from './useUndoRestore'
+import { restoreEntry, redoAndRestore, undoAndRestore, runUndoOrRedo, linkCrossPageMove } from './useUndoRestore'
 import { documentState, ensureStack, canUndo, canRedo, commitNow, resetUndoHistory, _debugStats } from './useUndoHistory'
 
 function makeBlock(id: string, pageId: string, overrides: Partial<Block> = {}): Block {
@@ -578,5 +578,47 @@ describe('op 哨兵（#113）', () => {
         expect(envelopeParamKeys.has(key)).toBe(true)
       }
     }
+  })
+})
+
+/**
+ * 跨页搬移的一步撤销（ADR-0025 D4b）。
+ *
+ * 真机验收时暴露过一次：撤销只退了目标页那一半 —— 块被删进回收站，源页却没拿回来。
+ * 判据是「撤销后块回到源页」，光看目标页块消失会漏掉半边。
+ */
+describe('跨页搬移的一步撤销', () => {
+  it('撤销目标页时，块退回源页（而不是只从目标页消失）', async () => {
+    const bs = useBlockStore()
+    const p1 = 'page-src'
+    const p2 = 'page-dst'
+    const moved = makeBlock('bx', p1, { content: '被搬的块' })
+
+    // 两页都先建栈并封口：目标页没有更早那条快照时，撤销目标页本身就是 no-op（#122 守卫），
+    // 那样测的就不是「跨页连带」而是「有没有历史」了。栈不会自建（`commitNow` 对无栈页
+    // 静默跳过），故 `ensureStack` 不能省。
+    bs.blocks = [makeBlock('a1', p1), moved, makeBlock('z1', p2)]
+    ensureStack(p1)
+    ensureStack(p2)
+    commitNow(p1)
+    commitNow(p2)
+
+    // 剪切：块被乐观剔除（真实路径是 deleteBlocks）
+    bs.blocks = bs.blocks.filter((b) => b.id !== 'bx')
+    // 搬移：库里换页 + 内存换页
+    moved.pageId = p2
+    bs.blocks = [...bs.blocks, { ...moved }]
+
+    linkCrossPageMove(p1, p2)
+
+    const changed = await runUndoOrRedo(p2, 'undo')
+
+    // 目标页：块没了
+    expect(bs.getBlocksByPage(p2).some((b) => b.id === 'bx')).toBe(false)
+    // 源页：块**回来了**（这一步才是 D4b 的验收点）
+    const back = bs.getBlocksByPage(p1).find((b) => b.id === 'bx')
+    expect(back).toBeTruthy()
+    expect(back?.pageId).toBe(p1)
+    expect(changed).not.toBeNull()
   })
 })

@@ -2,6 +2,7 @@ import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import {
   COMIND_BLOCK_MIME,
   deserializeClipboardBlocks,
+  deserializeClipboardPayload,
   payloadToPlainText,
   serializeBlocks,
   writeClipboardPayload,
@@ -51,11 +52,13 @@ function contents(nodes: BlockClipPayload[]): string[] {
 }
 
 describe('serializeBlocks — 内部剪贴板载荷序列化', () => {
-  test('顶层载荷形状（version/kind/blocks）与节点字段', () => {
+  test('顶层载荷形状（version/kind/op/blocks）与节点字段', () => {
     const payload = serializeBlocks([mk('a', '内容一', { type: 'code' })], resolvers())
 
-    expect(payload.version).toBe(1)
+    expect(payload.version).toBe(2)
     expect(payload.kind).toBe('blocks')
+    // 默认意图是复制：少传一处不会把块搬丢
+    expect(payload.op).toBe('copy')
     expect(payload.blocks).toHaveLength(1)
     expect(payload.blocks[0]).toEqual({
       id: 'a',
@@ -65,6 +68,16 @@ describe('serializeBlocks — 内部剪贴板载荷序列化', () => {
       properties: null,
       children: [],
     })
+  })
+
+  test('剪切载荷带 op=cut，并记下源页（跨页撤销配对要用）', () => {
+    const payload = serializeBlocks([mk('a', '内容一')], resolvers(), 'cut')
+    expect(payload.op).toBe('cut')
+    expect(payload.fromPageId).toBe(PAGE_ID)
+  })
+
+  test('复制载荷不带源页：op=copy 时 fromPageId 为 null', () => {
+    expect(serializeBlocks([mk('a', 'a')], resolvers()).fromPageId).toBeNull()
   })
 
   test('子树完整递归（折叠只是视图状态）', () => {
@@ -166,6 +179,45 @@ describe('deserializeClipboardBlocks — 内部 MIME 反序列化', () => {
 
   test('blocks 非数组 → null', () => {
     expect(deserializeClipboardBlocks(JSON.stringify({ version: 1, kind: 'blocks', blocks: {} }))).toBeNull()
+  })
+})
+
+describe('deserializeClipboardPayload — 意图标记归一化', () => {
+  test('v1 载荷没有 op → 当 copy（旧剪贴板/别人写的载荷永不误判为剪切）', () => {
+    const payload = deserializeClipboardPayload(JSON.stringify({ version: 1, kind: 'blocks', blocks: [] }))
+    expect(payload?.op).toBe('copy')
+    expect(payload?.version).toBe(1)
+  })
+
+  test('未知 op 取值 → 当 copy', () => {
+    const payload = deserializeClipboardPayload(
+      JSON.stringify({ version: 2, kind: 'blocks', op: 'move', blocks: [] })
+    )
+    expect(payload?.op).toBe('copy')
+  })
+
+  test('v2 + op=cut 原样保留', () => {
+    const payload = deserializeClipboardPayload(
+      JSON.stringify({ version: 2, kind: 'blocks', op: 'cut', blocks: [] })
+    )
+    expect(payload?.op).toBe('cut')
+  })
+
+  test('源页随载荷往返；缺失/非字符串一律归一为 null', () => {
+    const kept = deserializeClipboardPayload(
+      JSON.stringify({ version: 2, kind: 'blocks', op: 'cut', fromPageId: 'p-x', blocks: [] })
+    )
+    expect(kept?.fromPageId).toBe('p-x')
+
+    const missing = deserializeClipboardPayload(
+      JSON.stringify({ version: 1, kind: 'blocks', blocks: [] })
+    )
+    expect(missing?.fromPageId).toBeNull()
+
+    const weird = deserializeClipboardPayload(
+      JSON.stringify({ version: 2, kind: 'blocks', op: 'cut', fromPageId: 42, blocks: [] })
+    )
+    expect(weird?.fromPageId).toBeNull()
   })
 })
 

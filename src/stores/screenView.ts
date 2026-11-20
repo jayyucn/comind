@@ -486,6 +486,7 @@ function makeScreenViewStore(
 }
 
 type ScreenViewStore = ReturnType<typeof makeScreenViewStore>
+type ScreenViewStoreInstance = ReturnType<ScreenViewStore>
 
 const storeRegistry = new Map<string, ScreenViewStore>()
 
@@ -508,6 +509,6 @@ export function useScreenViewStore(entityKey: string = 'block', options: ScreenV
  * 接着改列宽就写向已删除的 tab）。此时需要判断「这个命名空间是否已在内存里」再决定要不要
  * 重读 —— 用 `useScreenViewStore` 会顺手造一个 store，两个 load 并发就可能 seed 两套默认屏。
  */
-export function peekScreenViewStore(entityKey: string = 'block'): ScreenViewStore | null {
+export function peekScreenViewStore(entityKey: string = 'block'): ScreenViewStoreInstance | null {
   return storeRegistry.get(`screenView:${entityKey}`)?.() ?? null
 }

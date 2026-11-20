@@ -66,8 +66,26 @@ export interface BlockClipPayload {
 }
 
 /** 剪贴板顶层载荷（ADR-0025 D5），序列化为自定义 MIME `application/x-comind-block` 的 JSON */
+/**
+ * 内部剪贴板载荷的**意图**（ADR-0025 D4b）。
+ *
+ * - `'copy'`：粘贴一律新建块（id 全部重新生成）。
+ * - `'cut'`：粘贴时若这些根块在本库仍处于软删状态，就**复活并搬走**它们（id 不变），
+ *   否则回落新建 —— 剪贴板是系统级共享资源，可能来自另一台机器/另一个库。
+ */
+export type BlockClipboardOp = 'cut' | 'copy'
+
 export interface BlockClipboardPayload {
-  version: 1
+  /** v2 起带 `op`；v1 载荷缺该字段，解析时按 `'copy'` 处理。 */
+  version: 1 | 2
   kind: 'blocks'
+  op?: BlockClipboardOp
+  /**
+   * 剪切时的源页（v2，仅 `op === 'cut'` 有意义）。
+   *
+   * 跨页搬移要把源页与目标页的撤销步配成一步，而剪切**已经从内存里摘掉了这些块**，
+   * 粘贴时按 id 回查源页必然落空 ⇒ 只能在写载荷那一刻记下来。
+   */
+  fromPageId?: string | null
   blocks: BlockClipPayload[]
 }

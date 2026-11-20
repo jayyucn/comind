@@ -476,12 +476,20 @@ export function useCrossBlockSelection() {
    *
    * 选区侧只负责「块选区 → 文档序顶层根」；载荷序列化（完整子树 + properties 随行）
    * 与落盘（自定义 MIME + text/plain 兜底降级链）委托 block-clipboard 模块。
+   *
+   * `op` 由调用方按按键传：`Ctrl+C` → `'copy'`，`Ctrl+X` → `'cut'`（D4b：剪切才可搬移）。
+   * 两个出口写的是同一份载荷，唯一的差别就是这个意图标记 —— 少了它，「复制后源块被删」
+   * 会被粘贴侧误判成剪切而把原文搬走。
    */
-  async function copyToClipboard() {
-    const payload = serializeBlocks(resolveClipRoots(), {
-      resolveChildren: block => blockStore.getChildren(block.id),
-      resolveProperties: blockPropsRecord,
-    })
+  async function copyToClipboard(op: 'cut' | 'copy' = 'copy') {
+    const payload = serializeBlocks(
+      resolveClipRoots(),
+      {
+        resolveChildren: block => blockStore.getChildren(block.id),
+        resolveProperties: blockPropsRecord,
+      },
+      op,
+    )
     await writeClipboardPayload(payload)
   }
 

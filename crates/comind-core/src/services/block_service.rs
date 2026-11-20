@@ -37,6 +37,14 @@ impl BlockService {
         repository::BlockRepository::get_children_including_deleted(storage.blocks(), parent_id)
     }
 
+    /// 含软删的单块查询（返回的 `deleted_at` 由调用方判读）：搬移判定专用。
+    pub fn get_by_id_including_deleted(
+        storage: &mut dyn StorageAdapter,
+        id: &str,
+    ) -> Result<Block, Box<dyn Error>> {
+        repository::BlockRepository::get_by_id_including_deleted(storage.blocks(), id)
+    }
+
     /// 撤销软删除（ADR-0046 D10）：清 deleted_at 并回写已复活块。仅管块本身，
     /// 派生数据（属性/dateRef/通知）复活由各自原语负责，T1 不覆盖。
     pub fn undelete(

@@ -705,8 +705,11 @@ describe('useCrossBlockSelection', () => {
 
       expect(writeMock).toHaveBeenCalledTimes(1)
       const payload = await writtenPayload()
-      expect(payload.version).toBe(1)
+      expect(payload.version).toBe(2)
       expect(payload.kind).toBe('blocks')
+      // 默认意图是复制：Ctrl+C 绝不把块搬走（剪切才会带 op=cut + 源页）
+      expect(payload.op).toBe('copy')
+      expect(payload.fromPageId).toBeNull()
       expect(payload.blocks).toHaveLength(2)
       expect(payload.blocks[0].content).toBe('内容一')
       expect(payload.blocks[0].type).toBe('code')

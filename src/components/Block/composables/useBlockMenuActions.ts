@@ -1,10 +1,12 @@
 import { computed, nextTick } from 'vue'
 
+import { linkCrossPageMove } from '../../../composables/useUndoRestore'
 import { COMIND_BLOCK_MIME, serializeBlocks, writeClipboardPayload } from '../../../services/block-clipboard'
-import { resolveClipboardForest } from '../../../services/external-paste-parse'
+import { resolveClipboardPayload } from '../../../services/external-paste-parse'
 import { useBlockStore } from '../../../stores/blocks'
 import { useEditorStore } from '../../../stores/editor'
 import { useFieldValueStore } from '../../../stores/fieldValue'
+import { usePageStore } from '../../../stores/pages'
 import type { Block } from '../../../types/block'
 import { getPrevSibling } from '../../../utils/block-helpers'
 import { decodeFieldValueData } from '../../../utils/field-value-codec'
@@ -39,6 +41,7 @@ export function useBlockMenuActions(
 ) {
   const blockStore = useBlockStore()
   const editorStore = useEditorStore()
+  const pageStore = usePageStore()
   const fieldValueStore = useFieldValueStore()
 
   const currentBlock = computed(() => {
@@ -83,15 +86,26 @@ export function useBlockMenuActions(
     if (id) void blockStore.outdent(id)
   }
 
-  /** 复制整块进块级剪贴板：子树 + 字段值随行（视图配置不在这里搬，见 afterPaste） */
-  async function copyBlock(): Promise<void> {
+  /**
+   * 复制整块进块级剪贴板：子树 + 字段值随行（视图配置不在这里搬，见 afterPaste）。
+   * `op` 是载荷意图：只有 `'cut'` 才允许粘贴时把源块搬走（ADR-0025 D4b）。
+   */
+  async function writeBlockPayload(op: 'cut' | 'copy'): Promise<void> {
     const block = currentBlock.value
     if (!block) return
-    const payload = serializeBlocks([block], {
-      resolveChildren: (b) => blockStore.getChildren(b.id),
-      resolveProperties: blockPropsRecord,
-    })
+    const payload = serializeBlocks(
+      [block],
+      {
+        resolveChildren: (b) => blockStore.getChildren(b.id),
+        resolveProperties: blockPropsRecord,
+      },
+      op,
+    )
     await writeClipboardPayload(payload)
+  }
+
+  async function copyBlock(): Promise<void> {
+    await writeBlockPayload('copy')
   }
 
   async function deleteBlock(): Promise<void> {
@@ -150,9 +164,14 @@ export function useBlockMenuActions(
     if (created) editorStore.activateBlock(created.id, 1)
   }
 
-  /** 剪切 = 复制 + 删块；先等剪贴板写完再删，写失败时块还在 */
+  /**
+   * 剪切 = 写「剪切」载荷 + 删块；先等剪贴板写完再删，写失败时块还在。
+   *
+   * 载荷带 `op: 'cut'`，所以粘贴时若这些块仍软删（本库、没被恢复），会被**搬走**
+   * 而不是再建一份副本 —— 引用不断、配置不丢（ADR-0025 D4b）。
+   */
   async function cutBlock(): Promise<void> {
-    await copyBlock()
+    await writeBlockPayload('cut')
     if (!currentBlock.value) return
     await deleteBlock()
   }
@@ -188,20 +207,36 @@ export function useBlockMenuActions(
   /**
    * 粘贴到本块**下方**（与普通块 Ctrl+V 同一落点语义）。
    * 剪贴板内容在点击前不可知（异步读），所以这一项恒可点；空剪贴板就是 no-op。
+   *
+   * 载荷是「剪切」且源块仍在本库软删时，这里会**搬走**它们（id 不变）—— 那时
+   * 不该再跑 `afterPaste`：查询块的命名视图本来就挂在这个 id 上。
    */
   async function pasteBlock(): Promise<void> {
     const block = currentBlock.value
     if (!block) return
     const data = await readClipboardData()
-    const forest = resolveClipboardForest((mime) => data[mime] ?? '')
-    if (!forest || forest.length === 0) return
-    const created = await blockStore.pasteBlocks(forest, {
-      pageId: block.pageId,
-      anchorBlockId: block.id,
-      fallbackParentId: null,
-    })
-    if (hooks.afterPaste && created.length > 0) {
-      await hooks.afterPaste(created, forest.map((node) => node.id ?? ''))
+    const payload = resolveClipboardPayload((mime) => data[mime] ?? '')
+    if (!payload || payload.blocks.length === 0) return
+    const outcome = await blockStore.pasteBlocksWithOp(
+      payload.blocks,
+      {
+        pageId: block.pageId,
+        anchorBlockId: block.id,
+        fallbackParentId: null,
+      },
+      payload.op,
+      payload.fromPageId,
+    )
+    if (outcome.moved) {
+      // 搬移要给一句回馈：块从源页消失了，用户得知道它去了哪（降级新建时不提示）。
+      const title = pageStore.getPage(block.pageId)?.title
+      const count = outcome.blocks.length
+      editorStore.showToast(title ? `已移动 ${count} 个块到「${title}」` : `已移动 ${count} 个块`)
+      // 两页撤销配成一步（同页搬移内部会 no-op）
+      linkCrossPageMove(outcome.movedFromPageId, block.pageId)
+    }
+    if (!outcome.moved && hooks.afterPaste && outcome.blocks.length > 0) {
+      await hooks.afterPaste(outcome.blocks, payload.blocks.map((node) => node.id ?? ''))
     }
   }
 

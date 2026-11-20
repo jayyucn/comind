@@ -762,8 +762,18 @@ impl BlockRepository for SqlJsAdapter {
         Ok(result.into_iter().map(|r| row_to_block_js(&r)).collect())
     }
 
+    fn get_by_id_including_deleted(&self, id: &str) -> Result<Block, Box<dyn std::error::Error>> {
+        // 不过滤 deleted_at：搬移判定要能读到「仍软删」的那一行。
+        let result = Self::query(&self.db, &format!("SELECT {} FROM Block WHERE id = ?", block_select_cols()), &[id])?;
+        if result.is_empty() {
+            return Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "Block not found")));
+        }
+        Ok(row_to_block_js(&result[0]))
+    }
+
     fn create(&mut self, block: &Block) -> Result<Block, Box<dyn std::error::Error>> {
-        let parent_id = block.parent_id.as_deref().unwrap_or("");        // tags 由 BlockService::update/create 经 resolve_tag_ids_for_content 从 content
+        let parent_id = block.parent_id.as_deref().unwrap_or("");
+        // tags 由 BlockService::update/create 经 resolve_tag_ids_for_content 从 content
         // 派生后装入 block.tags；此处必须随行写入，否则 Block.tags 列恒为 '[]'，
         // 投影层（get_blocks_projection 读 Block.tags）按任务 tag 过滤会让块永远进不了任务列表/四象限。
         let tags_json = serde_json::to_string(&block.tags).unwrap_or_else(|_| "[]".to_string());

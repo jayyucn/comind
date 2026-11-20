@@ -18,8 +18,9 @@
  *
  * 前缀字面量只此一处：Rust 侧两个原语都把前缀当参数收下，不持有命名空间知识。
  */
-import type { CoreClient, OrphanCleanupReportRust, ScreenViewRust } from '../wasm/client'
+import type { CoreClient, OrphanCleanupReportRust } from '../wasm/client'
 import { initCoreClient } from '../wasm/client'
+import type { ScreenViewRust } from '../wasm/types'
 
 /** 活命名空间前缀（块存续期间）。 */
 export const QUERY_VIEW_ENTITY_PREFIX = 'query-block:'
@@ -76,6 +77,31 @@ export async function cleanupOrphanQueryViews(): Promise<OrphanCleanupReportRust
     return await client.cleanupOrphanScreenViews(QUERY_VIEW_ORPHAN_PREFIX, QUERY_VIEW_ENTITY_PREFIX)
   } catch {
     return empty
+  }
+}
+
+/**
+ * 块「复活并搬移」后调用（ADR-0025 D4b）：把命名视图从孤儿前缀挂回活前缀。
+ *
+ * 剪切那一刻 `markQueryViewOrphan` 已经把整组配置改挂到 `query-orphan:<id>`，而搬移原语
+ * 只搬 Block 行。不挂回来的话，块重新挂载时 `screenView.load` 读到空命名空间会 seed 一套
+ * 默认屏 —— 用户配的视图看起来凭空没了，而启动核销又把孤儿挂回活前缀 ⇒ 同一命名空间两套屏。
+ *
+ * 与 `markQueryViewOrphan` 同一对前缀、方向相反，所以复用同一个 Rust 原语（前缀是参数）。
+ * 返回改动行数（0 = 该块没有落库配置，例如从未打开过）。
+ */
+export async function restoreQueryViewNamespace(blockId: string): Promise<number> {
+  if (!blockId) return 0
+  try {
+    const client = await getClient()
+    if (!client) return 0
+    return await client.markOrphanScreenViews(
+      QUERY_VIEW_ORPHAN_PREFIX,
+      QUERY_VIEW_ENTITY_PREFIX,
+      blockId,
+    )
+  } catch {
+    return 0
   }
 }
 

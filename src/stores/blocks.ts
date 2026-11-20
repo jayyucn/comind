@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 
 import type { BatchOperation } from '@/wasm/types'
 
-import { markQueryViewOrphan } from '../services/query-view-namespace'
+import { markQueryViewOrphan, restoreQueryViewNamespace } from '../services/query-view-namespace'
 import { renderedOffsetToEncodedOffset } from '../services/render-text'
 import { normalizeTextRange, type TextRange } from '../services/text-range'
 import type { Block, BlockClipPayload } from '../types/block'
@@ -147,6 +147,22 @@ async function safeCalcInsertPos(
     }
     throw error
   }
+}
+
+/**
+ * 一次粘贴的结果。
+ *
+ * `moved === true` 表示这次是**搬移**（源块被复活并换了页，id 不变），
+ * 与「新建副本」在调用方要分头处理：搬移不需要任何类型专属的重建（配置就挂在同一个 id 上）。
+ */
+export interface PasteOutcome {
+  blocks: Block[]
+  moved: boolean
+  /**
+   * 搬移前这些根块所在的页（`moved === false`、来源不明、或根块来自多页时为 null）。
+   * 调用方据此把源页与目标页的撤销步配成一步（`linkCrossPageStep`）。
+   */
+  movedFromPageId: string | null
 }
 
 export const useBlockStore = defineStore('blocks', () => {
@@ -1813,6 +1829,231 @@ export const useBlockStore = defineStore('blocks', () => {
     return created
   }
 
+  /**
+   * 带意图的粘贴（ADR-0025 D4b）：`op === 'cut'` 且源块在本库仍软删时，把块**搬过来**
+   * （id 不变、整棵子树跟着换页），否则回落 `pasteBlocks` 新建副本。
+   *
+   * 为什么搬移要放在 store 而不是调用方：落点（锚点之后、同层级、pos 取中）只有这里知道，
+   * 而菜单粘贴与 Ctrl+V 必须走同一套 —— 两处各算一次落点，就一定会漂。
+   *
+   * `moved === true` 时调用方**不要**再跑 `afterPaste` 之类的类型收尾：配置本来就挂在
+   * 这个 id 上（查询块的命名视图、字段值、`(( ))` 引用），重建反而是错的。
+   */
+  async function pasteBlocksWithOp(
+    forest: BlockClipPayload[],
+    opts: { pageId: string; anchorBlockId?: string | null; fallbackParentId?: string | null },
+    op: 'cut' | 'copy',
+    fromPageId: string | null = null,
+  ): Promise<PasteOutcome> {
+    if (!forest || forest.length === 0) return { blocks: [], moved: false, movedFromPageId: null }
+    if (op === 'cut') {
+      // 源页优先取**载荷**里那份：剪切已经把这些块从 `blocks.value` 摘掉了，回查内存必然落空。
+      // 兜底才查内存（旧载荷 / 手工合成的载荷没有 fromPageId）。
+      const sourcePages = new Set<string>()
+      if (fromPageId) sourcePages.add(fromPageId)
+      else {
+        for (const node of forest) {
+          const found = node.id ? blocks.value.find(b => b.id === node.id) : undefined
+          if (found) sourcePages.add(found.pageId)
+        }
+      }
+      const moved = await movePastedBlocks(forest, opts)
+      if (moved) {
+        return {
+          blocks: moved,
+          moved: true,
+          movedFromPageId: sourcePages.size === 1 ? [...sourcePages][0] : null,
+        }
+      }
+    }
+    return { blocks: await pasteBlocks(forest, opts), moved: false, movedFromPageId: null }
+  }
+
+  /**
+   * 粘贴的搬移分支：把载荷根块原样搬进落点。返回 `null` = 搬不动，交回调用方新建。
+   *
+   * 判据全在 Rust 侧（`move_blocks` 一个事务内校验 + 复活 + 换页，任一失败整组回滚），
+   * 这里只负责算落点与回写内存。搬不动的三种情况都落到同一条回落：
+   * 跨机器/跨库粘贴、同一份剪贴板连粘第二次、源块已被回收站恢复。
+   */
+  async function movePastedBlocks(
+    forest: BlockClipPayload[],
+    opts: { pageId: string; anchorBlockId?: string | null; fallbackParentId?: string | null },
+  ): Promise<Block[] | null> {
+    // 没有源 id 就没有搬移可言（外部粘贴、旧载荷）
+    const roots = forest.filter((n) => !!n.id)
+    if (roots.length !== forest.length) return null
+
+    const anchor = opts.anchorBlockId
+      ? blocks.value.find(b => b.id === opts.anchorBlockId && b.pageId === opts.pageId)
+      : undefined
+    const parentId = anchor ? anchor.parentId : (opts.fallbackParentId ?? null)
+
+    // 落点与 pasteBlocks 同一套算法：每个根块依次取「上一个插入块」与「下一个兄弟」之间。
+    // 搬移时块还没进 store，所以已分配的 pos 用局部表兜住（posOf 读不到未来的值）。
+    let nextSiblingId: string | null = null
+    let prevAnchorId: string | null = null
+    {
+      const siblings = getSortedChildren(blocks.value, parentId, opts.pageId)
+      if (anchor) {
+        const idx = siblings.findIndex(b => b.id === anchor.id)
+        nextSiblingId = idx >= 0 && idx < siblings.length - 1 ? siblings[idx + 1].id : null
+        prevAnchorId = anchor.id
+      } else {
+        prevAnchorId = siblings.length > 0 ? siblings[siblings.length - 1].id : null
+      }
+    }
+    const posOf = (id: string | null): number | null =>
+      id ? (blocks.value.find(b => b.id === id)?.pos ?? null) : null
+    const assigned = new Map<string, number>()
+    const posOfKnown = (id: string | null): number | null =>
+      id && assigned.has(id) ? (assigned.get(id) as number) : posOf(id)
+
+    const positions: number[] = []
+    for (const root of roots) {
+      const calcPositions = () => ({ prevPos: posOfKnown(prevAnchorId), nextPos: posOfKnown(nextSiblingId) })
+      const pos = await safeCalcInsertPos(
+        posOfKnown(prevAnchorId),
+        posOfKnown(nextSiblingId),
+        blocks.value,
+        calcPositions,
+      )
+      positions.push(pos)
+      assigned.set(root.id as string, pos)
+      prevAnchorId = root.id as string
+    }
+
+    const client = await getClient()
+    try {
+      await client.moveBlocks(
+        roots.map((root, i) => ({
+          blockId: root.id as string,
+          pageId: opts.pageId,
+          parentId,
+          pos: positions[i],
+        })),
+      )
+    } catch {
+      // NOT_REVIVABLE / INTO_SELF 都走这里：不提示、不改内存，交给新建路径。
+      return null
+    }
+
+    // 搬移成功 ≠ 界面就位：剪切已经把这些块从 store 数组里摘掉（`deleteBlocks` 的乐观过滤），
+    // 库里搬好了、内存里没有 —— 不读回来就是「块凭空消失」。
+    // 子树成员从**载荷**取（store 里已经查不到它们了），再按 id 从库里读回。
+    const movedIds = new Set<string>()
+    const walkPayload = (nodes: BlockClipPayload[]): void => {
+      for (const node of nodes) {
+        if (node.id) movedIds.add(node.id)
+        walkPayload(node.children)
+      }
+    }
+    walkPayload(forest)
+
+    // 已在内存里的（少见，防御性）先就地把归属与位置改对
+    for (const block of blocks.value) {
+      if (movedIds.has(block.id)) block.pageId = opts.pageId
+    }
+    roots.forEach((root, i) => {
+      const block = blocks.value.find(b => b.id === root.id)
+      if (!block) return
+      block.parentId = parentId
+      block.pos = positions[i]
+    })
+
+    await pullMovedBlocksIntoStore(opts.pageId, movedIds)
+    const rootIds = new Set(roots.map((root) => root.id as string))
+    const movedRoots = blocks.value.filter((b) => rootIds.has(b.id))
+
+    // 派生数据在剪切时被级联清掉，搬移原语只搬 Block 行，必须在这里补回来：
+    // - 字段值：载荷里带着，按**原 id** 逐条重设（upsert 的 ON CONFLICT 会把 deleted_at 清回 NULL，
+    //   与撤销复活块同一机制）；
+    // - 查询块命名视图：剪切时整组改挂到孤儿前缀，搬回来要挂回活前缀，否则块挂载时读到空命名空间
+    //   就 seed 一套默认屏，用户配的视图等于丢了。
+    const fieldValueStore = useFieldValueStore()
+    const restoreNode = async (nodes: BlockClipPayload[]): Promise<void> => {
+      for (const node of nodes) {
+        if (node.properties && node.id) {
+          for (const [key, entry] of Object.entries(node.properties)) {
+            await fieldValueStore.setFieldValue(
+              node.id,
+              key,
+              decodeFieldValueData(entry.value, entry.type) as FieldValueData,
+              entry.type as FieldType,
+            )
+          }
+        }
+        if (node.type === 'query' && node.id) {
+          await restoreQueryViewNamespace(node.id)
+        }
+        await restoreNode(node.children)
+      }
+    }
+    await restoreNode(forest)
+
+    reconcileCollapse([], parentId ? [parentId] : [])
+    return movedRoots
+  }
+
+  /**
+   * 搬移后把块从库里读回内存。
+   *
+   * 只补**缺失**的 id，不做整页替换（`loadPageBlocks` 会覆盖目标页，把还没落库的在途编辑
+   * 从内存里抹掉）。优先走 `getPageWithBlocks`（带 render_segments，行内标记不退化成纯文本），
+   * 旧二进制没有该接口时回退 `getBlocksByPage`。
+   */
+  async function pullMovedBlocksIntoStore(pageId: string, ids: Set<string>): Promise<void> {
+    const known = new Set(blocks.value.map(b => b.id))
+    const wanted = new Set([...ids].filter(id => !known.has(id)))
+    if (wanted.size > 0) {
+      const client = await getClient()
+      const add = (block: Block): void => {
+        if (!wanted.delete(block.id)) return
+        blocks.value.push(block)
+      }
+      try {
+        const pw = await client.getPageWithBlocks(pageId)
+        for (const brd of pw?.blocks ?? []) {
+          if (!wanted.has(brd.block.id)) continue
+          add({
+            id: brd.block.id,
+            pageId: brd.block.page_id,
+            parentId: brd.block.parent_id,
+            pos: brd.block.pos,
+            content: brd.block.content,
+            format: JSON.parse(brd.block.format || '{}'),
+            type: brd.block.type as Block['type'],
+            renderSegments: brd.render_segments ?? [],
+            tags: brd.block.tags ?? [],
+            createdAt: brd.block.created_at,
+            updatedAt: brd.block.updated_at,
+          })
+        }
+      } catch {
+        // 旧二进制无 getPageWithBlocks → 下面回退
+      }
+      if (wanted.size > 0) {
+        const rows = await client.getBlocksByPage(pageId)
+        for (const row of rows) {
+          if (!wanted.has(row.id)) continue
+          add({
+            id: row.id,
+            pageId: row.page_id,
+            parentId: row.parent_id,
+            pos: row.pos,
+            content: row.content,
+            format: JSON.parse(row.format || '{}'),
+            type: row.type as Block['type'],
+            renderSegments: undefined,
+            tags: row.tags ?? [],
+            createdAt: row.created_at,
+            updatedAt: row.updated_at,
+          })
+        }
+      }
+    }
+  }
+
   /** 更新 Block 字段值（使用独立的 field_value 表）。
    *  必须走 fieldValueStore.setFieldValue 完整路径：写完数据库后刷新
    *  fieldValueStore 内存缓存 + 失效 blockCard，否则 UI 立即重渲染时
@@ -1866,6 +2107,7 @@ export const useBlockStore = defineStore('blocks', () => {
     deleteBlock,
     deleteBlocks,
     pasteBlocks,
+    pasteBlocksWithOp,
     saveErrors,
     retrySave,
     updateBlockContent,

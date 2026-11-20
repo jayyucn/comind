@@ -472,6 +472,21 @@ mod wasm_impl {
         })
     }
 
+    /// 搬移一组块（ADR-0025 D4b）：「剪切 → 粘贴 = 搬走同一个块」的落库原语。
+    /// 入参是 `BlockMoveTarget[]` 的 JSON；返回 `HashMap<SyncTable, Vec<String>>` 的 JSON 串。
+    /// 任一目标不可复活时整体失败，错误串带 `BLOCK_MOVE_NOT_REVIVABLE` / `BLOCK_MOVE_INTO_SELF`，
+    /// 由前端据此回落「新建副本」。
+    #[wasm_bindgen]
+    pub fn move_blocks(targets_json: &str) -> Result<String, JsValue> {
+        let targets: Vec<comind_core::services::BlockMoveTarget> = serde_json::from_str(targets_json)
+            .map_err(|e| JsValue::from_str(&format!("Failed to parse move targets: {}", e)))?;
+        with_adapter(|adapter| {
+            let sync_changes = BlockWriteService::move_blocks(adapter, &targets)?;
+            serde_json::to_string(&sync_changes)
+                .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
+        })
+    }
+
     // ---- Notifications（storage.notifications() 直调，与 Tauri commands.rs 同构） ----
     #[wasm_bindgen]
     pub fn get_notification(id: &str) -> Result<JsValue, JsValue> {

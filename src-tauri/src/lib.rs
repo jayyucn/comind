@@ -197,6 +197,7 @@ pub fn run() {
             commands::save_block_tree,
             commands::delete_block,
             commands::undelete_blocks,
+            commands::move_blocks,
             commands::save_page,
             commands::delete_page_cascade,
             commands::set_field_value,

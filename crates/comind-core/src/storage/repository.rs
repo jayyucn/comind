@@ -15,8 +15,7 @@ pub trait BlockRepository {
     /// 只服务于「剪切后粘贴」的搬移判定：要区分「这块是我刚剪的（仍软删）」与
     /// 「这块还活着（复制，或已被回收站恢复）」，而 `get_by_id` 对软删块报 NotFound，
     /// 两者都会落到同一条错误分支，判不出来。
-    fn get_by_id_including_deleted(&self, id: &str) -> Result<Block, Box<dyn Error>>;
-    /// 撤销软删除：将 deleted_at 置 NULL（版本 +1、刷新 updated_at），返回复活后的块。
+    fn get_by_id_including_deleted(&self, id: &str) -> Result<Block, Box<dyn Error>>;    /// 撤销软删除：将 deleted_at 置 NULL（版本 +1、刷新 updated_at），返回复活后的块。
     fn undelete(&mut self, id: &str) -> Result<Block, Box<dyn Error>>;
     /// 仅刷新 updated_at（不 bump version）——字段值写入的派生时间戳收口。
     /// 返回刷新后的块；软删块（get_by_id 过滤 deleted_at）报 NotFound。

@@ -6,7 +6,7 @@ use super::repository::*;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::storage::entity::date_ref::{date_ref_create, date_ref_create_many, date_ref_delete, date_ref_delete_by_block_id, date_ref_get_all, date_ref_get_by_block_id, date_ref_get_by_id, date_ref_query_all_recurring, date_ref_query_by_date_range, date_ref_query_due_non_recurring, date_ref_query_overdue};
 #[cfg(not(target_arch = "wasm32"))]
-use crate::storage::entity::block::{block_get_all, block_get_by_id, block_get_by_page_id, block_get_children, block_get_children_including_deleted, block_get_by_ids, block_insert, block_update, block_soft_delete_by_id, block_undelete_by_id, block_touch_updated_at, block_ids_by_page_id, block_soft_delete_by_page_id};
+use crate::storage::entity::block::{block_get_all, block_get_by_id, block_get_by_id_including_deleted, block_get_by_page_id, block_get_children, block_get_children_including_deleted, block_get_by_ids, block_insert, block_update, block_soft_delete_by_id, block_undelete_by_id, block_touch_updated_at, block_ids_by_page_id, block_soft_delete_by_page_id};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::storage::entity::page::{page_get_by_id, page_get_by_title_including_deleted, page_get_by_title, page_get_all, page_get_trash, page_get_by_ids, page_create, page_update, page_delete};
 #[cfg(not(target_arch = "wasm32"))]

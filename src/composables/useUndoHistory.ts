@@ -33,12 +33,31 @@ export interface TextViewSelection {
   to: number
 }
 
+/**
+ * 跨页一步撤销的配对信息（ADR-0025 D4b）。
+ *
+ * 撤销栈按页隔离（Map<pageId, HistoryStack>，D6），而跨页搬移**同时改动两页**，
+ * 于是两页各记一步。若不管，用户要按两次 Ctrl+Z、还得换页 —— 且在错误的顺序下
+ * 会出现「同一个 id 在两页并存」。所以搬移时把两页的栈顶快照**配成同一步**：
+ * 撤销任意一侧，另一侧跟着退；重做同理。
+ */
+export interface CrossPageStep {
+  /** 另一侧页面 */
+  partnerPageId: string
+  /** 对侧「搬移后」那条快照的 seq：撤销时校验它仍坐在游标上 */
+  partnerAfterSeq: number
+  /** 对侧「搬移前」那条快照的 seq：重做时校验它仍坐在游标上 */
+  partnerBeforeSeq: number | null
+}
+
 /** 单页快照信封：正文 + 结构 + format(含折叠) + 字段值表（D11）+ 视图态选区 */
 export interface HistoryEntry {
   blocks: Block[]
   fieldValues: Record<string, FieldValue[]>
   /** 到达本快照时的选区；null = 当时没有本页编辑态（页面加载后还没点过任何块） */
   selection?: TextViewSelection | null
+  /** 仅「搬移后」那份快照带：与本条同属一步的另侧页面（见 CrossPageStep） */
+  crossPage?: CrossPageStep
 }
 
 const DEFAULT_IDLE_MS = 500
@@ -386,6 +405,47 @@ export function canRedo(pageId: string): boolean {
 /** 某页是否已建撤销栈（页面隔离 D6 的查询口，供跨页接管判定用） */
 export function hasStack(pageId: string): boolean {
   return pageStacks.has(pageId)
+}
+
+/** 某页当前游标处的快照 seq（跨页一步撤销的失效判定用） */
+export function cursorSeq(pageId: string): number | null {
+  const ps = pageStacks.get(pageId)
+  if (!ps) return null
+  return ps.seqs[ps.cursor] ?? null
+}
+
+/**
+ * 把两页的**当前栈顶**配成同一步（跨页搬移，ADR-0025 D4b）。
+ *
+ * 调用方须先 `commitNow` 两页，使「搬移后」这一状态确实落在各自栈顶 —— 否则标签会贴到
+ * 更早那条快照上，撤销时连带退错步。任一侧没有栈（该页本次会话没打开过）→ 静默跳过，
+ * 退回「两页各撤一步」，不会做半套。
+ */
+export function linkCrossPageStep(pageId: string, partnerPageId: string): void {
+  if (!pageId || !partnerPageId || pageId === partnerPageId) return
+  const a = pageStacks.get(pageId)
+  const b = pageStacks.get(partnerPageId)
+  if (!a || !b) return
+  const aAfter = a.seqs[a.cursor]
+  const bAfter = b.seqs[b.cursor]
+  if (aAfter === undefined || bAfter === undefined) return
+  a.stack[a.cursor].crossPage = {
+    partnerPageId,
+    partnerAfterSeq: bAfter,
+    partnerBeforeSeq: b.cursor > 0 ? (b.seqs[b.cursor - 1] ?? null) : null,
+  }
+  b.stack[b.cursor].crossPage = {
+    partnerPageId: pageId,
+    partnerAfterSeq: aAfter,
+    partnerBeforeSeq: a.cursor > 0 ? (a.seqs[a.cursor - 1] ?? null) : null,
+  }
+}
+
+/** 当前游标那一步的跨页配对（没有则 null） */
+export function crossPagePartner(pageId: string): CrossPageStep | null {
+  const ps = pageStacks.get(pageId)
+  const top = ps?.stack[ps.cursor]
+  return top?.crossPage ?? null
 }
 
 /** 仅供单测断言内部状态 */
