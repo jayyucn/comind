@@ -787,7 +787,8 @@ defineExpose({
 .editor-wrapper :deep(.tiptap) {
   outline: none;
   min-height: 1.3em;
-  line-height: var(--leading-snug);
+  /* 块内换行的行间距：与渲染态一致（基准行高 +2px） */
+  line-height: calc(var(--leading-snug) * 1em + 2px);
   padding: 0 4px;
   white-space: pre-wrap;
   word-break: break-word;

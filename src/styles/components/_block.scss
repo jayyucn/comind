@@ -357,7 +357,8 @@ $block-entry-corner-height: 12px;
 .block-text {
   outline: none;
   min-height: 1.3em;
-  line-height: $leading-snug;
+  // 块内换行的行间距：较基准行高额外 +2px
+  line-height: calc(#{$leading-snug}em + 2px);
   padding: 0 $space-1;
   border-radius: $radius-sm;
   white-space: pre-wrap;
