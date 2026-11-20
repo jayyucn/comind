@@ -65,3 +65,24 @@ export function padUnitForDoc(
 
   return padInlineUnit(left, right, unit, { noLeftPad: joinsRelationUnit })
 }
+
+/**
+ * range 模式（编辑器已失活、没有 PM doc）的补空：以 `block.content` + **编码偏移**
+ * 充当 doc。口径与 `padUnitForDoc` 完全一致（同一个 `padInlineUnit`、同一份
+ * `((type))` 例外），差别只是邻字符从存储原文读。
+ *
+ * 用编码偏移而不是渲染偏移是有意的：替换本就落在编码层，左右邻居也必须是编码层的
+ * 真实字符；渲染层会把 `[[X]]` 折叠成 `X`，据此补空会与真实拼接结果错位。
+ */
+export function padUnitForContent(content: string, from: number, to: number, unit: string): string {
+  return padUnitForDoc(
+    {
+      textBetween: (a: number, b: number) => content.slice(Math.max(0, a), Math.max(0, b)),
+      // 单块内容即一个文本节点：parentOffset 就是块内偏移（判断 `))[[` 是否同块紧邻）
+      resolve: () => ({ parentOffset: from }),
+    },
+    from,
+    to,
+    unit,
+  )
+}

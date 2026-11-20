@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { padInlineUnit, padUnitForDoc } from './inline-unit-pad'
+import { padInlineUnit, padUnitForContent, padUnitForDoc } from './inline-unit-pad'
 
 /**
  * padInlineUnit 的契约与 date-ref.test.ts 的 padDateRefUnit 12 例逐条对应
@@ -142,5 +142,42 @@ describe('padUnitForDoc — PM doc 邻字符读取', () => {
       const doc = mockDocResolvable('a((rel))')
       expect(padUnitForDoc(doc, 9, 9, '#标签')).toBe(' #标签 ')
     })
+  })
+})
+
+/**
+ * range 模式（编辑器已失活）的补空：以 `block.content` + **编码偏移**充当 doc。
+ * 口径必须与 `padUnitForDoc` 一致 —— 同一份 `padInlineUnit`、同一个 `((type))` 例外。
+ */
+describe('padUnitForContent — range 模式按编码原文补空', () => {
+  it('中段选词：两侧都是内容字符 → 两侧补', () => {
+    expect(padUnitForContent('我看项目A了', 2, 5, '[[项目A]]')).toBe(' [[项目A]] ')
+  })
+
+  it('块首：不补左，补右', () => {
+    expect(padUnitForContent('项目A了', 0, 3, '[[项目A]]')).toBe('[[项目A]] ')
+  })
+
+  it('左邻已是空白：不重复补', () => {
+    expect(padUnitForContent('看 项目A了', 2, 5, '[[项目A]]')).toBe('[[项目A]] ')
+  })
+
+  it('右邻已是空白：不补右', () => {
+    expect(padUnitForContent('看项目A 了', 1, 4, '[[项目A]]')).toBe(' [[项目A]]')
+  })
+
+  it('紧跟 ((type)) 收尾：不补左（否则关系语法被劈开）', () => {
+    expect(padUnitForContent('((rel))项目A', 7, 10, '[[项目A]]')).toBe('[[项目A]] ')
+  })
+
+  it('同样左邻 ))，但单元不是 wiki link：照常补左', () => {
+    expect(padUnitForContent('((rel))项目A', 7, 10, '#标签')).toBe(' #标签 ')
+  })
+
+  it('按编码偏移读邻字符（渲染偏移会把 [[X]] 折叠成 X，据此补空会错位）', () => {
+    // 存储 `[[项目A]] 旧名`，渲染 `[[项目A]] 旧名`；在「旧名」两侧补
+    const content = '[[项目A]]旧名'
+    // '旧名' 的编码起点 = 7（'[[项目A]]'）→ 左邻 ']' 是内容字符，补左
+    expect(padUnitForContent(content, 7, 9, '[[旧名]]')).toBe(' [[旧名]] ')
   })
 })

@@ -1,6 +1,6 @@
-import type { RenderSegment } from '../wasm/types'
 import { getRelationshipLabel } from '../types/relationship'
 import { parseRelationshipSegment } from '../utils/relationship-content'
+import type { RenderSegment } from '../wasm/types'
 
 /**
  * 渲染文本 ↔ 存储文本（encoded）的字符单位换算（#93 / ADR-0035 开放问题 #1）。
@@ -93,6 +93,14 @@ interface VisibleUnit {
   visibleLen: number
   encodedStart: number
   encodedEnd: number
+  /**
+   * 是否是「可见文本 = 存储文本」的纯文字单元。
+   *
+   * text 段里的明文 run 为 true；wiki link 标记（`[[X]]` / `[[X|别名]]`）、
+   * tag / date_ref / external_link 等已渲染单元一律 false —— 它们在界面上
+   * 显示的长度与存储原文的长度/形态不同，是「选区不得覆盖」的对象。
+   */
+  plain: boolean
 }
 
 /** 与 `WIKI_LINK_REGEX` 同源（避免复用带 lastIndex 的全局对象），用于切分 text 段 */
@@ -112,17 +120,24 @@ function textUnits(content: string, seg: RenderSegment): VisibleUnit[] {
         visibleLen: match.index - last,
         encodedStart: seg.start + last,
         encodedEnd: seg.start + match.index,
+        plain: true,
       })
     }
     units.push({
       visibleLen: `[[${wikiLinkDisplay(match[1], match[2])}]]`.length,
       encodedStart: seg.start + match.index,
       encodedEnd: seg.start + match.index + match[0].length,
+      plain: false,
     })
     last = match.index + match[0].length
   }
   if (last < raw.length) {
-    units.push({ visibleLen: raw.length - last, encodedStart: seg.start + last, encodedEnd: seg.end })
+    units.push({
+      visibleLen: raw.length - last,
+      encodedStart: seg.start + last,
+      encodedEnd: seg.end,
+      plain: true,
+    })
   }
   return units
 }
@@ -131,7 +146,12 @@ function textUnits(content: string, seg: RenderSegment): VisibleUnit[] {
 function unitsOf(content: string, seg: RenderSegment): VisibleUnit[] {
   if (seg.type === 'text') return textUnits(content, seg)
   return [
-    { visibleLen: segmentVisibleText(content, seg).length, encodedStart: seg.start, encodedEnd: seg.end },
+    {
+      visibleLen: segmentVisibleText(content, seg).length,
+      encodedStart: seg.start,
+      encodedEnd: seg.end,
+      plain: false,
+    },
   ]
 }
 
@@ -172,4 +192,60 @@ export function renderedOffsetToEncodedOffset(
       : textUnits(content, { type: 'text', start: 0, end: content.length })
 
   return mapInUnits(units, renderedOffset) ?? content.length
+}
+
+/** 一个可见单元在**渲染文本坐标**下的区间 */
+export interface VisibleUnitSpan {
+  start: number
+  end: number
+  /** true = 纯文字（可见即原文）；false = 已渲染单元（`[[X]]` / `#tag` / `@date` / 外链） */
+  plain: boolean
+}
+
+/** 把整块内容切成渲染文本坐标下的可见单元序列（升序、首尾相接、无空洞） */
+export function visibleUnitSpans(
+  content: string,
+  segments?: RenderSegment[],
+): VisibleUnitSpan[] {
+  const units =
+    segments && segments.length > 0
+      ? segments.flatMap(seg => unitsOf(content, seg))
+      : textUnits(content, { type: 'text', start: 0, end: content.length })
+
+  let acc = 0
+  return units.map((unit) => {
+    const span: VisibleUnitSpan = { start: acc, end: acc + unit.visibleLen, plain: unit.plain }
+    acc = span.end
+    return span
+  })
+}
+
+/**
+ * 渲染坐标区间 `[from, to)` 是否**整段落在纯文字里**。
+ *
+ * 存在的理由：用户看到的是 `项目A`（`[[项目A]]` 渲染后的样子）与 `#标签` 的 chip，
+ * 编码层却是 `[[项目A]]`。把「覆盖已渲染单元」的选区当成页名去包，会产出
+ * `[[[[项目A]]]]` 这类断链，而屏幕上完全看不出为什么会坏 —— 所以判据必须看**单元**，
+ * 不能只看用户眼见的文字。
+ *
+ * 空区间返回 false（没有可包的文字）。
+ */
+export function textRangeIsPlainText(
+  content: string,
+  segments: RenderSegment[] | undefined,
+  from: number,
+  to: number,
+): boolean {
+  const spans = visibleUnitSpans(content, segments)
+  const total = spans.length > 0 ? spans[spans.length - 1]!.end : 0
+  const lo = Math.max(0, Math.min(total, Math.trunc(from)))
+  const hi = Math.max(0, Math.min(total, Math.trunc(to)))
+  if (hi <= lo) return false
+
+  for (const span of spans) {
+    if (span.end <= lo) continue
+    if (span.start >= hi) break
+    if (!span.plain) return false
+  }
+  return true
 }

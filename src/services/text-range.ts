@@ -1,4 +1,6 @@
 import type { Block } from '../types/block'
+import type { InlineMarkRange } from '../utils/inline-marks'
+import { normalizeInlineMarks, readInlineMarks, shiftInlineMarks, sliceInlineMarks } from '../utils/inline-marks'
 import { renderedOffsetToEncodedOffset } from './render-text'
 import { cellRangeHasContent } from './table-cell-range'
 import { readTableData, serializeTableTsv } from './table-model'
@@ -242,4 +244,60 @@ export function snapTextRangeToUnits(
     anchor: { ...range.anchor, offset: anchorIsStart ? nextStart : nextEnd },
     head: { ...range.head, offset: anchorIsStart ? nextEnd : nextStart },
   }
+}
+
+/** 单块内区间替换的计划（与删除计划同源：同一套偏移换算 + marks 切片） */
+export interface TextRangeReplacement {
+  blockId: string
+  /** 替换后的块内容（encoded） */
+  content: string
+  /** 替换后按新长度归一化的行内格式 */
+  inlineMarks: InlineMarkRange[]
+  /** 替换文本末尾的编码偏移；光标落点（PM position）由调用方 +1 */
+  caretOffset: number
+}
+
+/**
+ * 把单块内的文本选区替换成 `replacement`（选区包裹为 `[[页名]]` 的写回路径）。
+ *
+ * 与 `planTextRangeDeletion` 共用同一套坐标链：先 `normalizeTextRange` 归一，
+ * 再 `renderedOffsetToEncodedOffset` 换成编码偏移（渲染态 vs 存储原文的换算），
+ * 最后在 `block.content` 上拼接。
+ *
+ * 刻意**不复用/不改动**删除计划：删除的裁剪与合并在回归网里钉得很死，替换只需要
+ * 「同块 + 纯文本块」这一条最窄的分支。跨块返回 null —— 跨块选区没有单一页名语义。
+ *
+ * 格式口径（D6）：括号本身不带格式，插入点两侧的 marks 按切片保留、不扩张到
+ * 括号上；右侧 marks 按插入长度整体平移。
+ */
+export function planTextRangeReplacement(
+  blocks: Block[],
+  range: TextRange,
+  replacement: string,
+): TextRangeReplacement | null {
+  const { start, end } = normalizeTextRange(blocks, range)
+  if (start.blockId !== end.blockId) return null
+
+  const block = blocks.find(b => b.id === start.blockId)
+  // 只有普通文本块有「部分选中」语义；表格等原子块的 content 不承载正文
+  if (!block || block.type !== 'bullet') return null
+
+  const lo = renderedOffsetToEncodedOffset(block.content, block.renderSegments, start.offset)
+  const hi = renderedOffsetToEncodedOffset(block.content, block.renderSegments, end.offset)
+  if (hi <= lo) return null
+
+  const content = block.content.slice(0, lo) + replacement + block.content.slice(hi)
+  const marks = readInlineMarks(block.format, block.content.length)
+  const inlineMarks = normalizeInlineMarks(
+    [
+      ...sliceInlineMarks(marks, 0, lo),
+      ...shiftInlineMarks(
+        sliceInlineMarks(marks, hi, block.content.length),
+        lo + replacement.length,
+      ),
+    ],
+    content.length,
+  )
+
+  return { blockId: block.id, content, inlineMarks, caretOffset: lo + replacement.length }
 }

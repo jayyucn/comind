@@ -25,7 +25,7 @@ import { linkCrossPageMove, runUndoOrRedo } from '../composables/useUndoRestore'
 import { COMIND_BLOCK_MIME, resolveClipboardPayload } from '../services/external-paste-parse'
 import { onLayoutChange } from '../services/layout-change'
 import { ensureWikiLinkTargets, notifyCreatedPages } from '../services/paste-ensure-wiki-targets'
-import { renderedOffsetToEncodedOffset } from '../services/render-text'
+import { renderedOffsetToEncodedOffset, textRangeIsPlainText } from '../services/render-text'
 import { blockOffsetFromPoint, selectionClientRects, type SelectionRect } from '../services/selection-geometry'
 import { normalizeTextRange } from '../services/text-range'
 import { useBlockStore } from '../stores/blocks'
@@ -45,6 +45,8 @@ import {
   sameInlineMarks,
   setInlineMarkRange,
 } from '../utils/inline-marks'
+import { padUnitForContent } from '../utils/inline-unit-pad'
+import { PAGE_NAME_RULE_HINT, validatePageName } from '../utils/page-name'
 import { resolveUndoScopeBlockPage, takeOverUndoRedo } from '../utils/undo-chord'
 import BlockDraggableList from './Block/components/BlockDraggableList.vue'
 import BlockDropIndicator from './Block/components/BlockDropIndicator.vue'
@@ -1035,6 +1037,85 @@ function applyRangeMark(key: InlineMarkKey, token: string | null) {  for (const 
   }
 }
 
+/**
+ * 「转为页面引用」按钮的状态（D1/D2/D3）。
+ *
+ * - 跨 block → `null`：没有单一页名语义，能力**永不成立**，不渲染（置灰会误导
+ *   用户去改文本再试）。
+ * - 单块但选区覆盖已渲染单元（`[[X]]` / `#tag` / `@日期`）→ 置灰：编码层的原文
+ *   带语法字符，包裹会产出 `[[[[X]]]]` 这类断链，而屏幕上完全看不出来。
+ * - 单块纯文本但字面非法（含 `[ ] |`、换行、空白）→ 置灰。
+ * - 全部成立 → 可点。
+ *
+ * 用**渲染偏移**判单元、用**编码切片**判字面：前者是用户眼见，后者才是要写进
+ * `[[ ]]` 的那份原文。
+ */
+const wrapPageRefState = computed<{ enabled: boolean; hint?: string } | null>(() => {
+  const tr = selection.textRange.value
+  if (!tr) return null
+  if (tr.anchor.blockId !== tr.head.blockId) return null
+
+  const block = blockStore.getBlock(tr.anchor.blockId)
+  // 表格等原子块的 content 不承载正文，没有「单块文本」可包
+  if (!block || block.type !== 'bullet') return null
+
+  const lo = Math.min(tr.anchor.offset, tr.head.offset)
+  const hi = Math.max(tr.anchor.offset, tr.head.offset)
+  if (!textRangeIsPlainText(block.content, block.renderSegments, lo, hi)) {
+    return { enabled: false, hint: '选区覆盖了已渲染的链接/标签/日期，不能作为页面名' }
+  }
+
+  const encLo = renderedOffsetToEncodedOffset(block.content, block.renderSegments, lo)
+  const encHi = renderedOffsetToEncodedOffset(block.content, block.renderSegments, hi)
+  const check = validatePageName(block.content.slice(encLo, encHi))
+  if (!check.ok) return { enabled: false, hint: `选区不能作为页面名：${PAGE_NAME_RULE_HINT}` }
+  return { enabled: true }
+})
+
+/**
+ * 就地把选区文本包成 `[[页名]]`（D4–D7）。
+ *
+ * 顺序固定：**先建页、再写文本**。反过来的话这次写回触发的 link 同步会查不到目标页
+ * 而丢边，且不会重试（与 `Editor.vue handleWikiLinkSelect` 同序）。建页失败即中止，
+ * 不留下「文本已包裹但页面不存在」的中间态。
+ */
+async function wrapRangeAsPageRef() {
+  const tr = selection.textRange.value
+  if (!tr) return
+  const block = blockStore.getBlock(tr.anchor.blockId)
+  if (!block) return
+
+  const lo = Math.min(tr.anchor.offset, tr.head.offset)
+  const hi = Math.max(tr.anchor.offset, tr.head.offset)
+  const encLo = renderedOffsetToEncodedOffset(block.content, block.renderSegments, lo)
+  const encHi = renderedOffsetToEncodedOffset(block.content, block.renderSegments, hi)
+
+  const check = validatePageName(block.content.slice(encLo, encHi))
+  if (!check.ok) {
+    editorStore.showToast(check.message, 'error')
+    return
+  }
+  const name = check.name
+
+  if (!pageStore.getPageByTitle(name)) {
+    try {
+      await pageStore.createPage(name)
+    } catch (err) {
+      editorStore.showToast(`无法创建页面「${name}」：${(err as Error).message}`, 'error')
+      return
+    }
+  }
+
+  // 补空与 `[[` 补全插页同源（inline-unit-pad 单源）：本功能属于「插入新单元」语义，
+  // 左右邻居按编码原文判，块首/已有空白不补，`((type))` 收尾不补左。
+  const padded = padUnitForContent(block.content, encLo, encHi, `[[${name}]]`)
+  const result = await blockStore.replaceTextRange(props.pageId, tr, padded)
+
+  // 收场：结束选区（浮条随之关闭）、光标落 `]]` 之后，可直接接着写
+  selection.clearTextSelection()
+  if (result) editorStore.activateBlock(result.id, result.cursorPos)
+}
+
 // ── 拖放指示器（模块级共享状态，渲染一次） ──
 // 所有 Block 的 useBlockDragDrop 写入同一组 ref，这里统一渲染单个 <BlockDropIndicator>，
 // 复现原全局 .drop-indicator DOM 元素行为，避免跨容器拖拽时残留指示器。
@@ -1166,8 +1247,10 @@ onBeforeUnmount(() => {
       :range-rect="highlightRects[0] ?? null"
       :range-format="rangeFormat"
       :block-align="rangeAlign"
+      :wrap-page-ref="wrapPageRefState"
       @apply-range="applyRangeMark"
       @apply-align="applyRangeAlign"
+      @wrap-page-ref="wrapRangeAsPageRef"
     />
 
     <!-- 落点闪烁层（#109）：矩形与上一层同理 Teleport 到 body —— fixed 定位会被 transform 祖先困住。

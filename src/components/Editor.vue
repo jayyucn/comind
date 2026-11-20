@@ -24,6 +24,7 @@ import { RelationshipTriggerExtension } from '../extensions/RelationshipTriggerE
 import { SlashCommandExtension } from '../extensions/SlashCommandExtension'
 import { WikiLinkExtension } from '../extensions/WikiLinkExtension'
 import { closeWikiLinkMenuByEditor, findWikiLinkAtCursor, notifyWikiLinkMenuSelect, WikiLinkTriggerExtension } from '../extensions/WikiLinkTriggerExtension'
+import { useEditorStore } from '../stores/editor'
 import { usePageStore } from '../stores/pages'
 import { useTagsStore } from '../stores/tags'
 import { type BlockAlign,blockAlignOf } from '../utils/block-align'
@@ -32,6 +33,7 @@ import { debounce } from '../utils/debounce'
 import type { InlineMarkAttrs, InlineMarkRange } from '../utils/inline-marks'
 import { inlineMarksToHtml, normalizeInlineMarks, sameInlineMarks } from '../utils/inline-marks'
 import { padUnitForDoc } from '../utils/inline-unit-pad'
+import { PAGE_NAME_RULE_HINT, validatePageName } from '../utils/page-name'
 import { isTagColorToken } from '../utils/tag-color'
 import { createEditorEvents } from './Block/editorEvents'
 import DateRefKindSelector from './DateRefKindSelector.vue'
@@ -302,6 +304,64 @@ async function handleWikiLinkSelect(pageName: string) {
 
   menuVisible.value = false
   closeWikiLinkMenuByEditor()
+}
+
+/**
+ * 编辑器模式的「转为页面引用」状态（与 range 模式同一判据、同一浮条位置）。
+ *
+ * 编辑态的 doc 存的是**原文**（`[[X]]` 就是方括号本身，chip 只是 decoration），
+ * 所以这里不需要「是否覆盖已渲染单元」这一步：用户选中 chip 时 `textBetween`
+ * 直接带出 `[[X]]`，字符判据会拦下。
+ */
+const wrapPageRefState = computed<{ enabled: boolean; hint?: string } | null>(() => {
+  void selectionRevision.value
+  const instance = editor.value
+  if (!instance) return null
+  const { from, to } = instance.state.selection
+  if (from === to) return null
+  const check = validatePageName(instance.state.doc.textBetween(from, to))
+  return check.ok
+    ? { enabled: true }
+    : { enabled: false, hint: `选区不能作为页面名：${PAGE_NAME_RULE_HINT}` }
+})
+
+/**
+ * 把当前编辑器选区包裹为 `[[页名]]`（D4–D7，与 range 模式同序）。
+ *
+ * 建页先行：写回触发的 link 同步只认「此刻已存在的页」，漏建即丢边且不重试。
+ * 替换用 `insertContentAt({from,to})` 一次完成（理由见 handleWikiLinkSelect：
+ * 拆成 delete + insert 时 Enter 路径的 `tr.selection` 映射会落空）。
+ */
+async function wrapSelectionAsPageRef() {
+  const instance = editor.value
+  if (!instance) return
+  const { from, to } = instance.state.selection
+  if (from === to) return
+
+  const check = validatePageName(instance.state.doc.textBetween(from, to))
+  if (!check.ok) {
+    useEditorStore().showToast(check.message, 'error')
+    return
+  }
+  const name = check.name
+
+  const pageStore = usePageStore()
+  if (!pageStore.getPageByTitle(name)) {
+    try {
+      await pageStore.createPage(name)
+    } catch (err) {
+      useEditorStore().showToast(`无法创建页面「${name}」：${(err as Error).message}`, 'error')
+      return
+    }
+  }
+
+  // 与 `[[` 补全插页同源：补空后光标落 padded 末尾（`]]` 之后）
+  const padded = padUnitForDoc(instance.state.doc, from, to, `[[${name}]]`)
+  instance.chain()
+    .insertContentAt({ from, to }, padded)
+    .setTextSelection(from + padded.length)
+    .focus()
+    .run()
 }
 
 // 模板驱动的 tag 选择（由 TagMenu @select 触发）：确保标签实体存在并把
@@ -694,7 +754,9 @@ defineExpose({
       :editor="editor"
       :revision="selectionRevision"
       :block-align="blockAlignOf(props.blockFormat)"
+      :wrap-page-ref="wrapPageRefState"
       @apply-align="emit('align', $event)"
+      @wrap-page-ref="wrapSelectionAsPageRef"
     />
   </div>
 </template>

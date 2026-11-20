@@ -4,6 +4,7 @@ import { ref } from 'vue'
 import { useRoute,useRouter } from 'vue-router'
 
 import { usePinned } from '../../composables/usePinned'
+import { useEditorStore } from '../../stores/editor'
 import { usePageStore } from '../../stores/pages'
 import PageItem from './PageItem.vue'
 import PageItemMenu from './PageItemMenu.vue'
@@ -32,8 +33,12 @@ function handleStartRename(pageId: string) {
 }
 
 function handleRename(pageId: string, newTitle: string) {
-  pageStore.renamePage(pageId, newTitle)
   renamingPageId.value = null
+  // 页名约束（建链准入）：改出来的名字若不能写进 [[ ]]，store 会拒绝并给出替换建议，
+  // 这里只负责把它说出来 —— 静默失败会让用户以为改名成功了。
+  void pageStore.renamePage(pageId, newTitle).then((result) => {
+    if (result?.invalid) useEditorStore().showToast(result.invalid, 'error')
+  })
 }
 
 function handleCancelRename() {

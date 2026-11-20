@@ -5,7 +5,7 @@ import type { BatchOperation } from '@/wasm/types'
 
 import { markQueryViewOrphan, restoreQueryViewNamespace } from '../services/query-view-namespace'
 import { renderedOffsetToEncodedOffset } from '../services/render-text'
-import { normalizeTextRange, type TextRange } from '../services/text-range'
+import { normalizeTextRange, planTextRangeReplacement, type TextRange } from '../services/text-range'
 import type { Block, BlockClipPayload } from '../types/block'
 import type { FieldType, FieldValueData } from '../types/field-definition'
 import {
@@ -1356,6 +1356,26 @@ export const useBlockStore = defineStore('blocks', () => {
   }
 
   /**
+   * 把单块内的文本选区替换成 `replacement`（选区包裹为 `[[页名]]` 的写回入口）。
+   *
+   * 与删除同一条坐标链（渲染偏移 → 编码偏移 → content 拼接），运算委托纯模块
+   * `planTextRangeReplacement`，这里只负责落库与光标口径（PM position = 偏移 + 1）。
+   *
+   * 落库走默认 `commitTags: true`：包裹属于提交动作，Rust 侧要按新内容建页/写 link。
+   * 跨块或非法区间返回 null，调用方据此不落任何写。
+   */
+  async function replaceTextRange(
+    pageId: string,
+    range: TextRange,
+    replacement: string,
+  ): Promise<{ id: string; cursorPos: number } | null> {
+    const plan = planTextRangeReplacement(getBlocksByPage(pageId), range, replacement)
+    if (!plan) return null
+    await updateBlockContent(plan.blockId, plan.content, { inlineMarks: plan.inlineMarks })
+    return { id: plan.blockId, cursorPos: plan.caretOffset + 1 }
+  }
+
+  /**
    * 文本选区删除的语义（#95 / ADR-0035 D7，plan/apply 共同遵守）：
    * - 同一普通文本块内：只剔除选中字符
    * - 跨块：头块保留 [0, lo)、尾块保留 [hi, ∞) 拼成一块（生存者 = 文档序靠前的
@@ -2096,6 +2116,7 @@ export const useBlockStore = defineStore('blocks', () => {
     mergeWithPrevious,
     planTextRangeDeletion,
     applyTextRangeDeletion,
+    replaceTextRange,
     findPreviousBlockInTreeOrder,
     findPreviousVisibleBlock,
     findLastVisibleDescendant,

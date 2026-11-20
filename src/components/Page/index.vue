@@ -181,7 +181,9 @@ async function saveTitle() {
 async function handleConfirmRename() {
   showRenameDialog.value = false
   if (!pendingNewTitle.value) return
-  await pageStore.renamePage(await resolvedPageId.value, pendingNewTitle.value)
+  const result = await pageStore.renamePage(await resolvedPageId.value, pendingNewTitle.value)
+  // 页名约束（建链准入）拒绝时，标题保持原样并说明原因 + 替换建议
+  if (result?.invalid) editorStore.showToast(result.invalid, 'error')
   pendingNewTitle.value = ''
 }
 

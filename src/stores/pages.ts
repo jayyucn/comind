@@ -4,6 +4,7 @@ import { computed, ref } from 'vue'
 import { usePinned } from '../composables/usePinned'
 import type { Page } from '../types/page'
 import { type IdeasSnapshotData,parseIdeasSnapshotContent } from '../utils/ideas-snapshot'
+import { validatePageName } from '../utils/page-name'
 import type { CoreClient } from '../wasm/client'
 import { initCoreClient } from '../wasm/client'
 import { useBlockStore } from './blocks'
@@ -197,10 +198,13 @@ export const usePageStore = defineStore('pages', () => {
   }
 
   async function createPage(title: string, type: 'normal' | 'ideas' = 'normal'): Promise<Page> {
-    const trimmedTitle = title.trim()
-    if (!trimmedTitle) {
-      throw new Error('Page title cannot be empty')
+    // 页名约束（link-spec「页名约束（建链准入）」）：trim 后非空、不含 [ ] | 与换行。
+    // 与「转为页面引用」按钮的判据同源——同一份规则不允许两个入口两种答案。
+    const check = validatePageName(title)
+    if (!check.ok) {
+      throw new Error(check.suggestion ? `${check.message}；可改为「${check.suggestion}」` : check.message)
     }
+    const trimmedTitle = check.name
 
     // 幂等：并发时可能已被另一方创建，直接复用
     const existingPage = getPageByTitle(trimmedTitle)
@@ -252,12 +256,18 @@ export const usePageStore = defineStore('pages', () => {
   }
 
   /** 重命名页面，返回重复信息（如有） */
-  async function renamePage(pageId: string, newTitle: string): Promise<{ duplicated?: Page }> {
+  async function renamePage(pageId: string, newTitle: string): Promise<{ duplicated?: Page; invalid?: string }> {
     if (!newTitle.trim()) return {}
     const page = getPage(pageId)
     if (!page) return {}
     if (page.type === 'ideas') return {}
-    const trimmedTitle = newTitle.trim()
+    // 同一条页名约束（建链准入）：改出来的名字若不能写进 [[ ]]，反链与跳转立刻失效，
+    // 所以拒绝并给出替换建议，而不是静默保存一个「看起来能用」的页名。
+    const check = validatePageName(newTitle)
+    if (!check.ok) {
+      return { invalid: check.suggestion ? `${check.message}；可改为「${check.suggestion}」` : check.message }
+    }
+    const trimmedTitle = check.name
     if (page.title === trimmedTitle) return {}
 
     const duplicate = getPageByTitle(trimmedTitle)

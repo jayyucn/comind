@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { Editor } from '@tiptap/core'
+import { Brackets } from 'lucide-vue-next'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import type { SelectionRect } from '../services/selection-geometry'
@@ -30,11 +31,22 @@ const props = defineProps<{
    * 因此三种模式下由宿主各自算出「这些块共同的对齐」传进来。
    */
   blockAlign?: BlockAlign | null
+  /**
+   * 「转为页面引用」这一个结构项的状态。
+   *
+   * - `null` / 不传：不渲染。用于能力**永不成立**的场景（跨 block 选区、表格），
+   *   此时置灰反而会误导用户去改文本再试。
+   * - `{ enabled: false, hint }`：单块内但选区不合规 → 置灰 + 提示判据。
+   * - `{ enabled: true }`：可点。
+   */
+  wrapPageRef?: { enabled: boolean; hint?: string } | null
 }>()
 
 const emit = defineEmits<{
   (e: 'apply-range', key: InlineMarkKey, token: string | null): void
   (e: 'apply-align', value: BlockAlign): void
+  /** 把当前单块选区包裹为 `[[页名]]`；页名解析与建页由宿主负责 */
+  (e: 'wrap-page-ref'): void
 }>()
 
 const visible = ref(false)
@@ -87,6 +99,17 @@ const state = computed(() => {
 
 /** 当前对齐（未设置即默认左对齐）：与表格选区浮层同一份取值口径 */
 const currentAlign = computed<BlockAlign>(() => props.blockAlign ?? 'left')
+
+/**
+ * 「转为页面引用」的悬浮文案。
+ * 置灰时只写判据本身（含什么字符不行），不写「不支持」——后者等于没说，
+ * 用户不知道是这段文字的问题还是功能不存在。
+ */
+const wrapPageRefTitle = computed(() => {
+  const state = props.wrapPageRef
+  if (!state) return ''
+  return state.enabled ? '转为页面引用 [[页名]]' : (state.hint ?? '当前选区不可作为页面名')
+})
 
 function hide() {
   visible.value = false
@@ -263,7 +286,26 @@ onBeforeUnmount(() => {
         @apply-mark="onApplyMark"
         @toggle-align="(anchor: HTMLElement) => toggleSubmenu('align', anchor)"
         @toggle-palette="(anchor: HTMLElement) => toggleSubmenu('palette', anchor)"
-      />
+      >
+        <!-- 结构项（正文专属，经插槽追加；表格浮层不走本组件，故不会长出来）：
+             格式 → 结构 之间加一道分隔，与公共段明确分组。 -->
+        <template v-if="props.wrapPageRef">
+          <span class="sel-sep" />
+          <button
+            type="button"
+            class="sel-btn"
+            :disabled="!props.wrapPageRef.enabled"
+            :title="wrapPageRefTitle"
+            aria-label="转为页面引用"
+            @click="emit('wrap-page-ref')"
+          >
+            <Brackets
+              :size="14"
+              :stroke-width="2"
+            />
+          </button>
+        </template>
+      </SelectionMarkRow>
     </div>
 
     <!-- 对齐下拉：与表格选区浮层共用 InlineAlignMenu（上方优先、Esc 只关二级） -->

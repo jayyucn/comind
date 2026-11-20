@@ -4,6 +4,7 @@ import { ref } from 'vue'
 import { useRoute,useRouter } from 'vue-router'
 
 import { useRecent } from '../../composables/useRecent'
+import { useEditorStore } from '../../stores/editor'
 import { usePageStore } from '../../stores/pages'
 import PageItem from './PageItem.vue'
 import PageItemMenu from './PageItemMenu.vue'
@@ -32,8 +33,11 @@ function handleStartRename(pageId: string) {
 }
 
 function handleRename(pageId: string, newTitle: string) {
-  pageStore.renamePage(pageId, newTitle)
   renamingPageId.value = null
+  // 页名约束（建链准入）：被拒时把原因与替换建议说出来，不静默吞掉。
+  void pageStore.renamePage(pageId, newTitle).then((result) => {
+    if (result?.invalid) useEditorStore().showToast(result.invalid, 'error')
+  })
 }
 
 function handleCancelRename() {
