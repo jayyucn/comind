@@ -117,6 +117,7 @@ docs/
 | 内容解析 | `development.md` | §6 内容解析 |
 | 产品愿景 | `product-vision.md` | §1-§9 完整产品规划 |
 | 功能 TODO | `spec.md` | §7 TODO |
+| 人工功能回归测试 | `quality/manual-test-plan.md` | 101 条验收用例 + 冒烟子集 + 非缺陷清单 |
 
 ---
 
