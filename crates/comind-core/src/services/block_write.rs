@@ -61,6 +61,8 @@ impl BlockWriteService {
     /// `create_missing_tags`：是否允许按 content 自动建/复活标签（ADR-0050 content 联动）。
     /// 编辑器防抖打字保存传 `false`（否则 `#f`、`#fo` 中间前缀会各建一个垃圾标签），
     /// 提交动作（blur / 拆分 / 粘贴 / 整树保存）传 `true` —— 与 `[[page]]` 的创建语义对齐。
+    /// 同一个开关同时门控 `[[page]]` 的目标页创建（`ContentParseService::sync_links_for_block`），
+    /// 二者都是「内容里写出的名字在提交时点落成实体」。
     pub fn save_blocks<S: TransactionalStorageAdapter>(
         adapter: &mut S,
         blocks: Vec<Block>,
@@ -519,6 +521,77 @@ mod tests {
                 .unwrap()
                 .title,
             "foo"
+        );
+    }
+
+    /// 建页门穿透 save_blocks：打字保存（false）不建 `[[项` 这类中间页；
+    /// 提交保存（true）才建页并写 link 行（反链/图谱靠这行）。
+    #[test]
+    fn save_blocks_gates_page_creation_on_create_missing() {
+        let mut adapter = SQLiteAdapter::open_in_memory().unwrap();
+        let p1 = seed_page(&mut adapter, "p1");
+
+        // 打字中间态：目标页未建，链接也不入表。
+        BlockWriteService::save_blocks(
+            &mut adapter,
+            vec![block_with_content("b1", &p1, None, 1000, "see [[Target Page]]")],
+            false,
+        )
+        .unwrap();
+        assert!(
+            repository::PageRepository::get_by_title(adapter.pages(), "Target Page")
+                .unwrap()
+                .is_none()
+        );
+        assert!(repository::LinkRepository::get_by_source_block_id(adapter.links(), "b1")
+            .unwrap()
+            .is_empty());
+
+        // 提交态：建页 + 写边。
+        BlockWriteService::save_blocks(
+            &mut adapter,
+            vec![block_with_content("b1", &p1, None, 1000, "see [[Target Page]]")],
+            true,
+        )
+        .unwrap();
+        let page = repository::PageRepository::get_by_title(adapter.pages(), "Target Page")
+            .unwrap()
+            .expect("提交时点应建页");
+        let links = repository::LinkRepository::get_by_source_block_id(adapter.links(), "b1")
+            .unwrap();
+        assert_eq!(links.len(), 1);
+        assert_eq!(links[0].target_page_id, page.id);
+        assert_eq!(page.deleted_at, None);
+    }
+
+    /// 幂等：同标题重复提交不产生第二个页面行（UNIQUE(title) 不被触发）。
+    #[test]
+    fn save_blocks_page_creation_is_idempotent() {
+        let mut adapter = SQLiteAdapter::open_in_memory().unwrap();
+        let p1 = seed_page(&mut adapter, "p1");
+        let content = "a [[Dup]] b";
+
+        BlockWriteService::save_blocks(
+            &mut adapter,
+            vec![block_with_content("b1", &p1, None, 1000, content)],
+            true,
+        )
+        .unwrap();
+        BlockWriteService::save_blocks(
+            &mut adapter,
+            vec![block_with_content("b1", &p1, None, 1000, content)],
+            true,
+        )
+        .unwrap();
+
+        let all = repository::PageRepository::get_all(adapter.pages()).unwrap();
+        assert_eq!(all.iter().filter(|p| p.title == "Dup").count(), 1);
+        assert_eq!(
+            repository::LinkRepository::get_by_source_block_id(adapter.links(), "b1")
+                .unwrap()
+                .len(),
+            1,
+            "重复提交后仍只有一条 link（先删后建）"
         );
     }
 

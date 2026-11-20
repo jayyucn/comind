@@ -265,10 +265,16 @@ impl ContentParseService {
     /// 解析 content 中的内部链接 → 查 Page 表获取 target_page_id →
     /// 构造 Link 对象 → 调用 LinkService::sync_links_for_block。
     /// 跳过外部链接（http/ftp/mailto）。
+    ///
+    /// `create_missing_pages`：目标页不存在时是否就地建页（幂等，含软删复活）。
+    /// 语义与 `create_missing_tags` 同源——打字防抖传 `false`（否则 `[[项`、`[[项目`
+    /// 这类中间态会各建一个垃圾页），提交动作（blur / 拆分 / 粘贴 / 整树保存）传 `true`。
+    /// 建页失败（如标题被规则拒绝）按「该链接本轮不入表」处理，不中断块保存。
     pub fn sync_links_for_block(
         storage: &mut dyn StorageAdapter,
         block_id: &str,
         content: &str,
+        create_missing_pages: bool,
     ) -> Result<Vec<crate::types::Link>, Box<dyn Error>> {
         let drafts = extract_links_from_content(content);
         let internal_drafts: Vec<&LinkDraft> =
@@ -284,13 +290,39 @@ impl ContentParseService {
         let now = chrono::Utc::now().timestamp_millis();
 
         for draft in &internal_drafts {
-            // Look up target page
-            if let Ok(Some(target_page)) =
-                crate::storage::repository::PageRepository::get_by_title(
-                    storage.pages(),
-                    &draft.target_title,
-                )
-            {
+            // 目标页解析：先查现有行；不存在且处于提交时点则就地建页（幂等）。
+            let existing = crate::storage::repository::PageRepository::get_by_title(
+                storage.pages(),
+                &draft.target_title,
+            );
+            let target_page = match existing {
+                Ok(Some(page)) => Some(page),
+                Ok(None) if create_missing_pages && !draft.target_title.is_empty() => {
+                    match crate::services::PageService::create(
+                        storage,
+                        "",
+                        &draft.target_title,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                    ) {
+                        Ok(page) => Some(page),
+                        Err(e) => {
+                            // 建页失败不打断保存：本轮跳过该链接，内容原样保留。
+                            eprintln!(
+                                "[sync_links_for_block] create page failed for {:?}: {}",
+                                draft.target_title, e
+                            );
+                            None
+                        }
+                    }
+                }
+                _ => None,
+            };
+
+            if let Some(target_page) = target_page {
                 let link = crate::types::Link {
                     id: ContentParseService::generate_id(),
                     source_block_id: block_id.to_string(),
@@ -304,8 +336,6 @@ impl ContentParseService {
                 };
                 new_links.push(link);
             }
-            // If page doesn't exist yet, skip — same as TS behaviour
-            // (page check in store.blocks.ts:_syncBlockLinks)
         }
 
         LinkService::sync_links_for_block(storage, block_id, &new_links)

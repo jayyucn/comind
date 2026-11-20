@@ -56,6 +56,7 @@ impl BlockService {
 
     /// `create_missing_tags`：是否按 content 自动建/复活标签。新建块默认是提交动作
     /// （粘贴/功能区分块）→ true；唯一例外是 `save_blocks` 以 false 落库打字中的新块。
+    /// 同一开关也门控 `[[page]]` 目标页的创建（见 `ContentParseService::sync_links_for_block`）。
     pub fn create(
         storage: &mut dyn StorageAdapter,
         page_id: &str,
@@ -93,7 +94,14 @@ impl BlockService {
         let block = repository::BlockRepository::create(storage.blocks(), &block)?;
         DateRefService::sync_date_refs_for_block(storage, &block.id, &block.content)?;
         // S3: synchronise derived links & field values from content
-        if let Err(e) = ContentParseService::sync_links_for_block(storage, &block.id, &block.content) {
+        // 建页门控与建签门控同源：`create_missing_tags == true` 即提交时点，
+        // 此时 `[[X]]` 的目标页缺失就地建页，反链与图谱才不会有断边。
+        if let Err(e) = ContentParseService::sync_links_for_block(
+            storage,
+            &block.id,
+            &block.content,
+            create_missing_tags,
+        ) {
             eprintln!("[BlockService::create] sync_links_for_block failed for block {}: {}", block.id, e);
         }
         if let Err(e) = ContentParseService::sync_field_values_for_block(storage, &block.id, &block.content) {
@@ -177,7 +185,12 @@ impl BlockService {
             )?;
         }
         // S3: synchronise derived links & field values from content
-        if let Err(e) = ContentParseService::sync_links_for_block(storage, &block.id, &block.content) {
+        if let Err(e) = ContentParseService::sync_links_for_block(
+            storage,
+            &block.id,
+            &block.content,
+            create_missing_tags,
+        ) {
             eprintln!("[BlockService::update] sync_links_for_block failed for block {}: {}", block.id, e);
         }
         if let Err(e) = ContentParseService::sync_field_values_for_block(storage, &block.id, &block.content) {
@@ -226,7 +239,7 @@ impl BlockService {
         storage.notifications().delete_by_block_id(id)?;
         // Clean up derived links; field values are explicitly deleted below (NOT via
         // sync_field_values_for_block, which now only upserts content-derived values).
-        if let Err(e) = ContentParseService::sync_links_for_block(storage, id, "") {
+        if let Err(e) = ContentParseService::sync_links_for_block(storage, id, "", false) {
             eprintln!("[BlockService::delete] sync_links_for_block failed for block {}: {}", id, e);
         }
         FieldValueService::delete_by_block_id(storage, id)?;
