@@ -94,7 +94,18 @@ test('单块合法选区：点按钮把文字包成 [[页名]] 并收场', async
   await expect(button).toBeEnabled()
 
   await button.click()
-  await page.waitForTimeout(1000)
+
+  // 体感回归网：内容必须**立刻**变。写回是本地状态变更，建页与落库都在后台；
+  // 曾经把 await createPage 挡在前面，真机上点完按钮到看见结果之间空一段。
+  await page.waitForFunction(
+    () =>
+      [...document.querySelectorAll('.block-content')].some((el) =>
+        el.textContent?.includes('[[项目A]]'),
+      ),
+    undefined,
+    { timeout: 500 },
+  )
+  await page.waitForTimeout(600)
 
   // 内容：中段选区两侧按 inline-unit-pad 补空，与「[[ 补全插页」同字面
   const editorText = await page.evaluate(

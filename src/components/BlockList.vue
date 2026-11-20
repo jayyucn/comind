@@ -1086,9 +1086,12 @@ const wrapPageRefState = computed<{ enabled: boolean; hint?: string } | null>(()
 /**
  * 就地把选区文本包成 `[[页名]]`（D4–D7）。
  *
- * 顺序固定：**先建页、再写文本**。反过来的话这次写回触发的 link 同步会查不到目标页
- * 而丢边，且不会重试（与 `Editor.vue handleWikiLinkSelect` 同序）。建页失败即中止，
- * 不留下「文本已包裹但页面不存在」的中间态。
+ * 体感约束：**内容必须立刻变**。曾经把 `await createPage(name)` 放在写回之前，
+ * 真机上那是一次 SQLite 落库往返，用户点完按钮到看见包裹结果之间的空白期就是他
+ * 抱怨的「延迟」。现在写回在前（本地改 `block.content` 是同步的），页面与落库都
+ * 甩到后台 —— 顺序仍然正确，因为提交时点建页（`create_missing_pages`）会在这次
+ * 写回的保存里按 title 建页并补 link，前端那次 createPage 只负责让侧栏与 `[[`
+ * 搜索立刻可见，失败也不影响引用成立。
  */
 async function wrapRangeAsPageRef() {
   const tr = selection.textRange.value
@@ -1108,23 +1111,27 @@ async function wrapRangeAsPageRef() {
   }
   const name = check.name
 
-  if (!pageStore.getPageByTitle(name)) {
-    try {
-      await pageStore.createPage(name)
-    } catch (err) {
-      editorStore.showToast(`无法创建页面「${name}」：${(err as Error).message}`, 'error')
-      return
-    }
-  }
-
   // 补空与 `[[` 补全插页同源（inline-unit-pad 单源）：本功能属于「插入新单元」语义，
   // 左右邻居按编码原文判，块首/已有空白不补，`((type))` 收尾不补左。
   const padded = padUnitForContent(block.content, encLo, encHi, `[[${name}]]`)
   const result = await blockStore.replaceTextRange(props.pageId, tr, padded)
+  if (!result) return
 
   // 收场：结束选区（浮条随之关闭）、光标落 `]]` 之后，可直接接着写
   selection.clearTextSelection()
-  if (result) editorStore.activateBlock(result.id, result.cursorPos)
+  editorStore.activateBlock(result.id, result.cursorPos)
+
+  // 立刻落库，不等 300ms 防抖：写回时 `renderSegments` 被清空（索引已过时），
+  // 不 flush 的话块会停在裸 `[[页名]]` 的纯文本态，用户以为没生效。
+  void blockStore.flushSave(result.id)
+
+  // 页面实例放后台（幂等）：只为让侧栏「最近」与 `[[` 补全立刻可见，
+  // 引用成立不依赖它——同一次保存里 Rust 会按 title 建页并补 link。
+  void pageStore
+    .getOrCreatePageByTitle(name)
+    .catch((err: unknown) =>
+      editorStore.showToast(`页面「${name}」未能创建：${(err as Error).message}`, 'error'),
+    )
 }
 
 // ── 拖放指示器（模块级共享状态，渲染一次） ──

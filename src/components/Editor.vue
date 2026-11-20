@@ -331,11 +331,14 @@ const wrapPageRefState = computed<{ enabled: boolean; hint?: string } | null>(()
 })
 
 /**
- * 把当前编辑器选区包裹为 `[[页名]]`（D4–D7，与 range 模式同序）。
+ * 把当前编辑器选区包裹为 `[[页名]]`（D4–D7，与 range 模式同口径）。
  *
- * 建页先行：写回触发的 link 同步只认「此刻已存在的页」，漏建即丢边且不重试。
  * 替换用 `insertContentAt({from,to})` 一次完成（理由见 handleWikiLinkSelect：
  * 拆成 delete + insert 时 Enter 路径的 `tr.selection` 映射会落空）。
+ *
+ * 页面创建**不阻塞插入**：真机上那是一次 SQLite 落库往返，放在前面会让用户点完
+ * 按钮到看见结果之间空一段。插入后的提交保存里 Rust 会按 title 建页并补 link
+ * （`create_missing_pages`），这次 get-or-create 只为让侧栏与 `[[` 搜索立刻可见。
  */
 async function wrapSelectionAsPageRef() {
   const instance = editor.value
@@ -350,16 +353,6 @@ async function wrapSelectionAsPageRef() {
   }
   const name = check.name
 
-  const pageStore = usePageStore()
-  if (!pageStore.getPageByTitle(name)) {
-    try {
-      await pageStore.createPage(name)
-    } catch (err) {
-      useEditorStore().showToast(`无法创建页面「${name}」：${(err as Error).message}`, 'error')
-      return
-    }
-  }
-
   // 与 `[[` 补全插页同源：补空后光标落 padded 末尾（`]]` 之后）
   const padded = padUnitForDoc(instance.state.doc, from, to, `[[${name}]]`)
   instance.chain()
@@ -367,6 +360,12 @@ async function wrapSelectionAsPageRef() {
     .setTextSelection(from + padded.length)
     .focus()
     .run()
+
+  void usePageStore()
+    .getOrCreatePageByTitle(name)
+    .catch((err: unknown) =>
+      useEditorStore().showToast(`页面「${name}」未能创建：${(err as Error).message}`, 'error'),
+    )
 }
 
 // 模板驱动的 tag 选择（由 TagMenu @select 触发）：确保标签实体存在并把
