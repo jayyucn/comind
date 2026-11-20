@@ -1,5 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { segmentVisibleText, renderedOffsetToEncodedOffset, textRangeIsPlainText } from './render-text'
+import {
+  firstNonPlainUnitInRange,
+  renderedOffsetToEncodedOffset,
+  segmentVisibleText,
+  textRangeIsPlainText,
+} from './render-text'
 import type { RenderSegment } from '../wasm/types'
 import { useRelationshipTypes } from '../composables/useRelationshipTypes'
 import { cleanupRelationshipTypes } from '../../tests/core-client'
@@ -204,5 +209,87 @@ describe('textRangeIsPlainText — 选区是否整段落在纯文字', () => {
     expect(textRangeIsPlainText('abc', undefined, 2, 2)).toBe(false)
     expect(textRangeIsPlainText('abc', undefined, 5, 9)).toBe(false)
     expect(textRangeIsPlainText('abc', undefined, 0, 99)).toBe(true)
+  })
+})
+
+/**
+ * 「被什么挡住的」—— `textRangeIsPlainText` 只说不行，本函数点名是哪个单元。
+ *
+ * 这是置灰提示能说「选区覆盖了页面链接 [[项目A]]」而非「覆盖了链接/标签/日期」
+ * 的依据；也是它和判据**同源**的保证（同一份 spans，同一套钳制）。
+ */
+describe('firstNonPlainUnitInRange — 点名挡住选区的单元', () => {
+  it('整段纯文字：null', () => {
+    expect(firstNonPlainUnitInRange('项目A 很忙', undefined, 0, 3)).toBeNull()
+    expect(firstNonPlainUnitInRange('项目A 很忙', [text(0, 7)], 3, 7)).toBeNull()
+  })
+
+  it('覆盖 link 段：报页面链接与它的字面', () => {
+    const content = '[[项目A]] 很忙'
+    const segments: RenderSegment[] = [link(0, 7, '项目A'), text(7, 10)]
+    expect(firstNonPlainUnitInRange(content, segments, 0, 7)).toEqual({
+      kind: 'page-link',
+      visible: '[[项目A]]',
+    })
+    // 只碰到链接尾部也算覆盖
+    expect(firstNonPlainUnitInRange(content, segments, 2, 5)).toEqual({
+      kind: 'page-link',
+      visible: '[[项目A]]',
+    })
+  })
+
+  it('覆盖 tag 段：报标签与它的字面（含 # 号）', () => {
+    const content = '#标签 很忙'
+    const segments: RenderSegment[] = [
+      { type: 'tag', start: 0, end: 3, tag_id: 't1', title: '标签', color: 'tag-color-1' } as RenderSegment,
+      text(3, 6),
+    ]
+    expect(firstNonPlainUnitInRange(content, segments, 0, 3)).toEqual({
+      kind: 'tag',
+      visible: '#标签',
+    })
+  })
+
+  it('覆盖 date_ref 段：报日期', () => {
+    const content = '@2026-11-20 x'
+    const segments: RenderSegment[] = [
+      {
+        type: 'date_ref',
+        start: 0,
+        end: 11,
+        kind: 'due',
+        iso: '2026-11-20',
+        recurrence: '',
+        lead_minutes: 0,
+        is_overdue: false,
+      } as RenderSegment,
+      text(11, 13),
+    ]
+    expect(firstNonPlainUnitInRange(content, segments, 0, 11)).toEqual({
+      kind: 'date',
+      visible: '@2026-11-20',
+    })
+  })
+
+  it('只碰到纯文字部分：null（不误报相邻的单元）', () => {
+    const content = '[[项目A]] 很忙'
+    const segments: RenderSegment[] = [link(0, 7, '项目A'), text(7, 10)]
+    expect(firstNonPlainUnitInRange(content, segments, 8, 10)).toBeNull()
+  })
+
+  it('空区间 / 越界：null（与判据的钳制口径一致）', () => {
+    expect(firstNonPlainUnitInRange('abc', undefined, 2, 2)).toBeNull()
+    expect(firstNonPlainUnitInRange('abc', undefined, 5, 9)).toBeNull()
+    expect(firstNonPlainUnitInRange('abc', undefined, 0, 99)).toBeNull()
+  })
+
+  it('text 段里的别名链接：报页面链接，字面是渲染后的写法', () => {
+    // 存储 `x[[项目A|别名]]y`，渲染 `x[[别名]]y`
+    const content = 'x[[项目A|别名]]y'
+    const segments: RenderSegment[] = [text(0, content.length)]
+    expect(firstNonPlainUnitInRange(content, segments, 1, 7)).toEqual({
+      kind: 'page-link',
+      visible: '[[别名]]',
+    })
   })
 })

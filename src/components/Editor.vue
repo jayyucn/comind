@@ -33,7 +33,7 @@ import { debounce } from '../utils/debounce'
 import type { InlineMarkAttrs, InlineMarkRange } from '../utils/inline-marks'
 import { inlineMarksToHtml, normalizeInlineMarks, sameInlineMarks } from '../utils/inline-marks'
 import { padUnitForDoc } from '../utils/inline-unit-pad'
-import { PAGE_NAME_RULE_HINT, validatePageName } from '../utils/page-name'
+import { pageNameRejectionHint, validatePageName } from '../utils/page-name'
 import { isTagColorToken } from '../utils/tag-color'
 import { createEditorEvents } from './Block/editorEvents'
 import DateRefKindSelector from './DateRefKindSelector.vue'
@@ -312,6 +312,9 @@ async function handleWikiLinkSelect(pageName: string) {
  * 编辑态的 doc 存的是**原文**（`[[X]]` 就是方括号本身，chip 只是 decoration），
  * 所以这里不需要「是否覆盖已渲染单元」这一步：用户选中 chip 时 `textBetween`
  * 直接带出 `[[X]]`，字符判据会拦下。
+ *
+ * 但「不能包含「[」」对一个只看到 chip 的用户等于没说 —— 他眼里没有括号。
+ * 因此先认 `[[`：命中就直说是引用语法，而不是让他去找一个看不见的字符。
  */
 const wrapPageRefState = computed<{ enabled: boolean; hint?: string } | null>(() => {
   void selectionRevision.value
@@ -319,10 +322,12 @@ const wrapPageRefState = computed<{ enabled: boolean; hint?: string } | null>(()
   if (!instance) return null
   const { from, to } = instance.state.selection
   if (from === to) return null
-  const check = validatePageName(instance.state.doc.textBetween(from, to))
-  return check.ok
-    ? { enabled: true }
-    : { enabled: false, hint: `选区不能作为页面名：${PAGE_NAME_RULE_HINT}` }
+  const raw = instance.state.doc.textBetween(from, to)
+  if (raw.includes('[[') || raw.includes(']]')) {
+    return { enabled: false, hint: '选区包含引用语法 [[ ]]，不能作为页面名' }
+  }
+  const hint = pageNameRejectionHint(raw)
+  return hint ? { enabled: false, hint } : { enabled: true }
 })
 
 /**

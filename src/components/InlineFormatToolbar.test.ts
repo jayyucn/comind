@@ -41,12 +41,13 @@ describe('InlineFormatToolbar — 转为页面引用', () => {
     wrapper.unmount()
   })
 
-  it('置灰：可渲染但不可点，title 给出判据', () => {
-    const wrapper = mountToolbar({ enabled: false, hint: '选区不能作为页面名：含 | [ ] 或换行，或只有空白' })
+  it('置灰：可渲染但不可点，title 原样透出具体原因', () => {
+    const wrapper = mountToolbar({ enabled: false, hint: '选区不能作为页面名，不能包含「[」' })
     const button = document.querySelector(SELECTOR) as HTMLButtonElement
     expect(button).not.toBeNull()
     expect(button.disabled).toBe(true)
-    expect(button.title).toContain('选区不能作为页面名')
+    // 浮条只负责透传，不二次加工（文案单源在 page-name / render-text）
+    expect(button.title).toBe('选区不能作为页面名，不能包含「[」')
     wrapper.unmount()
   })
 

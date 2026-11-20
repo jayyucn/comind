@@ -83,6 +83,26 @@ export function segmentVisibleText(content: string, seg: RenderSegment): string 
 }
 
 /**
+ * 已渲染单元的种类。存在的理由：置灰提示要说清「你选到了什么」，
+ * 而「链接/标签/日期」三个并列等于没说是哪一个。
+ */
+export type NonPlainUnitKind =
+  | 'page-link'
+  | 'relationship-link'
+  | 'external-link'
+  | 'tag'
+  | 'date'
+
+/** 种类 → 用户能看懂的名字（提示文案唯一来源） */
+export const NON_PLAIN_UNIT_LABEL: Record<NonPlainUnitKind, string> = {
+  'page-link': '页面链接',
+  'relationship-link': '关系引用',
+  'external-link': '外部链接',
+  tag: '标签',
+  date: '日期',
+}
+
+/**
  * 段内可映射单元。
  * - 明文单元：可见长度 ≡ 存储长度，逐字对应；
  * - 标记单元（可见长度 ≠ 存储长度，如 `[[项目A|别名]]`）：整个吸附。
@@ -101,6 +121,10 @@ interface VisibleUnit {
    * 显示的长度与存储原文的长度/形态不同，是「选区不得覆盖」的对象。
    */
   plain: boolean
+  /** 非纯文字单元的种类（plain=false 时必有） */
+  kind?: NonPlainUnitKind
+  /** 非纯文字单元在界面上长什么样（`[[项目A]]` / `#标签` / `@2026-11-20`） */
+  visible?: string
 }
 
 /** 与 `WIKI_LINK_REGEX` 同源（避免复用带 lastIndex 的全局对象），用于切分 text 段 */
@@ -128,6 +152,8 @@ function textUnits(content: string, seg: RenderSegment): VisibleUnit[] {
       encodedStart: seg.start + match.index,
       encodedEnd: seg.start + match.index + match[0].length,
       plain: false,
+      kind: 'page-link',
+      visible: `[[${wikiLinkDisplay(match[1], match[2])}]]`,
     })
     last = match.index + match[0].length
   }
@@ -145,14 +171,26 @@ function textUnits(content: string, seg: RenderSegment): VisibleUnit[] {
 /** 一个段切出的单元：text 段按标记细分，其余段整体作为一个单元 */
 function unitsOf(content: string, seg: RenderSegment): VisibleUnit[] {
   if (seg.type === 'text') return textUnits(content, seg)
+  const visible = segmentVisibleText(content, seg)
   return [
     {
-      visibleLen: segmentVisibleText(content, seg).length,
+      visibleLen: visible.length,
       encodedStart: seg.start,
       encodedEnd: seg.end,
       plain: false,
+      kind: NON_PLAIN_KIND_OF_SEGMENT[seg.type],
+      visible,
     },
   ]
+}
+
+/** 非 text 段 → 单元种类（`text` 不进这张表：它按标记再切分） */
+const NON_PLAIN_KIND_OF_SEGMENT: Record<Exclude<RenderSegment['type'], 'text'>, NonPlainUnitKind> = {
+  link: 'page-link',
+  typed_link: 'relationship-link',
+  external_link: 'external-link',
+  tag: 'tag',
+  date_ref: 'date',
 }
 
 /** 在单元序列里定位渲染偏移；越界返回 null（由调用方钳制到内容末尾） */
@@ -200,6 +238,10 @@ export interface VisibleUnitSpan {
   end: number
   /** true = 纯文字（可见即原文）；false = 已渲染单元（`[[X]]` / `#tag` / `@date` / 外链） */
   plain: boolean
+  /** 非纯文字单元的种类 */
+  kind?: NonPlainUnitKind
+  /** 非纯文字单元在界面上的字面 */
+  visible?: string
 }
 
 /** 把整块内容切成渲染文本坐标下的可见单元序列（升序、首尾相接、无空洞） */
@@ -214,7 +256,13 @@ export function visibleUnitSpans(
 
   let acc = 0
   return units.map((unit) => {
-    const span: VisibleUnitSpan = { start: acc, end: acc + unit.visibleLen, plain: unit.plain }
+    const span: VisibleUnitSpan = {
+      start: acc,
+      end: acc + unit.visibleLen,
+      plain: unit.plain,
+      kind: unit.kind,
+      visible: unit.visible,
+    }
     acc = span.end
     return span
   })
@@ -237,15 +285,50 @@ export function textRangeIsPlainText(
   to: number,
 ): boolean {
   const spans = visibleUnitSpans(content, segments)
-  const total = spans.length > 0 ? spans[spans.length - 1]!.end : 0
-  const lo = Math.max(0, Math.min(total, Math.trunc(from)))
-  const hi = Math.max(0, Math.min(total, Math.trunc(to)))
+  const { lo, hi } = clampRange(spans, from, to)
   if (hi <= lo) return false
-
   for (const span of spans) {
     if (span.end <= lo) continue
     if (span.start >= hi) break
     if (!span.plain) return false
   }
   return true
+}
+
+/**
+ * 渲染区间内**第一个**已渲染单元（`[[X]]` / `#tag` / `@date` / 外链）。
+ *
+ * `textRangeIsPlainText` 只回答「能不能包」，本函数回答「被什么挡住的」——
+ * 置灰提示据此点名具体单元（「选区覆盖了页面链接 [[项目A]]」），而不是把
+ * 链接/标签/日期三个并列丢给用户去猜。两者同源同口径，改判据不会漂移。
+ */
+export function firstNonPlainUnitInRange(
+  content: string,
+  segments: RenderSegment[] | undefined,
+  from: number,
+  to: number,
+): { kind: NonPlainUnitKind; visible: string } | null {
+  const spans = visibleUnitSpans(content, segments)
+  const { lo, hi } = clampRange(spans, from, to)
+  if (hi <= lo) return null
+  for (const span of spans) {
+    if (span.end <= lo) continue
+    if (span.start >= hi) break
+    if (span.plain) continue
+    return { kind: span.kind ?? 'page-link', visible: span.visible ?? '' }
+  }
+  return null
+}
+
+/** 把渲染偏移钳制到单元总长之内（两个判据共用，保证口径一致） */
+function clampRange(
+  spans: VisibleUnitSpan[],
+  from: number,
+  to: number,
+): { lo: number; hi: number } {
+  const total = spans.length > 0 ? spans[spans.length - 1]!.end : 0
+  return {
+    lo: Math.max(0, Math.min(total, Math.trunc(from))),
+    hi: Math.max(0, Math.min(total, Math.trunc(to))),
+  }
 }

@@ -138,7 +138,39 @@ test('单块非法选区（含 |）：按钮置灰并给出判据', async ({ pag
   const button = toolbar.locator('button[aria-label="转为页面引用"]')
   await expect(button).toBeVisible()
   await expect(button).toBeDisabled()
-  await expect(button).toHaveAttribute('title', /页面名/)
+  // 点名具体字符，而不是「含 | [ ] 或换行」这种让人逐个试的说法
+  await expect(button).toHaveAttribute('title', '选区不能作为页面名，不能包含「|」')
+})
+
+/**
+ * 用户诉求的原例：选中 `[页面` 时要说清是 `[` 不行。
+ * 反例（旧实现）：一律回「含 | [ ] 或换行，或只有空白」。
+ */
+test('含 [ 的选区：提示点名「[」', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 })
+  await page.goto('/')
+  await page.waitForSelector('.block', { timeout: 15000 })
+  await page.locator('.block').first().click()
+  await waitActiveBlock(page, 0)
+
+  for (let i = 0; i < 6; i += 1) await page.keyboard.press('Enter')
+  await page.waitForTimeout(200)
+  // `[` 会被括号配对自动补成 `[]`，删掉自动补的 `]` 才能构造出只剩单边 `[` 的文本
+  await page.keyboard.type('看[', { delay: 25 })
+  await page.keyboard.type('页面', { delay: 25 })
+  await page.keyboard.press('Delete')
+  await page.waitForTimeout(200)
+  expect((await activeText(page)).replace(/\u200B/g, '')).toBe('看[页面')
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(400)
+
+  const rect = await rectOfSubstring(page, '看[页面', 1, 4)
+  await dragWithin(page, rect)
+
+  const button = page.locator('.inline-format-toolbar button[aria-label="转为页面引用"]')
+  await expect(button).toBeVisible({ timeout: 4000 })
+  await expect(button).toBeDisabled()
+  await expect(button).toHaveAttribute('title', '选区不能作为页面名，不能包含「[」')
 })
 
 test('键盘选区（编辑态）：同一个按钮同样可用', async ({ page }) => {

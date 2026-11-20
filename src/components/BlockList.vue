@@ -25,7 +25,11 @@ import { linkCrossPageMove, runUndoOrRedo } from '../composables/useUndoRestore'
 import { COMIND_BLOCK_MIME, resolveClipboardPayload } from '../services/external-paste-parse'
 import { onLayoutChange } from '../services/layout-change'
 import { ensureWikiLinkTargets, notifyCreatedPages } from '../services/paste-ensure-wiki-targets'
-import { renderedOffsetToEncodedOffset, textRangeIsPlainText } from '../services/render-text'
+import {
+  firstNonPlainUnitInRange,
+  NON_PLAIN_UNIT_LABEL,
+  renderedOffsetToEncodedOffset,
+} from '../services/render-text'
 import { blockOffsetFromPoint, selectionClientRects, type SelectionRect } from '../services/selection-geometry'
 import { normalizeTextRange } from '../services/text-range'
 import { useBlockStore } from '../stores/blocks'
@@ -46,7 +50,7 @@ import {
   setInlineMarkRange,
 } from '../utils/inline-marks'
 import { padUnitForContent } from '../utils/inline-unit-pad'
-import { PAGE_NAME_RULE_HINT, validatePageName } from '../utils/page-name'
+import { pageNameRejectionHint, validatePageName } from '../utils/page-name'
 import { resolveUndoScopeBlockPage, takeOverUndoRedo } from '../utils/undo-chord'
 import BlockDraggableList from './Block/components/BlockDraggableList.vue'
 import BlockDropIndicator from './Block/components/BlockDropIndicator.vue'
@@ -1061,14 +1065,21 @@ const wrapPageRefState = computed<{ enabled: boolean; hint?: string } | null>(()
 
   const lo = Math.min(tr.anchor.offset, tr.head.offset)
   const hi = Math.max(tr.anchor.offset, tr.head.offset)
-  if (!textRangeIsPlainText(block.content, block.renderSegments, lo, hi)) {
-    return { enabled: false, hint: '选区覆盖了已渲染的链接/标签/日期，不能作为页面名' }
+  // 零长选区（点击残留）没有可包的文字：不渲染按钮。以前会跌进下面的
+  // 「覆盖了单元」分支，给出一个指向完全错误方向的提示。
+  if (hi <= lo) return null
+
+  const blocker = firstNonPlainUnitInRange(block.content, block.renderSegments, lo, hi)
+  if (blocker) {
+    const label = NON_PLAIN_UNIT_LABEL[blocker.kind]
+    const named = blocker.visible ? ` ${blocker.visible}` : ''
+    return { enabled: false, hint: `选区覆盖了${label}${named}，不能作为页面名` }
   }
 
   const encLo = renderedOffsetToEncodedOffset(block.content, block.renderSegments, lo)
   const encHi = renderedOffsetToEncodedOffset(block.content, block.renderSegments, hi)
-  const check = validatePageName(block.content.slice(encLo, encHi))
-  if (!check.ok) return { enabled: false, hint: `选区不能作为页面名：${PAGE_NAME_RULE_HINT}` }
+  const hint = pageNameRejectionHint(block.content.slice(encLo, encHi))
+  if (hint) return { enabled: false, hint }
   return { enabled: true }
 })
 
