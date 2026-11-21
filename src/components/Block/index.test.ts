@@ -735,13 +735,14 @@ describe('characterization: collapse', () => {
   })
 })
 
-describe('bullet dot opens BlockModal (ADR-0039)', () => {
+describe('块入口胶囊打开本块菜单（ADR-0039 D9：入口不再开弹窗）', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
+    document.body.querySelectorAll('.block-entry-menu').forEach((n) => n.remove())
   })
 
-  it('clicking bullet-dot opens BlockModal for the block', async () => {
+  it('点入口胶囊出的是通用段菜单，且不再开 BlockModal', async () => {
     const blockStore = useBlockStore()
     const editorStore = useEditorStore()
     const openSpy = vi.spyOn(editorStore, 'openBlockModal')
@@ -754,16 +755,23 @@ describe('bullet dot opens BlockModal (ADR-0039)', () => {
       global: { stubs: { BulletRender: StubBulletRender, VueDraggable: StubVueDraggable } },
     })
     await flushPromises()
-    await wrapper.find('.bullet-dot').trigger('click')
+    await wrapper.find('.block-entry-icon').trigger('click')
     await flushPromises()
-    expect(openSpy).toHaveBeenCalledWith('b1')
+
+    const menu = document.body.querySelector('.block-entry-menu')
+    expect(menu).toBeTruthy()
+    // 通用段的项都在（顺序与分组由 BlockMenuCommon 单源定义）
+    expect(menu?.querySelector('[data-block-menu-item="insert-above"]')).toBeTruthy()
+    expect(menu?.querySelector('[data-block-menu-item="paste"]')).toBeTruthy()
+    expect(menu?.querySelector('[data-block-menu-item="reset-text"]')?.textContent).toContain('清空')
+    expect(menu?.querySelector('[data-block-menu-item="delete"]')).toBeTruthy()
+    expect(openSpy).not.toHaveBeenCalled()
+
     wrapper.unmount()
   })
 
-  it('bullet-dot is a no-op inside BlockModal (inBlockModal inject)', async () => {
+  it('弹窗内（inBlockModal）点入口胶囊仍是 no-op', async () => {
     const blockStore = useBlockStore()
-    const editorStore = useEditorStore()
-    const openSpy = vi.spyOn(editorStore, 'openBlockModal')
     blockStore.blocks = [
       { id: 'b1', pageId: 'p1', parentId: null, pos: 0, content: '', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0 },
     ]
@@ -776,9 +784,9 @@ describe('bullet dot opens BlockModal (ADR-0039)', () => {
       },
     })
     await flushPromises()
-    await wrapper.find('.bullet-dot').trigger('click')
+    await wrapper.find('.block-entry-icon').trigger('click')
     await flushPromises()
-    expect(openSpy).not.toHaveBeenCalled()
+    expect(document.body.querySelector('.block-entry-menu')).toBeNull()
     wrapper.unmount()
   })
 })

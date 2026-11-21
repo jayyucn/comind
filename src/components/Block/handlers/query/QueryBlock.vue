@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import type { Editor } from '@tiptap/vue-3'
 import { CalendarDays, Columns, LayoutGrid, Table } from 'lucide-vue-next'
-import { computed, markRaw, onMounted, ref } from 'vue'
+import { computed, markRaw, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import type { FieldValueData } from '@/types/field-definition'
 
+import { useBlockEntryMenuExtra } from '../../../../composables/useBlockEntryMenuExtra'
 import { BLOCK_ENTITY, blockDefaultConfig, getBlockRegistry } from '../../../../composables/useBlockQueryRegistry'
 import type { ViewQuery } from '../../../../core/query'
 import { createQueryEngine } from '../../../../core/query'
@@ -21,7 +22,6 @@ import { usePanesStore } from '../../../../stores/panes'
 import { peekScreenViewStore, useScreenViewStore } from '../../../../stores/screenView'
 import type { Block } from '../../../../types/block'
 import type { BlockCard } from '../../../../wasm/types'
-import BasePopover from '../../../common/BasePopover.vue'
 import QueryPageFrame from '../../../common/QueryPageFrame.vue'
 import { isQuadrantCard } from '../../../TaskHub/quadrant-filter'
 import BlockContentCell from '../../../views/BlockContentCell.vue'
@@ -31,7 +31,6 @@ import QuadrantView from '../../../views/QuadrantView.vue'
 import SourcePageCell from '../../../views/SourcePageCell.vue'
 import TableView from '../../../views/TableView.vue'
 import type { CellRegistry } from '../../../views/types'
-import BlockMenuCommon from '../../components/BlockMenuCommon.vue'
 import { normalizePageColumn } from './page-column'
 import { excludeEmptyCards } from './source-cards'
 
@@ -219,17 +218,11 @@ function handleCellClick(blockId: string, fieldKey: string, event?: MouseEvent) 
   router.push({ name: 'page', params: { pageId } })
 }
 
-// ── 块级菜单（入口在 Block 外壳，菜单本体留在这里 → BasePopover）──────────
-// 入口图标由 .block-bullet 统一渲染（兼拖拽手柄），点击时把那个元素当锚点传进来；
-// 菜单内容依赖本块 store 状态，不外泄给外壳。通用五项（缩进/复制/剪切/粘贴/删除）
-// 由 BlockMenuCommon 渲染，本组件只提供 query 专属的粘贴收尾。
-const menuOpen = ref(false)
-const menuAnchor = ref<HTMLElement | null>(null)
-
-function openEntryMenu(anchorEl: HTMLElement) {
-  menuAnchor.value = anchorEl
-  menuOpen.value = true
-}
+// ── 块级菜单：只剩「query 专属的粘贴收尾」交给外壳 ──────────────────────
+// 菜单宿主已收敛到 Block 一层（ADR-0039 D9）：入口图标与浮层都在外壳里，通用段
+// （插入/缩进/复制剪切粘贴/清空/删除）由 BlockMenuCommon 单源渲染。本组件只注册
+// afterPaste —— 它要读/写本块的命名视图命名空间，属于类型知识，外壳不该知道。
+const { register: registerEntryMenuExtra, unregister: unregisterEntryMenuExtra } = useBlockEntryMenuExtra()
 
 /**
  * 粘贴收尾（类型专属）：粘进来的是查询块副本时，把源块的命名视图克隆到新块键。
@@ -248,6 +241,13 @@ async function afterPaste(created: Block[], sourceIds: string[]): Promise<void> 
   await cloneQueryViewNamespace(sourceId, copy.id)
   await peekScreenViewStore(queryViewEntity(copy.id))?.load()
 }
+
+/** query 没有类型专属菜单项（专属行为只有上面的粘贴收尾），只交出 afterPaste */
+const entryMenuExtra = { render: () => [], afterPaste }
+
+onMounted(() => registerEntryMenuExtra(props.blockId, entryMenuExtra))
+// 两态切换会重新挂载本组件：身份化注销，先卸的那份不误删后挂的那份
+onBeforeUnmount(() => unregisterEntryMenuExtra(props.blockId, entryMenuExtra))
 
 /** 矩阵新增任务：落今日 Ideas 页（与任务中心同一落点，ADR-0042 T1）。 */async function handleQuadrantAdd(priority: string, title: string) {
   const page = await pageStore.ensureTodayIdeasPage()
@@ -275,36 +275,13 @@ defineExpose({
   markSaved: () => {},
   getEditor: () => undefined as unknown as Editor,
   cancelDebouncedSave: () => {},
-  /** 入口菜单：Block 外壳渲染图标，点击时把该元素当锚点传进来 */
-  openEntryMenu,
 })
 </script>
 
 <template>
   <div class="query-block">
-    <!-- 入口图标不在这里：已上提到 Block/index.vue 的 .block-bullet（类型图标兼拖拽手柄），
-         点图标调本组件的 openEntryMenu(el)，锚点从外面传进来。 -->
-    <BasePopover
-      :visible="menuOpen"
-      :anchor-el="menuAnchor"
-      placement="bottom"
-      @close="menuOpen = false"
-    >
-      <div
-        class="block-entry-menu"
-        @mousedown.prevent
-      >
-        <!-- 通用段（缩进 / 复制剪切粘贴 / 删除）与 table 块共用同一份实现。
-             query 块没有类型专属项，所以不要前置分隔线（否则菜单顶部横着一条空线）。 -->
-        <BlockMenuCommon
-          :block-id="blockId"
-          no-divider-top
-          :after-paste="afterPaste"
-          @close="menuOpen = false"
-        />
-      </div>
-    </BasePopover>
-
+    <!-- 入口图标与菜单浮层都不在这里：已收敛到 Block/index.vue 一层（ADR-0039 D9）。
+         本组件只经 useBlockEntryMenuExtra 交出 afterPaste。 -->
     <QueryPageFrame
       v-model:search="searchQuery"
       hide-title
@@ -421,7 +398,7 @@ defineExpose({
   }
 }
 
-/* 菜单（BasePopover 内）的样式全部收口，本组件不再持有：
+/* 菜单已归 Block 外壳渲染，样式全部收口在外壳那侧，本组件不再持有：
    - 容器与分隔线 → src/styles/components/_block.scss 的 .block-entry-menu
    - 菜单行       → src/components/common/BlockMenuItem.vue */
 </style>

@@ -16,7 +16,6 @@ import {
   ArrowRight,
   ArrowUp,
   ClipboardPaste,
-  Columns3,
   Copy,
   Eraser,
   Merge,
@@ -27,8 +26,9 @@ import {
   TableProperties,
   Trash2,
 } from 'lucide-vue-next'
-import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, h, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
+import { useBlockEntryMenuExtra } from '../../../../composables/useBlockEntryMenuExtra'
 import type { CrossBlockSelection } from '../../../../composables/useCrossBlockSelection'
 import { runUndoOrRedo } from '../../../../composables/useUndoRestore'
 import { writePlainTextToClipboard } from '../../../../services/block-clipboard'
@@ -97,12 +97,12 @@ import {
   setInlineMarkRange,
 } from '../../../../utils/inline-marks'
 import BasePopover from '../../../common/BasePopover.vue'
-import BlockMenuItem from '../../../common/BlockMenuItem.vue'
 import FloatingSubmenu from '../../../common/FloatingSubmenu.vue'
 import SelectionMarkRow from '../../../common/SelectionMarkRow.vue'
 import InlineAlignMenu from '../../../InlineAlignMenu.vue'
 import InlineColorPalette from '../../../InlineColorPalette.vue'
 import BlockMenuCommon from '../../components/BlockMenuCommon.vue'
+import TableEntryMenuItems from './TableEntryMenuItems.vue'
 
 const props = defineProps<{
   blockId?: string
@@ -120,6 +120,8 @@ const emit = defineEmits<{
 
 const blockStore = useBlockStore()
 const editorStore = useEditorStore()
+/** 入口菜单的类型专属项：外壳按 blockId 取用（见文件内 `entryMenuExtra`） */
+const { register: registerEntryMenuExtra, unregister: unregisterEntryMenuExtra } = useBlockEntryMenuExtra()
 
 const initial = readTableData(props.blockFormat)
 const rows = ref<string[][]>(initial.rows)
@@ -192,7 +194,12 @@ const bodyRowIndexes = computed(() =>
 const tableMinWidth = computed(() => `${Math.max(1, cols.value) * 120}px`)
 /** standalone 入口按钮：锚点给 BasePopover 定位悬浮菜单 */
 const entryEl = ref<HTMLButtonElement | null>(null)
-/** 菜单锚点：入口在 Block 外壳时由 openEntryMenu(el) 传入，standalone 时是自己的按钮 */
+/**
+ * standalone 菜单（Ideas 快照等**脱离 Block 外壳**的场景）：锚点就是自己的按钮。
+ *
+ * 外壳内的入口菜单已收敛到 Block 一层（ADR-0039 D9）：本组件的类型专属项经
+ * `useBlockEntryMenuExtra` 交给外壳，这里只剩没人替它开菜单的那一种用法。
+ */
 const menuAnchor = ref<HTMLElement | null>(null)
 const menuOpen = ref(false)
 
@@ -1021,13 +1028,30 @@ function resetMenuColors() {
 // ── 结构操作 ──────────────────────────────────────────────────────
 
 /**
- * 外壳入口点击（Block/index.vue 的 .block-bullet 类型图标）：
- * 图标由外壳渲染，锚点也从外壳传进来；菜单本体与表内状态仍归本组件。
+ * 交给 Block 外壳的类型专属菜单项（ADR-0039 D9）。
+ *
+ * 外壳持有 popover 与「关菜单」这件事，本组件只交出「表格多出来的那两项」——
+ * 它们依赖本实例的 `header` 状态，而 `render()` 在外壳的渲染 effect 里执行，
+ * 所以开关的勾选态照常跟着 `header` 变。
  */
-function openEntryMenu(anchorEl: HTMLElement) {
-  menuAnchor.value = anchorEl
-  menuOpen.value = true
+const entryMenuExtra = {
+  render: (close: () => void) => [
+    h(TableEntryMenuItems, {
+      header: header.value,
+      onToggleHeader: () => {
+        close()
+        toggleHeader()
+      },
+    }),
+  ],
 }
+
+onMounted(() => {
+  if (props.blockId) registerEntryMenuExtra(props.blockId, entryMenuExtra)
+})
+onBeforeUnmount(() => {
+  if (props.blockId) unregisterEntryMenuExtra(props.blockId, entryMenuExtra)
+})
 
 /** standalone 入口按钮点击（Ideas 快照等脱离外壳的场景）：显式切换 */
 function toggleStandaloneMenu() {
@@ -1040,6 +1064,7 @@ function toggleStandaloneMenu() {
 }
 
 function toggleHeader() {
+  // standalone 浮层由自己关；外壳托管的浮层由 render() 收到的 close 关（见 entryMenuExtra）
   menuOpen.value = false
   const next = !header.value
   // 打开表头后，跨「第 0 行 / 表体」边界的合并区会横穿 thead/tbody（HTML 不支持），拆开
@@ -2299,8 +2324,6 @@ defineExpose({
   getText: () => props.content ?? '',
   markSaved: () => {},
   getEditor: () => undefined as unknown as Editor,
-  /** 入口菜单：Block 外壳渲染图标，点击时把该元素当锚点传进来 */
-  openEntryMenu,
   cancelDebouncedSave: () => {
     if (saveTimer !== undefined) window.clearTimeout(saveTimer)
     saveTimer = undefined
@@ -2346,8 +2369,8 @@ defineExpose({
     @mouseleave="clearActive"
   >
     <!-- 自带入口：仅 standaloneEntry 时渲染（Ideas 快照这类脱离 Block 外壳的场景）。
-         外壳内入口统一由 Block/index.vue 的 .block-bullet 渲染（类型图标兼拖拽手柄），
-         那边点图标调本组件的 openEntryMenu(el)，锚点从外面传进来。 -->
+         外壳内入口统一由 Block/index.vue 的 .block-bullet 渲染，菜单也归外壳
+         （ADR-0039 D9）；那边通过 useBlockEntryMenuExtra 取本组件的专属项。 -->
     <div
       v-if="standaloneEntry"
       class="table-entry"
@@ -2380,37 +2403,14 @@ defineExpose({
         @mousedown.prevent
       >
         <!-- 类型专属项一律排在通用段上面：表格结构组（表头开关 / 均分列宽）→ 通用段。
+             专属项抽成组件（外壳托管的菜单渲染的是同一份），两处定义不漂移；
              两行都走 BlockMenuItem，所以 .menu-row 的样式只有一处（common/BlockMenuItem.vue）。 -->
-        <BlockMenuItem
-          data-block-menu-item="header"
-          label="首行表头"
-          role="switch"
-          :aria-checked="header"
-          title="首行设为表头"
-          @click="toggleHeader"
-        >
-          <template #trailing>
-            <span
-              class="switch"
-              :class="{ 'is-on': header }"
-              aria-hidden="true"
-            >
-              <span class="switch-knob" />
-            </span>
-          </template>
-        </BlockMenuItem>
-
-        <span class="menu-sep" />
-
-        <BlockMenuItem
-          data-block-menu-item="equal-columns"
-          :icon="Columns3"
-          label="均分列宽"
-          disabled
-          title="列宽固定等宽，暂不支持调整"
+        <TableEntryMenuItems
+          :header="header"
+          @toggle-header="toggleHeader"
         />
 
-        <!-- 通用段（缩进 / 复制剪切粘贴 / 删除）：与 query 块共用同一份实现与同一处顺序定义。
+        <!-- 通用段（缩进 / 复制剪切粘贴 / 清空 / 删除）：与所有块类型共用同一份实现与同一处顺序定义。
              类型专属项一律排在它上面，所以这里让通用段自带一条前置分隔线。 -->
         <BlockMenuCommon
           :block-id="blockId"
@@ -2924,38 +2924,7 @@ defineExpose({
 /* 菜单容器 / 菜单行 / 分隔线的样式已收口：
    - 容器与分隔线 → src/styles/components/_block.scss 的 .block-entry-menu（浮层 Teleport 到 body，全局类）
    - 菜单行       → src/components/common/BlockMenuItem.vue（scoped）
-   本组件只保留表格独有的内联开关轨道。 */
-
-/* 内联开关（仓库没有通用 switch 组件，单处使用不抽公共件）。
-   轨道用 --bg-hover，开启态用 --accent；只走 token，不写死色值。 */
-.switch {
-  position: relative;
-  flex: 0 0 auto;
-  width: 26px;
-  height: 14px;
-  border-radius: 999px;
-  background: var(--bg-hover);
-  transition: background var(--dur-fast) var(--ease-out);
-}
-
-.switch.is-on {
-  background: var(--accent);
-}
-
-.switch-knob {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: var(--color-white);
-  transition: transform var(--dur-fast) var(--ease-out);
-}
-
-.switch.is-on .switch-knob {
-  transform: translateX(12px);
-}
+   - 表头开关轨道 → ./TableEntryMenuItems.vue（独占菜单项的那一份，与它一起搬走了） */
 
 /* 表格外框与圆角都挂在滚动容器上：overflow 非 visible 时 border-radius 会裁剪内容，
    四角随圆弧裁掉；外框用 box-shadow 而不是 border —— 边框会占布局宽度，

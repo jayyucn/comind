@@ -147,11 +147,17 @@ impl FilterService {
     }
 
     /// 核销孤儿视图（启动时一次性）：扫孤儿前缀逐条核对所属块 ——
-    /// - 块仍存在（撤销已复活）→ 改回活前缀，配置保留；这是「标记而非删除」的必然配套。
-    /// - 块不存在 / 已软删 → 删掉整个 Screen（`delete_screen` 级联其下 Tabs）。
+    /// - 块仍存在（撤销已复活）**且活命名空间还空着** → 改回活前缀，配置保留；
+    ///   这是「标记而非删除」的必然配套。
+    /// - 块不存在 / 已软删 / 活命名空间已有行 → 删掉整个 Screen（`delete_screen` 级联其下 Tabs）。
     ///
     /// 判据只看块本身是否存在，不看 `deleted_at` 之外的任何状态：软删块在重启后永远不会被
     /// 撤销栈复活（栈是会话内内存），故与「不存在」等价。
+    ///
+    /// 「活命名空间已有行」这一条防的是**两套屏**：撤销把块捞回来时配置还在孤儿前缀，
+    /// 块重新挂载读到空命名空间会 seed 一套默认屏；用户接着改了列宽 / 筛选，活前缀就有了行。
+    /// 此时再把孤儿挂回去，同一个 `query-block:<id>` 下会并出两组 Screen（默认那组 + 旧那组）。
+    /// 这种情况说明孤儿已是过期副本，直接丢弃。
     pub fn cleanup_orphan_screen_views(
         storage: &mut dyn StorageAdapter,
         orphan_prefix: &str,
@@ -179,9 +185,10 @@ impl FilterService {
         let mut report = OrphanCleanupReport::default();
         for (block_id, items) in groups {
             let alive = repository::BlockRepository::get_by_id(storage.blocks(), &block_id).is_ok();
-            if alive {
-                // 块被撤销复活了：整组改回活命名空间，配置一个字不动
-                let live_entity = format!("{live_prefix}{block_id}");
+            let live_entity = format!("{live_prefix}{block_id}");
+            let live_taken = rows.iter().any(|row| row.entity == live_entity);
+            if alive && !live_taken {
+                // 块被撤销复活、且活命名空间还空着：整组改回，配置一个字不动
                 for (id, _) in &items {
                     repository::ScreenViewRepository::set_entity(storage.screen_views(), id, &live_entity, now)?;
                 }

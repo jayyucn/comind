@@ -90,6 +90,29 @@ mod tests {
         Ok(())
     }
 
+    /// 核销：块活着但**活命名空间已有行** ⇒ 丢弃孤儿（防同一命名空间两套屏）。
+    ///
+    /// 场景：撤销把块捞回来时配置还在孤儿前缀，块重新挂载读到空命名空间会 seed 一套默认屏，
+    /// 用户接着改了列宽/筛选。此时把孤儿挂回去，同一个 `query-block:<id>` 下就会并出两组 Screen。
+    #[test]
+    fn test_cleanup_drops_orphans_when_live_namespace_taken() -> Result<(), Box<dyn Error>> {
+        let mut adapter = create_test_adapter()?;
+        let page = PageService::create(&mut adapter, "", "P", None, None, None, None, None)?;
+        let block = BlockService::create(&mut adapter, &page.id, None, "", "{}", "query", None, true)?;
+        seed_view(&mut adapter, &format!("{LIVE}{}", block.id))?;
+        seed_view(&mut adapter, &format!("{ORPHAN}{}", block.id))?;
+
+        let report = FilterService::cleanup_orphan_screen_views(&mut adapter, ORPHAN, LIVE)?;
+
+        assert_eq!(report.restored, 0, "活命名空间被占用时不再挂回");
+        assert_eq!(report.deleted_screens, 1);
+        assert_eq!(report.deleted_tabs, 1);
+        let rows = ScreenViewRepository::get_all(adapter.screen_views())?;
+        assert_eq!(rows.len(), 2, "只剩活命名空间那一组");
+        assert!(rows.iter().all(|v| v.entity == format!("{LIVE}{}", block.id)));
+        Ok(())
+    }
+
     /// 非孤儿命名空间（任务中心 `block` / 页面库 `page` / 普通页面配置）一行都不能碰。
     #[test]
     fn test_cleanup_ignores_other_namespaces() -> Result<(), Box<dyn Error>> {

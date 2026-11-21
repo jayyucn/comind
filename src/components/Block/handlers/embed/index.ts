@@ -1,13 +1,16 @@
+import { Layers } from 'lucide-vue-next'
+
 import { useBlockRegistry } from '../../../../composables/useBlockRegistry'
+import type { BlockTypeHandler } from '../../../../types/block-type'
 import Editor from '../../../Editor.vue'
 import EmbedRender from './EmbedRender.vue'
-import type { BlockTypeHandler } from '../../../../types/block-type'
 
 const { register } = useBlockRegistry()
 
 const embedHandler: BlockTypeHandler = {
   type: 'embed',
   label: 'Embed',
+  entryIcon: Layers,
   editorComponent: Editor,
   renderComponent: EmbedRender,
   setupBlock(ctx) {

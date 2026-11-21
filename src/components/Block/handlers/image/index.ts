@@ -1,12 +1,15 @@
+import { Image } from 'lucide-vue-next'
+
 import { useBlockRegistry } from '../../../../composables/useBlockRegistry'
-import ImageRender from './ImageRender.vue'
 import type { BlockTypeHandler } from '../../../../types/block-type'
+import ImageRender from './ImageRender.vue'
 
 const { register } = useBlockRegistry()
 
 const imageHandler: BlockTypeHandler = {
   type: 'image',
   label: 'Image',
+  entryIcon: Image,
   // Image Block 无编辑态：editorComponent 与 renderComponent 共用 ImageRender
   editorComponent: ImageRender,
   renderComponent: ImageRender,

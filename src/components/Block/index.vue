@@ -23,9 +23,10 @@ import './handlers/table'
 
 import type { EditorView } from '@codemirror/view'
 import type { Editor } from '@tiptap/core'
-import { ChevronDown } from 'lucide-vue-next'
-import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, toRef, watch } from 'vue'
+import { ChevronDown, GripVertical, Type } from 'lucide-vue-next'
+import { computed, defineComponent, inject, nextTick, onBeforeUnmount, onMounted, ref, toRef, watch } from 'vue'
 
+import { useBlockEntryMenuExtra } from '../../composables/useBlockEntryMenuExtra'
 import { useBlockRegistry } from '../../composables/useBlockRegistry'
 import { useBlockRelationshipCleanup } from '../../composables/useBlockRelationshipCleanup'
 import type { CrossBlockSelection } from '../../composables/useCrossBlockSelection'
@@ -44,8 +45,10 @@ import {
   decodeRelationshipContentWithMeta,
   setRelationshipSnapshot,
 } from '../../utils/relationship-content'
+import BasePopover from '../common/BasePopover.vue'
 import BlockFieldZone from './BlockFieldZone.vue'
 import BlockDraggableList from './components/BlockDraggableList.vue'
+import BlockMenuCommon from './components/BlockMenuCommon.vue'
 import TaskProgressBar from './components/TaskProgressBar.vue'
 import { useBlockCollapse } from './composables/useBlockCollapse'
 import type { DragEndIntent } from './composables/useBlockDragDrop'
@@ -127,8 +130,11 @@ const isSelected = computed(() => {
 })
 const handler = computed(() => getHandler(block.value.type))
 
-/** 入口类型图标：有则替代 bullet dot（点击开本块菜单，同时是拖拽手柄） */
-const entryIcon = computed(() => handler.value?.entryIcon)
+/**
+ * 入口类型图标（所有块类型都有）：没注册 `entryIcon` 的类型按文本块处理，落 `Type` 字形。
+ * 点击开本块菜单，与右侧握把同在一个胶囊里，按下即拖拽（handled by Sortable handle）。
+ */
+const entryIcon = computed(() => handler.value?.entryIcon ?? Type)
 /** 入口相对块顶的下偏移：让图标压在本类型首行（表头行等）上 */
 const entryTop = computed(() => handler.value?.entryTop)
 
@@ -167,36 +173,6 @@ function onContentAlign(value: BlockAlign) {
   void blockStore.updateBlockFormat(blockId.value, { align: value })
 }
 
-/** 空 block：无内容且非标题（如 '# ' 开头）。表格块的内容在 format.table 里、正文恒为空，
-    视觉上并不空 —— 判空会让它的 bullet dot 挂在 hide-empty-bullet 上，只能靠 hover 显现，
-    而编辑态左侧那段被行/列操作条压着，hover 命中的是条带，dot 就等于永远不出现。 */
-const isEmptyBlock = computed(() => {
-  if (block.value.type === 'table') return false
-  const c = block.value.content ?? ''
-  return !/^#{1,6}\s+/.test(c) && c.trim() === ''
-})
-
-/** 同级兄弟节点（按 pos 排序） */
-const siblings = computed(() => {
-  return blockStore
-    .getBlocksByPage(props.pageId)
-    .filter(b => b.parentId === block.value.parentId)
-    .sort((a, b) => a.pos - b.pos)
-})
-
-/** 是否为首行或尾行（同级） */
-const isEdgeInLevel = computed(() => {
-  if (siblings.value.length <= 1) return true
-  const first = siblings.value[0]?.id === blockId.value
-  const last = siblings.value[siblings.value.length - 1]?.id === blockId.value
-  return first || last
-})
-
-/** 空 block 且非首行/尾行：未激活且未 hover 时隐藏 bullet */
-const hideBulletForEmpty = computed(() => {
-  return isEmptyBlock.value && !isEdgeInLevel.value
-})
-
 /** 页面是否仅有一个空 Block（唯一场景显示 placeholder） */
 const isSingleEmptyBlock = computed(() => {
   const contentBlocks = blockStore.getBlocksByPage(props.pageId)
@@ -204,11 +180,37 @@ const isSingleEmptyBlock = computed(() => {
 })
 
 const editorRef = ref<BlockTypeEditorExposed | null>(null)
-/** 渲染态（未激活）的组件实例：table/query 两态同组件，渲染态同样要能开入口菜单 */
-const renderRef = ref<{ openEntryMenu?: (anchorEl: HTMLElement) => void } | null>(null)
-/** 入口图标元素：既是要传给菜单的锚点，也是拖拽手柄（handle=".block-bullet"） */
-const entryEl = ref<HTMLElement | null>(null)
 const cursorPos = ref(0)
+
+// ── 入口菜单（所有块类型同一条路）────────────────────────────
+// 菜单归外壳：dot 与类型图标都在这里，锚点也在手边，不必让每个 handler 各自复制一份
+// popover。类型专属项（表格的表头开关、查询块的粘贴收尾）由 handler 注册到这里，
+// 通用段（`BlockMenuCommon`）所有类型共用一份。
+const { get: getEntryMenuExtra } = useBlockEntryMenuExtra()
+const menuOpen = ref(false)
+const menuAnchor = ref<HTMLElement | null>(null)
+/** 该块的类型专属段；无则 null */
+const entryMenuExtra = computed(() => getEntryMenuExtra(blockId.value))
+/**
+ * 通用段要不要自带前置分隔线：前面**真有专属项**才要。
+ * 不能只看「有没有注册」—— query 块注册了 afterPaste 却没有菜单项，照 Boolean 判断
+ * 会让菜单顶部横着一条没头没尾的线。`render` 里读到的 ref 依赖在这里也照常追踪。
+ */
+const menuHasExtraItems = computed(
+  () => (entryMenuExtra.value?.render(() => {}) ?? []).length > 0,
+)
+
+/**
+ * 专属段容器。`render()` 在这里被调用，也就是跑在外壳的渲染 effect 里 ——
+ * handler 闭包里读到的 ref（表格的 `header` 等）依赖因此被正常追踪。
+ * 传入的 `close` 是外壳的关菜单：专属项点下去后要连菜单一起收起。
+ */
+const EntryMenuExtra = defineComponent({
+  name: 'BlockEntryMenuExtra',
+  setup() {
+    return () => entryMenuExtra.value?.render(() => { menuOpen.value = false }) ?? []
+  },
+})
 
 // ── 常量配置 ──────────────────────────────────────────────
 const INDENT_WIDTH_PER_LEVEL = 14 // px
@@ -613,21 +615,24 @@ async function onLanguageChange(lang: string) {
   }
 }
 
-/**
- * 入口图标点击：菜单内容与表内状态都留在组件里，外壳只负责渲染图标并把自身元素当锚点传进去。
- * 两态同组件但挂在不同分支上（editorRef / renderRef），未激活时走渲染态实例。
- */
-function onEntryClick() {
-  const host = isActive.value ? editorRef.value : renderRef.value
-  const el = entryEl.value
-  if (!el || !host?.openEntryMenu) return
-  host.openEntryMenu(el)
+/** 开本块菜单：菜单本体归外壳，锚点就是被点的入口胶囊 */
+function openEntryMenu(anchorEl: HTMLElement) {
+  menuAnchor.value = anchorEl
+  menuOpen.value = true
 }
 
-/** bullet dot 点击：打开单块子树编辑弹窗；弹窗内（inBlockModal）为 no-op（ADR-0039） */
-function onBulletClick() {
+/**
+ * 入口点击（唯一入口：类型字形 + 拖拽握把同在一个胶囊里，所有块类型同一条路）。
+ *
+ * 以前这里是「把元素交给 handler 的 openEntryMenu」，菜单因此分裂成 table/query 两套
+ * popover、其余类型根本没有；收敛到外壳后类型只负责交出专属项（见 useBlockEntryMenuExtra）。
+ *
+ * 弹窗内（`inBlockModal`）保持 no-op：子树编辑器的根块有「禁 outdent / Enter 只建子块」
+ * 等特例（ADR-0039 D6），菜单搬进去要另裁一套可用性规则，不在本次范围内。
+ */
+function onEntryClick(e: MouseEvent) {
   if (inBlockModal) return
-  editorStore.openBlockModal(blockId.value)
+  openEntryMenu(e.currentTarget as HTMLElement)
 }
 
 function onDragOver(e: DragEvent) {
@@ -670,14 +675,13 @@ watch(isActive, (active) => {
       <!-- 内容区域（bullet + content）- 选中时边框只应用到此容器 -->
       <div class="block-inner">
         <!-- Bullet 区域（也是拖拽手柄 handle=".block-bullet"）：
-             有 entryIcon 的类型（table/query）渲染类型图标，替代 bullet dot ——
-             图标同时承担三件事：类型标识、点开本块菜单、按下拖动即拖拽。
-             无 entryIcon 的类型仍是 dot：常显，点击打开单块子树编辑弹窗（BlockModal）。
+             所有类型同一个入口胶囊 —— 类型字形 + 拖拽握把，hover 块时显现，
+             点击开本块菜单，按下拖动即拖拽；bullet dot 已从外壳下线（ADR-0039 D9 修订）。
              chevron 在有子块**或有字段行**时（canCollapse，ADR-0045 折叠范围扩展）且 hover 时显现，
              点击负责折叠/展开（ADR-0039） -->
         <span
           class="block-bullet"
-          :class="{ collapsed, 'hide-empty-bullet': !entryIcon && hideBulletForEmpty }"
+          :class="{ collapsed }"
         >
           <span
             v-if="canCollapse"
@@ -694,25 +698,22 @@ watch(isActive, (active) => {
             />
           </span>
           <span
-            v-if="entryIcon"
-            ref="entryEl"
             class="block-entry-icon"
             :title="handler?.entryLabel"
-            :aria-label="handler?.entryLabel"
+            :aria-label="handler?.entryLabel ?? '块菜单'"
             @click.stop="onEntryClick"
           >
             <component
               :is="entryIcon"
-              :size="12"
+              :size="10"
               :stroke-width="1.8"
             />
+            <GripVertical
+              class="block-entry-grip"
+              :size="9"
+              :stroke-width="2"
+            />
           </span>
-          <span
-            v-else
-            class="bullet-dot"
-            title="打开块详情"
-            @click.stop="onBulletClick"
-          />
         </span>
 
         <div class="block-body">
@@ -759,7 +760,6 @@ watch(isActive, (active) => {
             <component
               :is="handler.renderComponent"
               v-else-if="handler"
-              ref="renderRef"
               :block-id="blockId"
               :content="block.content"
               :block-format="block.format"
@@ -837,5 +837,32 @@ watch(isActive, (active) => {
       :class="childrenContainerClass"
       @drag-end="intent => onDragEnd?.(intent)"
     />
+
+    <!--
+      块入口菜单（ADR-0039 D9）：所有块类型共用这一处。
+      - 类型专属项由 handler 注册（useBlockEntryMenuExtra），排在最上面；
+      - 通用段 `BlockMenuCommon` 单源定义项序与分组，有专属项时它自带前置分隔线；
+      - 浮层 Teleport 到 body，容器类 `.block-entry-menu` 在全局 _block.scss。
+      `mousedown.prevent`：菜单里按下不抢走编辑器的焦点/光标（打开菜单不改编辑态）。
+    -->
+    <BasePopover
+      :visible="menuOpen"
+      :anchor-el="menuAnchor"
+      placement="bottom"
+      @close="menuOpen = false"
+    >
+      <div
+        class="block-entry-menu"
+        @mousedown.prevent
+      >
+        <EntryMenuExtra v-if="menuHasExtraItems" />
+        <BlockMenuCommon
+          :block-id="blockId"
+          :no-divider-top="!menuHasExtraItems"
+          :after-paste="entryMenuExtra?.afterPaste"
+          @close="menuOpen = false"
+        />
+      </div>
+    </BasePopover>
   </div>
 </template>

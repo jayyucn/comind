@@ -172,9 +172,13 @@ test.describe('Block drag and drop', () => {
     await page.mouse.move(nestX, nestY, { steps: 10 })
     await page.waitForTimeout(300)
 
-    // 应显示 nest 指示器
-    const nestIndicator = page.locator('.drop-indicator.nest.visible')
+    // nest 语义只剩横向偏移：指示器组件固定 `class="drop-indicator"`，动作类型不再落到
+    // 类名上（cssClass 恒为空串），nest 表达为「从目标 bullet 左缘再右移一级」。
+    const nestIndicator = page.locator('.drop-indicator.visible')
     await expect(nestIndicator).toBeVisible({ timeout: 2000 })
+    const nestBox = await nestIndicator.boundingBox()
+    if (!nestBox) throw new Error('量不到落位指示器')
+    expect(Math.abs(nestBox.x - (parentBox!.x + 34))).toBeLessThanOrEqual(1)
 
     await page.mouse.up()
     await page.waitForTimeout(1000)

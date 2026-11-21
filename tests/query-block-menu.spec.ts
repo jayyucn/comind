@@ -51,7 +51,7 @@ test('查询块左上入口 hover 显现，菜单九项齐全，删除生效', a
     '复制',
     '剪切',
     '粘贴',
-    '重置为文本块',
+    '清空',
     '删除',
   ])
   // 顺序与身份用句柄锁（文案以后可以改，顺序不能乱）
@@ -61,7 +61,7 @@ test('查询块左上入口 hover 显现，菜单九项齐全，删除生效', a
     ),
   ).toEqual(['insert-above', 'insert-below', 'indent', 'outdent', 'copy', 'cut', 'paste', 'reset-text', 'delete'])
 
-  // 分五组：插入 / 缩进 / 剪贴板 / 重置 / 销毁（重置与删除各占一组 —— 两者都真的删东西，
+  // 分五组：插入 / 缩进 / 剪贴板 / 清空 / 删除（清空与删除各占一组 —— 两者都真的删东西，
   // 只差一次误点，靠分隔线守住距离）
   await expect(menu.locator('.menu-sep')).toHaveCount(4)
 

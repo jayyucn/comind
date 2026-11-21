@@ -129,7 +129,9 @@
   cursor: pointer;
 }
 
-// Bullet 圆点（叶节点）
+// Bullet 圆点：仅剩非编辑器表面（Backlinks / Ideas 快照 / embed 子块）在用。
+// 编辑器外壳的入口已统一为下面的 `.block-entry-icon` 胶囊，这里只提供基础外观，
+// 那些表面的 hover / cursor 由各自组件覆写。
 .bullet-dot {
   width: var(--block-bullet-size);
   height: var(--block-bullet-size);
@@ -140,38 +142,71 @@
   flex-shrink: 0;
 }
 
-// 非文本块的入口图标（table/query）：替代 bullet dot，兼「块菜单按钮」与「拖拽手柄」。
-// 仅 hover 显现 —— dot 是常显的弱提示，图标有类型标识作用，但整列常显会变成一束图标墙。
+// 块入口胶囊（所有块类型统一）：类型字形 + 拖拽握把，hover 块时显现。
+// 为什么是一个胶囊而不是两个按钮：字形回答「这是什么块」、握把回答「这里能拖」，
+// 两者在同一个 20px 的入口格里分不出两块独立命中面；合起来才装得下，也才读得像一个控件。
+// 几何：入口格固定 20px，胶囊 24px 并向左悬出 4px —— 正文左缘纹丝不动（内容起点由入口格
+// 宽度决定，不是由胶囊决定），悬出的 4px 落进缩进槽 / 页边留白（.main-content 左内边距 24px）。
 // 显隐挂 .block-row:hover 而不是自身：自身 pointer-events:none 时永远触发不了 :hover。
-// cursor: grab 是这个元素唯一能表达「这里可以拖」的线索（它不再是圆点）。
+// cursor: grab 是「这里可以拖」的唯一线索。
 .block-entry-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 100%;
-  height: 100%;
+  flex-shrink: 0;
+  width: 44px;
+  height: 28px;
+  margin-left: -4px;
+  padding: 0 1px;
+  box-sizing: border-box;
+  border: 1px solid transparent;
   border-radius: $radius-sm;
+  gap: 1px;
   color: var(--text-tertiary);
   opacity: 0;
   pointer-events: none;
   cursor: grab;
-  transition: opacity var(--dur-fast) var(--ease-out) 240ms, background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+  transition:
+    opacity var(--dur-fast) var(--ease-out) 240ms,
+    background var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
 
   &:active {
     cursor: grabbing;
   }
 }
 
+// 握把永远比字形轻一档：它是装饰性提示，不该跟类型字形抢注意力
+.block-entry-grip {
+  flex-shrink: 0;
+  opacity: 0.55;
+}
+
+// 胶囊贴着入口格的右缘：入口格宽度是布局基准，右缘 = 正文起点，不能因为悬出而挪动
+.block-bullet:has(> .block-entry-icon) {
+  justify-content: flex-end;
+  cursor: grab;
+}
+
 .block-row:hover .block-entry-icon,
 .block-bullet:hover .block-entry-icon {
   opacity: 1;
   pointer-events: auto;
+  background: var(--bg-hover);
+  // 描边取 border-light 而非 border：暗色下 --border 与 --bg-hover 同为 #2E2E32，
+  // 胶囊会退化成一块没有边界的灰面（弱底被 hover 吞的老坑）
+  border-color: var(--border-light);
   transition-delay: 0s;
 }
 
 .block-entry-icon:hover {
-  background: var(--bg-hover);
+  background: var(--bg-active);
   color: var(--text-primary);
+
+  .block-entry-grip {
+    opacity: 0.9;
+  }
 }
 
 // 表格块的入口图标住进「角块」：表格左上角、列条左端、行条上方的那块空白。
@@ -179,15 +214,17 @@
 // 顶部往下），角块里没有任何别人的东西 —— 图标既不必缩小，也不必左移，位置还正好是
 // 表格自己的「全选角」。
 // 落位：bullet 格的 margin-top 由 handler 的 entryTop 给出（table 16px，为的是与表头文字
-// 同行），这里**抵消**它把图标抬回块顶；盒子高度收到 12px（= 字形高），于是命中面就是
-// 这 20×12 的角块，不会往下伸进首行条（条高 33px，从角块下沿再往下开始）。
-// 宽度保持整格 20px（图标居中于 bullet 列，与文本块圆点同列）。
+// 同行），这里**抵消**它把胶囊抬回块顶；胶囊高度收到 12px（= 字形高，上下边框让位），
+// 于是命中面就是这 24×12 的角块，不会往下伸进首行条（条高 33px，从角块下沿再往下开始）。
+// 右缘仍落在整格右缘（= 表格左缘）上，左侧那 4px 悬出与文本块胶囊同口径。
 $block-entry-corner-height: 12px;
 
 .block-row:has(.table-block) .block-bullet:has(> .block-entry-icon) > .block-entry-icon {
   align-self: flex-start;
   height: $block-entry-corner-height;
   margin-top: calc(-1 * var(--block-entry-top, 0px));
+  // 上下边框让给 12px 的字形高度，否则 content-box 只剩 10px、字形被压小
+  border-block-width: 0;
 
   // 字形不参与命中：命中面严格等于上面那个角块，字形溢出的部分不会抢条带的点击。
   > svg {
@@ -213,20 +250,17 @@ $block-entry-corner-height: 12px;
   }
 }
 
-// 空 block 且非首行/尾行：未激活且未 hover 时隐藏圆点（保留布局空间）
-.block-bullet.hide-empty-bullet .bullet-dot {
-  visibility: hidden;
-}.block-bullet.hide-empty-bullet:hover .bullet-dot,
-.block.active>.block-row .block-bullet.hide-empty-bullet .bullet-dot {
-  visibility: visible;
-}
+// 空块不再需要「隐藏 bullet」这条规则：入口胶囊对所有块（含空块）都是 hover 才现，
+// 一列空胶囊的问题随 dot 下线一并消失。
 
 // Chevron 箭头（父节点）：默认隐藏，仅 hover / 激活时显现（ADR-0039：折叠手势改由 chevron 承担）
 // lucide 单图标 ChevronDown + CSS 旋转表达折叠方向（不再 v-if 换图标 —— 换图标只能瞬间
 // 跳变，旋转过渡才能与折叠动效同步起止）。
+// 左移 24px 是给入口胶囊让位：胶囊悬出 4px，chevron 的 18px 宽度贴在它左侧（2px 间隙）。
+// 深度 0 时 -24px 正好落在正文容器的左内边距边缘（--space-6 24px），不会溢出。
 .bullet-chevron {
   position: absolute;
-  left: -16px;
+  left: -24px;
   top: 4px;
   display: inline-flex;
   align-items: center;
@@ -246,29 +280,20 @@ $block-entry-corner-height: 12px;
   }
 }
 
-// Hover 效果：圆点点 hover 放大（仅 bullet 区域）
-.block-bullet:hover {
-  .bullet-dot {
-    opacity: 0.7;
-    transform: scale(1.4);
-    box-shadow: 0 0 0 3px var(--accent-08);
-  }
-}
-
 // 表格块（条带已渲染）：bullet 的 20px 格就是表格左侧那 20px gutter，行/列条带
 // （宽 10px，贴表格左缘）正好压在格的右半，且条带 z-index: $z-sticky —— 不抬层的话
-// 鼠标落在 dot 上命中的是行条（点 dot 变成打开行菜单），dot 也被条带吃掉一半。
+// 鼠标落在胶囊上命中的是行条（点入口变成打开行菜单），胶囊也被条带吃掉一半。
 // 容器让位：抬层后 20px 宽的容器会整段盖住 10px 宽的条带，条带就点不到了；只让
-// dot / chevron 这两个子元素恢复指针。限定到条带存在时，渲染态不受影响。
-// 图标入口类型的图标盒已缩到格的左半（见上方 .block-entry-icon 段），与条带不重叠，
-// 抬层对它只剩下「子元素不吃指针」这一条意义。
+// chevron 这个子元素恢复指针。限定到条带存在时，渲染态不受影响。
+// 入口胶囊的右缘本就停在格的右缘（表格左缘），与条带不重叠，抬层对它只剩下
+// 「子元素不吃指针」这一条意义。
 // 只限表格块：图片块的左中缩放把手同样贴在本区域中线，全局抬层会把它盖掉。
 .block-row:has(.table-block):has(.strip) .block-bullet {
   z-index: $z-block-chrome;
   pointer-events: none;
 
-  // 入口图标例外：它自己的 pointer-events 由显隐规则控制（隐藏时不占指针），
-  // 否则 opacity:0 的图标仍会吃掉 dot 附近那块热区。
+  // 入口胶囊例外：它自己的 pointer-events 由显隐规则控制（隐藏时不占指针），
+  // 否则 opacity:0 的胶囊仍会吃掉条带附近那块热区。
   > *:not(.block-entry-icon) {
     pointer-events: auto;
   }
@@ -299,12 +324,8 @@ $block-entry-corner-height: 12px;
   opacity: 0.75;
 }
 
-// Active Block：行内 bullet 与 chevron 同步弱化显示
+// Active Block：行内 chevron 弱化显示（入口胶囊只在 hover 时出现，不参与激活态）
 .block.active>.block-row {
-
-  .bullet-dot {
-    opacity: 0.55;
-  }
 
   .bullet-chevron {
     opacity: 0.6;

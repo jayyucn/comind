@@ -1,14 +1,15 @@
 /**
- * 块入口（block entry）回归网：table/query 的左上角入口已上提到 Block 外壳的
- * `.block-bullet`，由 handler 的 `entryIcon` 驱动渲染，替代 bullet dot。
+ * 块入口（block entry）回归网：所有块类型的入口统一为 Block 外壳 `.block-bullet` 里的
+ * 一个胶囊 —— 类型字形 + 拖拽握把，由 handler 的 `entryIcon` 驱动（缺省落文本 `Type` 字形）。
  *
  * 钉死的行为：
- * 1. table/query 块**不再渲染** `.bullet-dot`，改为渲染 `.block-entry-icon`；
- * 2. 图标仅 hover 显现（dot 是常显弱提示，图标的显隐挂在 `.block-row:hover` 上，
- *    自身 `pointer-events:none` 时永远触发不了 `:hover`，所以必须有块那一路）；
- * 3. 点图标开本块菜单 —— 菜单本体仍由 TableBlock 自己渲染，锚点是外壳那个图标；
- * 4. 图标同时是拖拽手柄（`handle=".block-bullet"`），按下即能起拖；
- * 5. 文本块不受影响：仍是 `.bullet-dot`，点击开 BlockModal。
+ * 1. 外壳**不再渲染** `.bullet-dot`（dot 只剩 Backlinks / Ideas 快照 / embed 子块在用）；
+ * 2. 胶囊仅 hover 块时显现（显隐挂在 `.block-row:hover` 上，自身 `pointer-events:none` 时
+ *    永远触发不了 `:hover`，所以必须有块那一路）；
+ * 3. 点胶囊打开块菜单（ADR-0039 D9：菜单归外壳，类型专属项经 useBlockEntryMenuExtra
+ *    由 handler 交出）；
+ * 4. 胶囊同时是拖拽手柄（`handle=".block-bullet"`），按下即能起拖；
+ * 5. 点入口不再弹 BlockModal（主编辑器已无弹窗入口）。
  *
  * 运行：`npm run dev`（已起则复用）后
  * `npx playwright test tests/block-entry.spec.ts`
@@ -48,7 +49,7 @@ const opacityOf = (page: Page, selector: string) => page.evaluate(
   selector,
 )
 
-test('表格块：入口是类型图标，bullet dot 不再渲染', async ({ page }) => {
+test('表格块：入口是类型胶囊（字形 + 握把），bullet dot 不再渲染', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto('/')
   await page.waitForLoadState('networkidle')
@@ -57,7 +58,8 @@ test('表格块：入口是类型图标，bullet dot 不再渲染', async ({ pag
 
   const tableBlock = page.locator('.block:has(.table-block)').first()
   await expect(tableBlock.locator('.block-entry-icon')).toHaveCount(1)
-  // 整个块树里不该再有 dot —— 包括表格块自己
+  await expect(tableBlock.locator('.block-entry-grip')).toHaveCount(1)
+  // 外壳里不该再有 dot —— 文本块也一样（见下方文本块用例）
   await expect(tableBlock.locator('> .block-row > .block-inner > .block-bullet > .bullet-dot')).toHaveCount(0)
 })
 
@@ -157,9 +159,9 @@ test('入口图标住角块：不压首行操作条、不缩小、不左移', as
   await wait(600)
   await createTable(page)
 
-  // 表格块的入口图标住在「角块」：表格左上角、列条左端、首行条上方那块空白。
+  // 表格块的入口胶囊住在「角块」：表格左上角、列条左端、首行条上方那块空白。
   // 它必须在纵向让出首行条（条带 33px 高，bullet 抬层后 z 高于条带，压上去就点不到），
-  // 同时保持整格 20px 宽（图标居中于 bullet 列，不左移、不缩小）。
+  // 横向则与文本块同口径：胶囊 24px、右缘贴住入口格右缘（= 表格左缘），向左悬出 4px。
   await page.locator('.table-block').first().hover()
   await wait(400)
 
@@ -183,6 +185,7 @@ test('入口图标住角块：不压首行操作条、不缩小、不左移', as
       iconRight: icon.right,
       iconBottom: icon.bottom,
       bulletLeft: bullet.left,
+      bulletRight: bullet.right,
       bulletW: bullet.width,
       stripLeft: strip.left,
       stripRight: strip.right,
@@ -196,11 +199,12 @@ test('入口图标住角块：不压首行操作条、不缩小、不左移', as
   })
   if (!geo) throw new Error('量不到入口图标或首行条')
 
-  // 不缩小：与 bullet 格同宽（20px），横向位置就是 bullet 列
+  // 入口格仍是 20px（布局基准不动），胶囊 24px：正文左缘不因胶囊变宽而挪动
   expect(geo.bulletW).toBeCloseTo(20, 0)
-  expect(geo.iconW).toBeCloseTo(20, 0)
-  expect(geo.iconLeft).toBeCloseTo(geo.bulletLeft, 0)
-  // 不左移：图标右缘落在表格左缘（也就是行条右缘）上，整格横向盖住条带所在的列
+  expect(geo.iconW).toBeCloseTo(24, 0)
+  expect(geo.iconLeft).toBeCloseTo(geo.bulletLeft - 4, 0)
+  expect(geo.iconRight).toBeCloseTo(geo.bulletRight, 0)
+  // 右缘落在表格左缘（也就是行条右缘）上
   expect(Math.abs(geo.iconRight - geo.stripRight)).toBeLessThanOrEqual(1)
   // 让出条带：图标底边不越过条带顶（允许 2px 的圆角膜差）
   expect(geo.iconBottom).toBeLessThanOrEqual(geo.stripTop + 2)
@@ -216,15 +220,58 @@ test('入口图标住角块：不压首行操作条、不缩小、不左移', as
   await expect(page.locator('.range-menu')).toBeVisible()
 })
 
-test('文本块不受影响：仍是 bullet dot，没有入口图标', async ({ page }) => {
+test('文本块：入口同样是类型胶囊（T 字形 + 握把），外壳不再渲染 dot', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto('/')
   await page.waitForLoadState('networkidle')
   await wait(600)
 
   const bulletBlock = page.locator('.block[data-block-id]').first()
-  await expect(bulletBlock.locator('.bullet-dot').first()).toHaveCount(1)
-  await expect(bulletBlock.locator('.block-entry-icon')).toHaveCount(0)
+  await expect(bulletBlock.locator('.block-entry-icon')).toHaveCount(1)
+  await expect(bulletBlock.locator('.block-entry-grip')).toHaveCount(1)
+  await expect(bulletBlock.locator('.bullet-dot')).toHaveCount(0)
+})
+
+test('文本块：点入口胶囊打开同一套菜单，且不再弹 BlockModal（ADR-0039 D9）', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto('/')
+  await page.waitForLoadState('networkidle')
+  await wait(600)
+
+  // 空块的胶囊同样默认隐藏（hover 才现），先给它一行正文再点
+  const block = page.locator('.block[data-block-id]').first()
+  await block.click()
+  await wait(300)
+  await page.keyboard.type('DOT-MENU', { delay: 20 })
+  await wait(500)
+  await page.keyboard.press('Escape')
+  await wait(400)
+
+  await block.hover()
+  await wait(250)
+  await block.locator('> .block-row > .block-inner > .block-bullet > .block-entry-icon').click()
+  await wait(400)
+
+  await expect(page.locator('.block-entry-menu')).toBeVisible()
+  // 文本块的入口不再通向子树编辑弹窗
+  await expect(page.locator('.block-modal-overlay')).toHaveCount(0)
+
+  // 没有类型专属项，所以项序就是通用段本身，且不带前置分隔线
+  const items = await page
+    .locator('.block-entry-menu [data-block-menu-item]')
+    .evaluateAll((els) => els.map((el) => el.getAttribute('data-block-menu-item')))
+  expect(items).toEqual([
+    'insert-above',
+    'insert-below',
+    'indent',
+    'outdent',
+    'copy',
+    'cut',
+    'paste',
+    'reset-text',
+    'delete',
+  ])
+  await expect(page.locator('.block-entry-menu .menu-sep')).toHaveCount(4)
 })
 
 test('查询块：入口同样是类型图标而非 dot', async ({ page }) => {
@@ -263,12 +310,12 @@ test('通用菜单项：在下方插入新块，落在表格块紧邻位置并�
   await wait(600)
 
   await expect.poll(async () => page.locator('.block').count()).toBe(before + 1)
-  // 表格块在前，新块紧随其后：空文本块（dot 而非类型图标）、且直接进编辑态
+  // 表格块在前，新块紧随其后：空文本块（同样是胶囊入口，只是字形为 T）、且直接进编辑态
   const blocks = page.locator('.block')
   await expect(blocks.first().locator('.table-block')).toHaveCount(1)
   const inserted = blocks.nth(1)
   await expect(inserted.locator('.table-block')).toHaveCount(0)
-  await expect(inserted.locator('> .block-row > .block-inner > .block-bullet > .bullet-dot')).toHaveCount(1)
+  await expect(inserted.locator('> .block-row > .block-inner > .block-bullet > .block-entry-icon')).toHaveCount(1)
   await expect(inserted).toHaveClass(/active/)
 })
 
@@ -291,7 +338,7 @@ test('通用菜单项：在上方插入新块，落在表格块之前', async ({
   await expect(page.locator('.table-block')).toHaveCount(1)
 })
 
-test('通用菜单项：重置为文本块 → 表格消失成空文本块；Ctrl+Z 把表格整体找回', async ({ page }) => {
+test('通用菜单项：清空 → 表格消失成空文本块；Ctrl+Z 把表格整体找回', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto('/')
   await page.waitForLoadState('networkidle')
@@ -309,8 +356,8 @@ test('通用菜单项：重置为文本块 → 表格消失成空文本块；Ctr
 
   // 删块 + 同位置新建：表格没了，那一行变成普通文本块
   await expect(page.locator('.table-block')).toHaveCount(0)
-  await expect(page.locator('.block-entry-icon')).toHaveCount(0)
-  await expect(page.locator('.bullet-dot').first()).toBeVisible()
+  await expect(page.locator('.bullet-dot')).toHaveCount(0)
+  await expect(page.locator('.block-entry-icon')).toHaveCount(1)
 
   // 撤销：块连同表格配置一起回来（删除与新建在同一个快照步里）
   await page.keyboard.press('Escape')
