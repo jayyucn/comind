@@ -274,6 +274,42 @@ test('文本块：点入口胶囊打开同一套菜单，且不再弹 BlockModal
   await expect(page.locator('.block-entry-menu .menu-sep')).toHaveCount(4)
 })
 
+test('悬停入口胶囊即开菜单，指针离开才收起（不必点击）', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto('/')
+  await page.waitForLoadState('networkidle')
+  await wait(600)
+
+  const block = page.locator('.block[data-block-id]').first()
+  await block.click()
+  await wait(300)
+  await page.keyboard.type('HOVER-MENU', { delay: 20 })
+  await wait(400)
+  await page.keyboard.press('Escape')
+  await wait(300)
+
+  // 真实走位：先把指针放到正文上（胶囊这才显现），再平移到胶囊 —— 全程不点
+  const row = (await block.locator('> .block-row').boundingBox())!
+  await page.mouse.move(row.x + 220, row.y + 8, { steps: 4 })
+  await wait(150)
+  const icon = (await block.locator('.block-entry-icon').boundingBox())!
+  await page.mouse.move(icon.x + icon.width / 2, icon.y + icon.height / 2, { steps: 10 })
+
+  await expect(page.locator('.block-entry-menu')).toBeVisible()
+  // 悬停菜单不是模态浮层：铺全屏 overlay 会把页面其余部分的 hover/点击一起吃掉
+  await expect(page.locator('[data-testid="base-popover-overlay"]')).toHaveCount(0)
+
+  // 指针走进菜单：保持展开（否则移到菜单的路上就没了）
+  const menu = (await page.locator('.block-entry-menu').boundingBox())!
+  await page.mouse.move(menu.x + 60, menu.y + 20, { steps: 8 })
+  await wait(400)
+  await expect(page.locator('.block-entry-menu')).toBeVisible()
+
+  // 移开 → 收起
+  await page.mouse.move(row.x + 420, row.y + 320, { steps: 8 })
+  await expect(page.locator('.block-entry-menu')).toHaveCount(0)
+})
+
 test('查询块：入口同样是类型图标而非 dot', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto('/')

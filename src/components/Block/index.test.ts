@@ -31,6 +31,7 @@ import { useEditorStore } from '../../stores/editor'
 import { useFieldValueStore } from '../../stores/fieldValue'
 import { useTagsStore } from '../../stores/tags'
 import type { PersistedTagTreeEntry, PersistedFieldDefinition } from '../../types/tag-persisted'
+import { blockDragActive } from './composables/useBlockDragDrop'
 
 vi.mock('../../storage/indexedDB', () => ({
   storage: {
@@ -787,6 +788,132 @@ describe('块入口胶囊打开本块菜单（ADR-0039 D9：入口不再开弹�
     await wrapper.find('.block-entry-icon').trigger('click')
     await flushPromises()
     expect(document.body.querySelector('.block-entry-menu')).toBeNull()
+    wrapper.unmount()
+  })
+})
+
+// ── 悬停开菜单 ────────────────────────────────────────────
+//
+// 手势本身（指针停上去就开、移开就收）是这次的需求；jsdom 没有命中面/hover 链，
+// 这里锁的是**开合时序与互斥**：谁在什么时候把 menuOpen 置真/置假。
+describe('块入口胶囊悬停即开菜单（不必点击）', () => {
+  const ENTRY_OPEN_DELAY = 120
+  const ENTRY_CLOSE_DELAY = 260
+
+  function mountBlock() {
+    const blockStore = useBlockStore()
+    blockStore.blocks = [
+      { id: 'b1', pageId: 'p1', parentId: null, pos: 0, content: '', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0 },
+    ]
+    const node: TreeNode = { id: 'b1', block: blockStore.blocks[0], children: [] }
+    return mount(Block, {
+      props: { node, pageId: 'p1', depth: 0 },
+      global: { stubs: { BulletRender: StubBulletRender, VueDraggable: StubVueDraggable } },
+    })
+  }
+
+  function menuEl(): Element | null {
+    return document.body.querySelector('.block-entry-menu')
+  }
+
+  /**
+   * 派发 pointerenter。不能用 `trigger(..., { buttons })`：VTU 建的是 MouseEvent，
+   * `buttons` 只有 getter，赋值直接抛错；MouseEvent 构造器的 init 里可以给。
+   */
+  function pointerEnter(el: Element, buttons = 0) {
+    el.dispatchEvent(new MouseEvent('pointerenter', { buttons }))
+  }
+
+  /** 推进假计时器并让 Teleport/过渡跑完 */
+  async function settle(ms: number) {
+    vi.advanceTimersByTime(ms)
+    await flushPromises()
+  }
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    vi.useFakeTimers()
+    document.body.querySelectorAll('.block-entry-menu').forEach((n) => n.remove())
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    blockDragActive.value = false
+  })
+
+  it('指针停进入口胶囊就开菜单，不必点击', async () => {
+    const wrapper = mountBlock()
+    await flushPromises()
+
+    pointerEnter(wrapper.find('.block-entry-icon').element)
+    // 延迟未到：扫过左栏不该立刻弹
+    expect(menuEl()).toBeNull()
+
+    await settle(ENTRY_OPEN_DELAY + 20)
+    expect(menuEl()).toBeTruthy()
+    // 悬停菜单不是模态弹层：铺全屏 overlay 会把页面其余部分的 hover/点击吃掉
+    expect(document.body.querySelector('[data-testid="base-popover-overlay"]')).toBeNull()
+
+    wrapper.unmount()
+  })
+
+  it('指针离开胶囊后菜单收起', async () => {
+    const wrapper = mountBlock()
+    await flushPromises()
+
+    const icon = wrapper.find('.block-entry-icon')
+    pointerEnter(icon.element)
+    await settle(ENTRY_OPEN_DELAY + 20)
+    expect(menuEl()).toBeTruthy()
+
+    await icon.trigger('pointerleave')
+    await settle(ENTRY_CLOSE_DELAY + 20)
+    expect(menuEl()).toBeNull()
+
+    wrapper.unmount()
+  })
+
+  it('走进菜单不收起：菜单上的 pointerenter 取消离开宽限', async () => {
+    const wrapper = mountBlock()
+    await flushPromises()
+
+    const icon = wrapper.find('.block-entry-icon')
+    pointerEnter(icon.element)
+    await settle(ENTRY_OPEN_DELAY + 20)
+
+    await icon.trigger('pointerleave')
+    menuEl()!.dispatchEvent(new Event('pointerenter'))
+    await settle(ENTRY_CLOSE_DELAY + 20)
+
+    expect(menuEl()).toBeTruthy()
+
+    wrapper.unmount()
+  })
+
+  it('按住键扫过入口格不开菜单（跨块选区 / 拖拽途中）', async () => {
+    const wrapper = mountBlock()
+    await flushPromises()
+
+    pointerEnter(wrapper.find('.block-entry-icon').element, 1)
+    await settle(ENTRY_OPEN_DELAY + 20)
+
+    expect(menuEl()).toBeNull()
+
+    wrapper.unmount()
+  })
+
+  it('拖拽进行中不弹菜单（锚点已被摘成 display:none）', async () => {
+    const wrapper = mountBlock()
+    await flushPromises()
+
+    blockDragActive.value = true
+    pointerEnter(wrapper.find('.block-entry-icon').element)
+    await settle(ENTRY_OPEN_DELAY + 20)
+
+    expect(menuEl()).toBeNull()
+
+    blockDragActive.value = false
     wrapper.unmount()
   })
 })

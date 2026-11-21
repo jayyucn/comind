@@ -159,9 +159,9 @@
   margin-left: -4px;
   padding: 0 1px;
   box-sizing: border-box;
-  border: 1px solid transparent;
+  border: 1px solid var(--border);
   border-radius: $radius-sm;
-  gap: 1px;
+  gap: 4px;
   color: var(--text-tertiary);
   opacity: 0;
   pointer-events: none;
@@ -193,7 +193,7 @@
 .block-bullet:hover .block-entry-icon {
   opacity: 1;
   pointer-events: auto;
-  background: var(--bg-hover);
+  // background: var(--bg-hover);
   // 描边取 border-light 而非 border：暗色下 --border 与 --bg-hover 同为 #2E2E32，
   // 胶囊会退化成一块没有边界的灰面（弱底被 hover 吞的老坑）
   border-color: var(--border-light);
@@ -201,7 +201,7 @@
 }
 
 .block-entry-icon:hover {
-  background: var(--bg-active);
+  // background: var(--bg-active);
   color: var(--text-primary);
 
   .block-entry-grip {

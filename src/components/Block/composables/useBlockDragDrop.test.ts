@@ -39,6 +39,11 @@ function ROW(top: number): FakeRect {
   return { left: 100, right: 500, top, bottom: top + 30, width: 400, height: 30 }
 }
 
+/** 隐藏元素（display:none）的矩形：全 0 —— 真机 getBoundingClientRect 的返回值 */
+function ZERO(): FakeRect {
+  return { left: 0, right: 0, top: 0, bottom: 0, width: 0, height: 0 }
+}
+
 /** 拖拽容器（渲染 data-parent-id，根级为 ''） */
 function makeContainer(): HTMLElement {
   const container = document.createElement('div')
@@ -178,20 +183,22 @@ describe('useBlockDragDrop', () => {
       const onDragEnd = vi.fn()
       const hook = useBlockDragDrop({ blockStore, onDragEnd })
 
-      // 向下拖 A：Sortable 已把 A 换到 B 之后 → DOM [B, A]，指针停在 A 的占位行（130..160）上
+      // 向下拖 A：Sortable 已把 A 换到 B 之后 → DOM [B, A]，指针停在 B 行下半区
       const container = makeContainer()
-      makeBlockEl('B', ROW(100), container)
-      const a = makeBlockEl('A', ROW(130), container)
+      const b = makeBlockEl('B', ROW(100), container)
+      // 被拖本体在 @start 后被摘成 display:none：仍留在容器的原槽位上，但矩形全为 0
+      // （真机实测，且它不带 block-ghost/block-drag 类 —— 只能靠「是不是被拖元素」识别）
+      const a = makeBlockEl('A', ZERO(), container)
       makeBlockEl('A', ROW(130), container, 'block block-drag') // fallback 克隆，不是合法目标
 
-      stubElementFromPoint(a) // 指针命中的是被拖元素自己
+      stubElementFromPoint(b) // 指针命中的是 B（克隆跟手，真机上指针压的是克隆）
       const pointerMove = startDrag(hook.handleDragStart, a)
       pointerMove({ clientX: 100, clientY: 145 })
 
       expect(hook.indicatorVisible.value).toBe(true)
       expect(hook.indicatorClass.value).toBe('')
-      // 统一槽位：横线在同级内容列（bullet 左缘 100），纵向锚在真正的插入口
-      // （被拖元素自己的行顶 = 虚线占位处），而不是目标行顶部
+      // 统一槽位：横线在同级内容列（bullet 左缘 100），纵向锚在真正的插入口 ——
+      // B 行底（A 的原槽位）。绝不能用隐藏本体的 0 矩形，否则线会贴上视口顶部。
       expect(hook.indicatorStyle.value.left).toBe('100px')
       expect(hook.indicatorStyle.value.top).toBe('130px')
 

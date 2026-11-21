@@ -215,6 +215,15 @@ const sharedIndicatorClass = ref<string>('')
 const sharedIndicatorVisible = ref(false)
 
 /**
+ * 拖拽进行中（模块级共享）。块入口菜单的 hover 开合要据此闭嘴：
+ *
+ * - 被拖块本体在 @start 后被摘成 `display:none`，菜单锚在它上面会量出零矩形、
+ *   飘到视口左上角（与指示器贴顶同源）；
+ * - 拖拽全程指针都在动，扫过谁的入口格就弹谁的菜单，纯噪音。
+ */
+export const blockDragActive = ref(false)
+
+/**
  * useSharedDropIndicator — 暴露模块级共享指示器 ref。
  *
  * 由 BlockList（或任何单一消费者）调用，渲染一个 <BlockDropIndicator>，
@@ -250,11 +259,14 @@ export function useBlockDragDrop(options: UseBlockDragDropOptions) {
   const indicatorClass = sharedIndicatorClass
   const indicatorVisible = sharedIndicatorVisible
 
-  /** 目标块整行（.block-row）的矩形；找不到行元素时返回 null */
+  /** 目标块整行（.block-row）的矩形；找不到行元素、或行量不出尺寸时返回 null */
   function readRowRect(targetBlockEl: HTMLElement): DragRect | null {
     const row = targetBlockEl.querySelector('.block-row') as HTMLElement | null
     if (!row) return null
     const rect = row.getBoundingClientRect()
+    // 被拖元素本体在 @start 后被摘成 display:none，矩形恒为 0 —— 这类元素不能当任何锚点，
+    // 否则 top 会被算成 0，指示器贴到视口顶部（拖拽时「蓝线跑到顶部」）。
+    if (rect.width <= 0 || rect.height <= 0) return null
     return { left: rect.left, right: rect.right, top: rect.top, height: rect.height }
   }
 
@@ -307,15 +319,16 @@ export function useBlockDragDrop(options: UseBlockDragDropOptions) {
    * 指针压在被拖元素上时指向被拖元素自己。线若一律画在目标行顶部，就会比落位高一行
    * （真机实测：向下拖到底时线停在 EE 之上，实际却落在 EE 之后）。
    *
-   * 跳过 Sortable 的 fallback 克隆（.block-drag，与被拖元素同 id），保留被拖元素本身 ——
-   * 它的槽位正是「插到自己之前」的落点。
+   * 跳过 Sortable 的 fallback 克隆（.block-drag：跟手的影像，坐标随指针漂移，不代表槽位）；
+   * 量不出矩形的元素（被拖本体 display:none、或折叠隐藏的块）一律继续找下一个。
    */
   function readAnchorRowRect(targetBlockEl: HTMLElement, beforeId: string): DragRect | null {
     const container = targetBlockEl.parentElement
     if (!container) return null
     for (const child of Array.from(container.children) as HTMLElement[]) {
       if (child.classList.contains('block-drag') || child.dataset.blockId !== beforeId) continue
-      return readRowRect(child)
+      const rect = readRowRect(child)
+      if (rect) return rect
     }
     return null
   }
@@ -367,6 +380,8 @@ export function useBlockDragDrop(options: UseBlockDragDropOptions) {
       const row = el.querySelector('.block-row') as HTMLElement | null
       if (!row) continue
       const rect = row.getBoundingClientRect()
+      // 隐藏块（被拖本体 / 折叠子树）量出全 0，不参与「最近兄弟」竞争
+      if (rect.height <= 0) continue
       const distance = cursorY < rect.top ? rect.top - cursorY : cursorY > rect.bottom ? cursorY - rect.bottom : 0
       if (distance < nearestDistance) {
         nearestDistance = distance
@@ -554,6 +569,7 @@ export function useBlockDragDrop(options: UseBlockDragDropOptions) {
     // _appendGhost → 派发 @start），本体不能由 CSS 隐藏（display:none 会让克隆拿到
     // 零矩形、落在视口左上角）。@start 时克隆已生成，此刻再摘掉本体。
     draggedEl?.style.setProperty('display', 'none')
+    blockDragActive.value = true
     lastPointerX = Number.NaN
     lastPointerY = Number.NaN
     pendingIntent = null
@@ -580,7 +596,11 @@ export function useBlockDragDrop(options: UseBlockDragDropOptions) {
     if (collapsed) return rowBottom ?? blockEl.getBoundingClientRect().bottom
     const container = readChildContainer(blockEl)
     const last = container ? lastBlockChild(container) : null
-    if (last) return last.getBoundingClientRect().bottom
+    if (last) {
+      // 末子项可能正是被拖本体（display:none，矩形全 0）→ 退回本块行底
+      const box = last.getBoundingClientRect()
+      if (box.height > 0) return box.bottom
+    }
     return rowBottom ?? blockEl.getBoundingClientRect().bottom
   }
 
@@ -596,8 +616,14 @@ export function useBlockDragDrop(options: UseBlockDragDropOptions) {
           ? firstBlockChild(childContainer)
           : lastBlockChild(childContainer)
         if (anchor) {
-          if (dropTarget.beforeId) return readRowRect(anchor)?.top ?? null
-          return anchor.getBoundingClientRect().bottom
+          if (dropTarget.beforeId) {
+            // 长子可能正是被拖本体（display:none，量不到矩形）→ 落到下面的子树底兜底
+            const row = readRowRect(anchor)
+            if (row) return row.top
+          } else {
+            const box = anchor.getBoundingClientRect()
+            if (box.height > 0) return box.bottom
+          }
         }
       }
       return stationarySubtreeBottom(targetBlockEl)
@@ -611,10 +637,11 @@ export function useBlockDragDrop(options: UseBlockDragDropOptions) {
         return readRowRect(parentBlock)?.top ?? null
       }
       if (dropTarget.beforeId) {
-        // 父块之后 → 父块下一兄弟（叔叔）行顶；跳过流动中的 ghost
+        // 父块之后 → 父块下一兄弟（叔叔）行顶；跳过流动中的 ghost 与量不到矩形的隐藏块
         for (const child of Array.from(parentBlock.parentElement?.children ?? []) as HTMLElement[]) {
           if (child.dataset.blockId === dropTarget.beforeId && !child.classList.contains('block-ghost')) {
-            return readRowRect(child)?.top ?? null
+            const row = readRowRect(child)
+            if (row) return row.top
           }
         }
         return null
@@ -624,7 +651,15 @@ export function useBlockDragDrop(options: UseBlockDragDropOptions) {
     }
 
     // sort：锚点兄弟行顶；末尾追加 → 目标整棵静止子树之底
-    if (dropTarget.beforeId) return readAnchorRowRect(targetBlockEl, dropTarget.beforeId)?.top ?? null
+    if (dropTarget.beforeId) {
+      // 「插到自己之前」＝留在原位：被拖本体在 @start 后被摘成 display:none，行矩形恒为 0
+      // （拿它当锚点会把线画到视口原点 —— 拖拽时「蓝线跑到顶部」）。目标行底即它原来的槽位。
+      if (dropTarget.beforeId === draggedEl?.dataset.blockId) {
+        const row = readRowRect(targetBlockEl)
+        if (row) return row.top + row.height
+      }
+      return readAnchorRowRect(targetBlockEl, dropTarget.beforeId)?.top ?? null
+    }
     return stationarySubtreeBottom(targetBlockEl)
   }
 
@@ -730,6 +765,7 @@ export function useBlockDragDrop(options: UseBlockDragDropOptions) {
     console.log('[DBG end] from=', (evt?.from?.dataset?.parentId ?? '?') || 'ROOT', 'intent=', JSON.stringify(intent && { d: intent.draggedId.slice(0, 4), a: intent.target.action, p: (intent.target.toParentId ?? 'ROOT').slice(0, 4), b: (intent.target.beforeId ?? 'NULL').slice(0, 4) }))
     document.documentElement.dataset.dbgEnd = `end:from=${(evt?.from?.dataset?.parentId ?? '?') || 'ROOT'}:to=${(evt?.to?.dataset?.parentId ?? '?') || 'ROOT'}:old=${evt?.oldIndex}:new=${evt?.newIndex}:intent=${intent ? intent.target.action + '/' + ((intent.target.toParentId ?? 'ROOT').slice(0, 4)) + '/' + ((intent.target.beforeId ?? 'NULL').slice(0, 4)) : 'NULL'}`
     stopPointerTracking()
+    blockDragActive.value = false
     pendingIntent = null
     pendingDraggedId = null
     pendingRevert = null

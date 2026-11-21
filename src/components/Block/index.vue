@@ -27,6 +27,7 @@ import { ChevronDown, GripVertical, Type } from 'lucide-vue-next'
 import { computed, defineComponent, inject, nextTick, onBeforeUnmount, onMounted, ref, toRef, watch } from 'vue'
 
 import { useBlockEntryMenuExtra } from '../../composables/useBlockEntryMenuExtra'
+import { useBlockEntryMenuOwner } from '../../composables/useBlockEntryMenuOwner'
 import { useBlockRegistry } from '../../composables/useBlockRegistry'
 import { useBlockRelationshipCleanup } from '../../composables/useBlockRelationshipCleanup'
 import type { CrossBlockSelection } from '../../composables/useCrossBlockSelection'
@@ -51,7 +52,7 @@ import BlockDraggableList from './components/BlockDraggableList.vue'
 import BlockMenuCommon from './components/BlockMenuCommon.vue'
 import TaskProgressBar from './components/TaskProgressBar.vue'
 import { useBlockCollapse } from './composables/useBlockCollapse'
-import type { DragEndIntent } from './composables/useBlockDragDrop'
+import { blockDragActive, type DragEndIntent } from './composables/useBlockDragDrop'
 import { useBlockEditorLifecycle } from './composables/useBlockEditorLifecycle'
 import { useBlockFieldRows } from './composables/useBlockFieldRows'
 import { useBlockFieldValueSync } from './composables/useBlockFieldValueSync'
@@ -186,9 +187,48 @@ const cursorPos = ref(0)
 // 菜单归外壳：dot 与类型图标都在这里，锚点也在手边，不必让每个 handler 各自复制一份
 // popover。类型专属项（表格的表头开关、查询块的粘贴收尾）由 handler 注册到这里，
 // 通用段（`BlockMenuCommon`）所有类型共用一份。
+//
+// 开合由**悬停**驱动（不必先点一下）：指针停进入口胶囊开菜单，移开（且没走进菜单）
+// 才收起。点击是「立刻开 + 留住」—— 给习惯点的人留同一条路。
 const { get: getEntryMenuExtra } = useBlockEntryMenuExtra()
 const menuOpen = ref(false)
 const menuAnchor = ref<HTMLElement | null>(null)
+/** 入口胶囊 DOM（悬停命中面的几何基准，见 onRowPointerMove） */
+const entryIconEl = ref<HTMLElement | null>(null)
+/** 菜单所有权：同一时刻只允许一个块入口菜单展开（见 useBlockEntryMenuOwner） */
+const menuOwner = useBlockEntryMenuOwner()
+/** 本实例的令牌 —— 双 pane 同页时同一个块有两个实例，只能靠它区分 */
+const menuToken = Symbol('block-entry-menu')
+/**
+ * 悬停开菜单的延迟：贴着左栏扫过时，一串菜单跟着闪是纯噪音。
+ * 稍等一下才认为「你想看这块的菜单」。
+ */
+const ENTRY_MENU_OPEN_DELAY = 120
+/**
+ * 离开后的宽限：指针从胶囊走到菜单要跨过 4px 间隙，这段时间不能把菜单关掉。
+ * 菜单自己的 pointerenter 会取消这个定时器，所以真正的「走进菜单」永远不会被误关。
+ */
+const ENTRY_MENU_CLOSE_DELAY = 260
+
+let entryMenuOpenTimer: ReturnType<typeof setTimeout> | null = null
+let entryMenuCloseTimer: ReturnType<typeof setTimeout> | null = null
+
+function clearEntryMenuTimers() {
+  if (entryMenuOpenTimer !== null) {
+    clearTimeout(entryMenuOpenTimer)
+    entryMenuOpenTimer = null
+  }
+  if (entryMenuCloseTimer !== null) {
+    clearTimeout(entryMenuCloseTimer)
+    entryMenuCloseTimer = null
+  }
+}
+
+function closeEntryMenu() {
+  clearEntryMenuTimers()
+  menuOpen.value = false
+  if (menuOwner.value === menuToken) menuOwner.value = null
+}
 /** 该块的类型专属段；无则 null */
 const entryMenuExtra = computed(() => getEntryMenuExtra(blockId.value))
 /**
@@ -208,7 +248,7 @@ const menuHasExtraItems = computed(
 const EntryMenuExtra = defineComponent({
   name: 'BlockEntryMenuExtra',
   setup() {
-    return () => entryMenuExtra.value?.render(() => { menuOpen.value = false }) ?? []
+    return () => entryMenuExtra.value?.render(closeEntryMenu) ?? []
   },
 })
 
@@ -355,6 +395,9 @@ onMounted(() => {
 onBeforeUnmount(() => {
   typeHooks.value?.onBeforeUnmount?.()
   document.removeEventListener('delete-between-property', handleDeleteBetweenProperty, true)
+  // 悬停开菜单的两个定时器不能留着：卸载后再触发会去写已销毁实例的 ref
+  clearEntryMenuTimers()
+  if (menuOwner.value === menuToken) menuOwner.value = null
 
   const el = document.querySelector(`[data-block-id="${blockId.value}"]`)
   if (el) {
@@ -615,10 +658,90 @@ async function onLanguageChange(lang: string) {
   }
 }
 
-/** 开本块菜单：菜单本体归外壳，锚点就是被点的入口胶囊 */
-function openEntryMenu(anchorEl: HTMLElement) {
+/** 开本块菜单：菜单本体归外壳，锚点就是入口胶囊 */
+function showEntryMenu(anchorEl: HTMLElement) {
+  clearEntryMenuTimers()
   menuAnchor.value = anchorEl
   menuOpen.value = true
+  menuOwner.value = menuToken
+}
+
+/** 悬停开：延迟一点，扫过左栏时不至于一串菜单跟着闪 */
+function scheduleEntryMenuOpen(anchorEl: HTMLElement) {
+  clearEntryMenuTimers()
+  entryMenuOpenTimer = setTimeout(() => {
+    entryMenuOpenTimer = null
+    // 拖拽期间不弹：被拖块本体会被摘成 display:none，菜单锚在它上面量不出矩形
+    if (inBlockModal || blockDragActive.value) return
+    showEntryMenu(anchorEl)
+  }, ENTRY_MENU_OPEN_DELAY)
+}
+
+function scheduleEntryMenuClose() {
+  clearEntryMenuTimers()
+  entryMenuCloseTimer = setTimeout(() => {
+    entryMenuCloseTimer = null
+    closeEntryMenu()
+  }, ENTRY_MENU_CLOSE_DELAY)
+}
+
+/**
+ * 指针进入入口胶囊：悬停开菜单（本块菜单唯一入口的手势）。
+ *
+ * 按住键时不开：跨块文本选区与拖拽都从块上起手，指针扫过入口格时弹出一叠菜单
+ * 只会挡住正在做的事。
+ */
+function onEntryPointerEnter(e: PointerEvent) {
+  if (inBlockModal) return
+  if (e.buttons > 0) return
+  scheduleEntryMenuOpen(e.currentTarget as HTMLElement)
+}
+
+function onEntryPointerLeave() {
+  // 还没开也没排着开 → 无事可做
+  if (!menuOpen.value && entryMenuOpenTimer === null) return
+  scheduleEntryMenuClose()
+}
+
+/**
+ * 行内指针移动：胶囊悬停的**兜底命中面**。
+ *
+ * 胶囊只有 hover 块时才 `pointer-events: auto`（隐藏时不能吃点击），指针直接落进
+ * 胶囊那一下浏览器做的还是旧命中测试（元素当时还不可命中），`pointerenter` 不会来 ——
+ * 真机实测「一下跳到胶囊上」菜单不弹。`.block-row` 永远可命中，所以在这里按几何
+ * 判一次；胶囊悬出行的左缘 24px 也走这条（事件从胶囊冒泡上来）。
+ *
+ * 离开胶囊（指针还在本行）同样从这里算，和 `pointerleave` 落到同一个宽限。
+ */
+function onRowPointerMove(e: PointerEvent) {
+  if (inBlockModal) return
+  const iconEl = entryIconEl.value
+  if (!iconEl) return
+  const rect = iconEl.getBoundingClientRect()
+  const overIcon =
+    e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom
+  if (!overIcon) {
+    onEntryPointerLeave()
+    return
+  }
+  if (e.buttons > 0) return
+  if (menuOpen.value || entryMenuOpenTimer !== null) return
+  scheduleEntryMenuOpen(iconEl)
+}
+
+function onRowPointerLeave() {
+  onEntryPointerLeave()
+}
+
+/** 指针进入菜单：取消「离开胶囊就收起」的宽限 */
+function onEntryMenuPointerEnter() {
+  if (!menuOpen.value) return
+  clearEntryMenuTimers()
+}
+
+function onEntryMenuPointerLeave() {
+  if (!menuOpen.value) return
+  scheduleEntryMenuClose()
 }
 
 /**
@@ -627,13 +750,33 @@ function openEntryMenu(anchorEl: HTMLElement) {
  * 以前这里是「把元素交给 handler 的 openEntryMenu」，菜单因此分裂成 table/query 两套
  * popover、其余类型根本没有；收敛到外壳后类型只负责交出专属项（见 useBlockEntryMenuExtra）。
  *
+ * 悬停已经开着的，点击只把它留住、不切换收起：悬停菜单的关闭手势是「指针离开」
+ * （或点空白 / Esc）。把点击也做成 toggle，会让「hover 弹出来顺手点一下」直接关掉
+ * 刚看到的菜单 —— 手指比脑子慢半拍时全是误关。
+ *
  * 弹窗内（`inBlockModal`）保持 no-op：子树编辑器的根块有「禁 outdent / Enter 只建子块」
  * 等特例（ADR-0039 D6），菜单搬进去要另裁一套可用性规则，不在本次范围内。
  */
 function onEntryClick(e: MouseEvent) {
   if (inBlockModal) return
-  openEntryMenu(e.currentTarget as HTMLElement)
+  const anchorEl = e.currentTarget as HTMLElement
+  if (menuOpen.value && menuAnchor.value === anchorEl) {
+    // 悬停刚弹出来的那一份：点下去等于是「我要用」，别关
+    clearEntryMenuTimers()
+    return
+  }
+  showEntryMenu(anchorEl)
 }
+
+// 同一时刻只开一个：别的块开菜单时，本块这份立即收起
+watch(menuOwner, (owner) => {
+  if (owner !== menuToken && menuOpen.value) closeEntryMenu()
+})
+
+// 拖拽一起手就收：本体马上要被摘成 display:none，菜单会跟着锚点飘到视口左上角
+watch(blockDragActive, (active) => {
+  if (active && menuOpen.value) closeEntryMenu()
+})
 
 function onDragOver(e: DragEvent) {
   if (typeHooks.value?.onDragOver?.(e) === true) return
@@ -665,7 +808,15 @@ watch(isActive, (active) => {
     :style="{ '--block-indent': indentWidth, '--indent-depth': depth, '--block-entry-top': entryTop }"
     @mousedown="onBlockMousedown"
   >
-    <div class="block-row">
+    <!--
+      行的指针追踪 = 入口胶囊悬停的兜底命中面：胶囊隐藏时 pointer-events:none，
+      「一指针直接落到胶囊上」那一下浏览器不会给胶囊派 pointerenter（见 onRowPointerMove）。
+    -->
+    <div
+      class="block-row"
+      @pointermove="onRowPointerMove"
+      @pointerleave="onRowPointerLeave"
+    >
       <!-- 缩进占位 -->
       <div
         class="block-indent"
@@ -698,19 +849,22 @@ watch(isActive, (active) => {
             />
           </span>
           <span
+            ref="entryIconEl"
             class="block-entry-icon"
             :title="handler?.entryLabel"
             :aria-label="handler?.entryLabel ?? '块菜单'"
+            @pointerenter="onEntryPointerEnter"
+            @pointerleave="onEntryPointerLeave"
             @click.stop="onEntryClick"
           >
             <component
               :is="entryIcon"
-              :size="10"
+              :size="14"
               :stroke-width="1.8"
             />
             <GripVertical
               class="block-entry-grip"
-              :size="9"
+              :size="14"
               :stroke-width="2"
             />
           </span>
@@ -843,16 +997,22 @@ watch(isActive, (active) => {
       - 类型专属项由 handler 注册（useBlockEntryMenuExtra），排在最上面；
       - 通用段 `BlockMenuCommon` 单源定义项序与分组，有专属项时它自带前置分隔线；
       - 浮层 Teleport 到 body，容器类 `.block-entry-menu` 在全局 _block.scss。
+      - `modal=false`：这是悬停菜单，不是模态弹层 —— 铺全屏 overlay 会把页面其余部分
+        的 hover/点击一起吃掉，指针一移开菜单就没有落脚点（连本块的图标都会消失）。
+      - 指针进出菜单要报给外壳：从胶囊走到菜单的这段路上不能把菜单关掉。
       `mousedown.prevent`：菜单里按下不抢走编辑器的焦点/光标（打开菜单不改编辑态）。
     -->
     <BasePopover
       :visible="menuOpen"
       :anchor-el="menuAnchor"
       placement="bottom"
-      @close="menuOpen = false"
+      :modal="false"
+      @close="closeEntryMenu"
     >
       <div
         class="block-entry-menu"
+        @pointerenter="onEntryMenuPointerEnter"
+        @pointerleave="onEntryMenuPointerLeave"
         @mousedown.prevent
       >
         <EntryMenuExtra v-if="menuHasExtraItems" />
@@ -860,7 +1020,7 @@ watch(isActive, (active) => {
           :block-id="blockId"
           :no-divider-top="!menuHasExtraItems"
           :after-paste="entryMenuExtra?.afterPaste"
-          @close="menuOpen = false"
+          @close="closeEntryMenu"
         />
       </div>
     </BasePopover>
