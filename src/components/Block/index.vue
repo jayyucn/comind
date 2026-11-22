@@ -835,20 +835,6 @@ watch(isActive, (active) => {
           :class="{ collapsed }"
         >
           <span
-            v-if="canCollapse"
-            class="bullet-chevron"
-            :class="{ 'is-pinned': collapsed && hasChildren }"
-            title="折叠 / 展开"
-            @click.stop="toggleCollapse"
-          >
-            <!-- 单图标 + CSS 旋转：展开 0°（朝下），折叠 rotate(-90°)（朝右，视觉同 ChevronRight）。
-                 v-if 换图标只能瞬间跳变，旋转过渡才能与折叠动效同步（参数见 _block.scss） -->
-            <ChevronDown
-              :size="18"
-              :stroke-width="2"
-            />
-          </span>
-          <span
             ref="entryIconEl"
             class="block-entry-icon"
             :title="handler?.entryLabel"
@@ -865,6 +851,20 @@ watch(isActive, (active) => {
             <GripVertical
               class="block-entry-grip"
               :size="14"
+              :stroke-width="2"
+            />
+          </span>
+          <span
+            v-if="canCollapse"
+            class="bullet-chevron"
+            :class="{ 'is-pinned': collapsed && hasChildren }"
+            title="折叠 / 展开"
+            @click.stop="toggleCollapse"
+          >
+            <!-- 单图标 + CSS 旋转：展开 0°（朝下），折叠 rotate(-90°)（朝右，视觉同 ChevronRight）。
+                 v-if 换图标只能瞬间跳变，旋转过渡才能与折叠动效同步（参数见 _block.scss） -->
+            <ChevronDown
+              :size="18"
               :stroke-width="2"
             />
           </span>
@@ -1005,7 +1005,7 @@ watch(isActive, (active) => {
     <BasePopover
       :visible="menuOpen"
       :anchor-el="menuAnchor"
-      placement="bottom"
+      placement="left"
       :modal="false"
       @close="closeEntryMenu"
     >

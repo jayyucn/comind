@@ -7,7 +7,7 @@
 // .block-children 与 .block-properties 共用同一套折叠过渡与折叠态视觉（数值逐字相同）。
 // 展开态提供 max-height/opacity/transform 过渡基线；折叠态提供「视觉塌缩」四件套。
 // 调用方各自挂 is-collapsed 选择器（.block-children 自身 / .block.is-collapsed>.block-properties
-// / .block.is-collapsed>.block-child-task-progress / .block.is-collapsed 的层级导轨 ::before）。
+// / .block.is-collapsed>.block-child-task-progress）。
 // 折叠 = 布局移除：is-collapsed:not(.is-animating) 在动画跑完之后才 display:none，
 // 展开时 is-collapsed 先摘除、display 自然恢复、过渡照跑 —— 隐藏只有一个来源。
 
@@ -49,41 +49,6 @@
   animation: block-enter var(--motion-duration) var(--motion-ease) both;
 }
 
-// ===== 层级导轨（统一挂载于 .block 根节点） =====
-// 原为两段独立伪元素：.block-children::before（子树段）与 .block-properties::before
-// （字段带段）。现统一为本块单一 ::before：
-// - x 列不变：本块 bullet 中心列 depth×缩进+9（--indent-depth 由 .block 根节点自持，
-//   与原两段的换算结果逐字一致，参照原点同为 .block 左缘）；
-// - 纵向自块顶贯穿至块底，字段带段与子树段之间原有的 2px margin 间隙随之弥合，
-//   导轨视觉连续；
-// - 可见条件 = 原两段可见条件之并集（子树段 has-children ∪ 字段带段带内非空）；
-// - 无子块且字段带为空的块不画导轨。
-.block::before {
-  content: '';
-  position: absolute;
-  top: 16px;
-  bottom: 0;
-  left: calc(var(--indent-depth, 0) * var(--block-indent-width) + 9px);
-  width: 1px;
-  background: var(--block-bullet-color);
-  opacity: 0;
-  pointer-events: none;
-  z-index: 0;
-  transition: opacity var(--dur-base) var(--ease-out);
-}
-
-// 有子块或字段带非空时显现
-.block:has(> .block-children.has-children)::before,
-.block:has(> .block-properties > *)::before {
-  opacity: 0.12;
-}
-
-// 折叠 = 布局移除（与 .block-children / .block-properties 的时序闸门同款）：
-// 折叠动画期间导轨随块高一起收敛，动画跑完（is-animating 摘除）才整体移除。
-.block.is-collapsed:not(.is-animating)::before {
-  display: none;
-}
-
 // ===== Block 行（行带） =====
 .block-row {
   display: flex;
@@ -119,10 +84,11 @@
   position: relative;
   flex-shrink: 0;
   align-self: flex-start;
-  width: 20px;
-  height: 1.8em;
-  margin-top: var(--block-entry-top, 0px);
+  width: 64px;
+  margin-left: -64px;
+  // height: 1.8em;
   display: flex;
+  gap: 0px;
   align-items: center;
   justify-content: center;
   border-radius: $radius-sm;
@@ -153,11 +119,10 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  padding: 0 1px;
   flex-shrink: 0;
   width: 44px;
   height: 28px;
-  margin-left: -4px;
-  padding: 0 1px;
   box-sizing: border-box;
   border: 1px solid var(--border);
   border-radius: $radius-sm;
@@ -187,6 +152,21 @@
 .block-bullet:has(> .block-entry-icon) {
   justify-content: flex-end;
   cursor: grab;
+}
+
+// 胶囊/chevron 与正文之间的间隙：入口格里最右的那个元素负责让位（flex-end 对齐的是
+// margin box 右缘，margin-right 只把本体左移，正文起点不动）。
+// 没有 chevron ⇒ 胶囊在最右，由胶囊让位；有 chevron ⇒ 只在表格块由 chevron 让位
+// （表格的角块布局需要这段呼吸，文本块的 chevron 保持贴着正文）。
+// 两段都限定 `:has(> .block-entry-icon)`：只读表面（Ideas 快照）同样是 .block-bullet >
+// .bullet-chevron，但装的是 dot，不能跟着动。
+// 不能用 padding：border-box 下 padding 只挤内容盒，框仍贴死。
+.block-bullet:has(> .block-entry-icon):not(:has(> .bullet-chevron)) > .block-entry-icon {
+  margin-right: 8px;
+}
+
+.block-row:has(.table-block) .block-bullet:has(> .block-entry-icon) > .bullet-chevron {
+  margin-right: 8px;
 }
 
 .block-row:hover .block-entry-icon,
@@ -221,15 +201,15 @@ $block-entry-corner-height: 12px;
 
 .block-row:has(.table-block) .block-bullet:has(> .block-entry-icon) > .block-entry-icon {
   align-self: flex-start;
-  height: $block-entry-corner-height;
-  margin-top: calc(-1 * var(--block-entry-top, 0px));
-  // 上下边框让给 12px 的字形高度，否则 content-box 只剩 10px、字形被压小
-  border-block-width: 0;
+  // height: $block-entry-corner-height;
+  // margin-top: calc(-1 * var(--block-entry-top, 0px));
+  // // 上下边框让给 12px 的字形高度，否则 content-box 只剩 10px、字形被压小
+  // border-block-width: 0;
 
-  // 字形不参与命中：命中面严格等于上面那个角块，字形溢出的部分不会抢条带的点击。
-  > svg {
-    pointer-events: none;
-  }
+  // // 字形不参与命中：命中面严格等于上面那个角块，字形溢出的部分不会抢条带的点击。
+  // > svg {
+  //   pointer-events: none;
+  // }
 }
 
 // 块入口菜单的容器与分隔线（table / query 共用，见 Block/components/BlockMenuCommon.vue）。
@@ -259,9 +239,9 @@ $block-entry-corner-height: 12px;
 // 左移 24px 是给入口胶囊让位：胶囊悬出 4px，chevron 的 18px 宽度贴在它左侧（2px 间隙）。
 // 深度 0 时 -24px 正好落在正文容器的左内边距边缘（--space-6 24px），不会溢出。
 .bullet-chevron {
-  position: absolute;
-  left: -24px;
-  top: 4px;
+  // position: absolute;
+  // left: -24px;
+  // top: 4px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -658,16 +638,14 @@ $block-entry-corner-height: 12px;
 //
 // 左缘对齐子块 status 图标（不算 bullet dot）：子容器缩进 20px + 子块一级缩进
 // 14px + bullet 20px = (depth+1)*14 + 40。非任务子块无 between 槽、正文紧跟
-// bullet，起点亦在此列。--indent-depth 由 .block 根节点自持（自身深度）；
-// 层级导轨 ::before 亦挂在 .block 上共用该变量，子容器不再传入深度。
+// bullet，起点亦在此列。--indent-depth 由 .block 根节点自持（自身深度），子容器不再传入深度。
 .block-properties {
   position: relative;
   margin-left: calc((var(--indent-depth, 0) + 1) * var(--block-indent-width) + 40px);
   padding-right: $space-2;
   @include collapse-transition;
 
-  // 字段带的左侧竖线已统一上移至 .block::before（层级导轨，同一竖列），此处不再
-  // 自带伪元素；折叠时整带 display:none，导轨由 .block 侧的时序闸门一并移除。
+  // 字段带不自带左侧竖线（层级导轨已下线）；折叠时整带 display:none。
 }
 
 // 字段带随本块折叠一起隐藏：折叠 = 本块一切可折叠细节的布局移除（ADR-0045 D1 扩展）。
@@ -746,11 +724,6 @@ $block-entry-corner-height: 12px;
 .block-chosen .block-inner {
   background: var(--accent-04);
   border-radius: var(--radius-md);
-}
-
-.block-chosen::before,
-.block-chosen .block::before {
-  opacity: 0.3 !important;
 }
 
 // ===== 跨 Block 选中遮罩 =====
