@@ -180,6 +180,17 @@
   transition-delay: 0s;
 }
 
+// 菜单打开期间胶囊常显：指针移进菜单后 .block-row 已不在 hover，胶囊会退回隐藏态 ——
+// 而菜单正锚在它左侧，胶囊消失等于断掉「菜单属于这块」的视觉联系。
+// pointer-events 恢复 auto：指针从菜单移回胶囊时要能收到 pointerenter（取消关闭定时器）。
+// 描边同步到 hover 档，避免菜单开着时胶囊忽然暗一档。
+.block-entry-icon.is-menu-open {
+  opacity: 1;
+  pointer-events: auto;
+  border-color: var(--border-light);
+  transition-delay: 0s;
+}
+
 .block-entry-icon:hover {
   // background: var(--bg-active);
   color: var(--text-primary);

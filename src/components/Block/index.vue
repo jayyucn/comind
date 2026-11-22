@@ -837,6 +837,7 @@ watch(isActive, (active) => {
           <span
             ref="entryIconEl"
             class="block-entry-icon"
+            :class="{ 'is-menu-open': menuOpen }"
             :title="handler?.entryLabel"
             :aria-label="handler?.entryLabel ?? '块菜单'"
             @pointerenter="onEntryPointerEnter"

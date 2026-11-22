@@ -761,6 +761,9 @@ describe('块入口胶囊打开本块菜单（ADR-0039 D9：入口不再开弹�
 
     const menu = document.body.querySelector('.block-entry-menu')
     expect(menu).toBeTruthy()
+    // 菜单开着时胶囊必须常显：指针移进菜单后 .block-row 不再 hover，胶囊不能跟着退场
+    // （CSS 侧规则见 _block.scss 的 .block-entry-icon.is-menu-open）。
+    expect(wrapper.find('.block-entry-icon').classes()).toContain('is-menu-open')
     // 通用段的项都在（顺序与分组由 BlockMenuCommon 单源定义）
     expect(menu?.querySelector('[data-block-menu-item="insert-above"]')).toBeTruthy()
     expect(menu?.querySelector('[data-block-menu-item="paste"]')).toBeTruthy()
