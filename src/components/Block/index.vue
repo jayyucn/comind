@@ -23,13 +23,14 @@ import './handlers/table'
 
 import type { EditorView } from '@codemirror/view'
 import type { Editor } from '@tiptap/core'
-import { ChevronDown, GripVertical, Type } from 'lucide-vue-next'
+import { ChevronDown, GripVertical, Heading1, Heading2, Heading3, Type } from 'lucide-vue-next'
 import { computed, defineComponent, inject, nextTick, onBeforeUnmount, onMounted, ref, toRef, watch } from 'vue'
 
 import { useBlockEntryMenuExtra } from '../../composables/useBlockEntryMenuExtra'
 import { useBlockEntryMenuOwner } from '../../composables/useBlockEntryMenuOwner'
 import { useBlockRegistry } from '../../composables/useBlockRegistry'
 import { useBlockRelationshipCleanup } from '../../composables/useBlockRelationshipCleanup'
+import { parseHeading } from '../../composables/useContentRenderer'
 import type { CrossBlockSelection } from '../../composables/useCrossBlockSelection'
 import { useNavigateToPage } from '../../composables/useNavigateToPage'
 import { recordSelection } from '../../composables/useUndoHistory'
@@ -131,11 +132,33 @@ const isSelected = computed(() => {
 })
 const handler = computed(() => getHandler(block.value.type))
 
+/** 标题级别 → 入口字形：文本块用 `#`/`##`/`###` 前缀表达标题（同 BulletRender 的 parseHeading） */
+const HEADING_ENTRY_ICONS = { 1: Heading1, 2: Heading2, 3: Heading3 } as const
+
+/** 本块的标题级别（0 = 不是标题块） */
+const entryHeadingLevel = computed(() => {
+  if (block.value.type !== 'bullet') return 0
+  const level = parseHeading(block.value.content ?? '')?.level ?? 0
+  return level === 1 || level === 2 || level === 3 ? level : 0
+})
+
 /**
  * 入口类型图标（所有块类型都有）：没注册 `entryIcon` 的类型按文本块处理，落 `Type` 字形。
+ * 文本块带 `#`/`##`/`###` 前缀时换成对应 H 字形 —— 胶囊是「这是什么块」的唯一出口，
+ * 是不是标题、几级标题在这一格上应当读得出来。
  * 点击开本块菜单，与右侧握把同在一个胶囊里，按下即拖拽（handled by Sortable handle）。
  */
-const entryIcon = computed(() => handler.value?.entryIcon ?? Type)
+const entryIcon = computed(() => {
+  const level = entryHeadingLevel.value
+  if (level) return HEADING_ENTRY_ICONS[level]
+  return handler.value?.entryIcon ?? Type
+})
+
+/**
+ * 字形尺寸：lucide 的 `Heading1/2/3` 字形在 24 网格里的实际占位比 `Type` 小一圈，
+ * 同尺寸摆进胶囊会显小 —— 标题字形单独抬 2px 补齐视觉重量（盒子同为 14 的握把不动）。
+ */
+const entryIconSize = computed(() => (entryHeadingLevel.value ? 16 : 14))
 /** 入口相对块顶的下偏移：让图标压在本类型首行（表头行等）上 */
 const entryTop = computed(() => handler.value?.entryTop)
 
@@ -846,7 +869,7 @@ watch(isActive, (active) => {
           >
             <component
               :is="entryIcon"
-              :size="14"
+              :size="entryIconSize"
               :stroke-width="1.8"
             />
             <GripVertical

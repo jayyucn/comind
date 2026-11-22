@@ -1246,6 +1246,32 @@ describe('collapse chevron 显示条件（有子块 / 仅字段 / 两者皆无�
   })
 })
 
+describe('入口胶囊字形：文本块标题级别', () => {
+  function mountContent(content: string) {
+    const blockStore = useBlockStore()
+    blockStore.blocks = [
+      { id: 'b1', pageId: 'p1', parentId: null, pos: 0, content, format: {}, type: 'bullet', createdAt: 0, updatedAt: 0 },
+    ]
+    const node: TreeNode = { id: 'b1', block: blockStore.blocks[0], children: [] }
+    return mount(Block, {
+      props: { node, pageId: 'p1', depth: 0 },
+      global: { stubs: { BulletRender: StubBulletRender, VueDraggable: StubVueDraggable } },
+    })
+  }
+
+  it.each([
+    ['# 一级标题', 'lucide-heading-1'],
+    ['## 二级标题', 'lucide-heading-2'],
+    ['### 三级标题', 'lucide-heading-3'],
+    ['普通文本', 'lucide-type'],
+  ])('内容「%s」→ 胶囊字形 %s', async (content, iconClass) => {
+    const wrapper = mountContent(content)
+    await flushPromises()
+    expect(wrapper.find('.block-entry-icon svg').classes()).toContain(iconClass)
+    wrapper.unmount()
+  })
+})
+
 // NOTE: Drag-drop behavior (handleDragMove circular detection, handleBlockDragEnd
 // clearing the indicator + triggering onDragEnd) is covered by Playwright e2e tests
 // in Task 4 (tests/block-drag-drop.spec.ts). Unit-testing vue-draggable-plus event flow
