@@ -1272,6 +1272,100 @@ describe('入口胶囊字形：文本块标题级别', () => {
   })
 })
 
+describe('入口菜单：文本样式行（普通文本 / H1 / H2 / H3）', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    document.body.querySelectorAll('.block-entry-menu').forEach((n) => n.remove())
+  })
+
+  function mountBlock(content: string, type: 'bullet' | 'image' = 'bullet') {
+    const blockStore = useBlockStore()
+    blockStore.blocks = [
+      { id: 'b1', pageId: 'p1', parentId: null, pos: 0, content, format: {}, type, createdAt: 0, updatedAt: 0 },
+    ]
+    const node: TreeNode = { id: 'b1', block: blockStore.blocks[0], children: [] }
+    return mount(Block, {
+      props: { node, pageId: 'p1', depth: 0 },
+      global: { stubs: { BulletRender: StubBulletRender, VueDraggable: StubVueDraggable } },
+    })
+  }
+
+  async function openMenu(content: string, type: 'bullet' | 'image' = 'bullet') {
+    const wrapper = mountBlock(content, type)
+    await flushPromises()
+    await wrapper.find('.block-entry-icon').trigger('click')
+    await flushPromises()
+    return wrapper
+  }
+
+  function styleButtons(): HTMLElement[] {
+    return Array.from(document.body.querySelectorAll<HTMLElement>('[data-text-style]'))
+  }
+
+  it('文本块菜单顶部是 4 格样式行，当前级别高亮', async () => {
+    const wrapper = await openMenu('## 二级标题')
+    const buttons = styleButtons()
+    expect(buttons.map((b) => b.dataset.textStyle)).toEqual(['0', '1', '2', '3'])
+    expect(buttons[2].classList.contains('is-active')).toBe(true)
+    expect(buttons[0].classList.contains('is-active')).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('h4–h6 不点亮任何一格（不假装是其中一级）', async () => {
+    const wrapper = await openMenu('#### 四级标题')
+    expect(styleButtons().some((b) => b.classList.contains('is-active'))).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('点 H1：正文补上 `# ` 前缀', async () => {
+    const blockStore = useBlockStore()
+    const wrapper = await openMenu('标题')
+    styleButtons()[1].click()
+    await flushPromises()
+    expect(blockStore.blocks[0].content).toBe('# 标题')
+    wrapper.unmount()
+  })
+
+  it('点「普通文本」：去掉标题前缀', async () => {
+    const blockStore = useBlockStore()
+    const wrapper = await openMenu('### 标题')
+    styleButtons()[0].click()
+    await flushPromises()
+    expect(blockStore.blocks[0].content).toBe('标题')
+    wrapper.unmount()
+  })
+
+  it('改级别只换前缀、不重复叠加，且不丢行内格式', async () => {
+    const blockStore = useBlockStore()
+    const wrapper = await openMenu('# 标题')
+    // 模拟正文第二字起加粗（marks 坐标相对完整 content，含 `# ` 前缀）
+    blockStore.blocks[0].format = { inlineMarks: [{ start: 2, end: 4, bold: true }] }
+    styleButtons()[3].click()
+    await flushPromises()
+    expect(blockStore.blocks[0].content).toBe('### 标题')
+    // 前缀长 2 → 4（delta +2）：marks 跟着平移，断言值不丢
+    expect(blockStore.blocks[0].format.inlineMarks).toEqual([{ start: 4, end: 6, bold: true }])
+    wrapper.unmount()
+  })
+
+  it('点当前级别是无操作（不留空动作）', async () => {
+    const blockStore = useBlockStore()
+    const wrapper = await openMenu('## 标题')
+    styleButtons()[2].click()
+    await flushPromises()
+    expect(blockStore.blocks[0].content).toBe('## 标题')
+    wrapper.unmount()
+  })
+
+  it('非文本块不出现样式行', async () => {
+    const wrapper = await openMenu('', 'image')
+    expect(document.body.querySelector('.block-entry-menu')).toBeTruthy()
+    expect(styleButtons()).toHaveLength(0)
+    wrapper.unmount()
+  })
+})
+
 // NOTE: Drag-drop behavior (handleDragMove circular detection, handleBlockDragEnd
 // clearing the indicator + triggering onDragEnd) is covered by Playwright e2e tests
 // in Task 4 (tests/block-drag-drop.spec.ts). Unit-testing vue-draggable-plus event flow

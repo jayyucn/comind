@@ -51,6 +51,7 @@ import BasePopover from '../common/BasePopover.vue'
 import BlockFieldZone from './BlockFieldZone.vue'
 import BlockDraggableList from './components/BlockDraggableList.vue'
 import BlockMenuCommon from './components/BlockMenuCommon.vue'
+import BlockMenuTextStyle from './components/BlockMenuTextStyle.vue'
 import TaskProgressBar from './components/TaskProgressBar.vue'
 import { useBlockCollapse } from './composables/useBlockCollapse'
 import { blockDragActive, type DragEndIntent } from './composables/useBlockDragDrop'
@@ -135,12 +136,27 @@ const handler = computed(() => getHandler(block.value.type))
 /** 标题级别 → 入口字形：文本块用 `#`/`##`/`###` 前缀表达标题（同 BulletRender 的 parseHeading） */
 const HEADING_ENTRY_ICONS = { 1: Heading1, 2: Heading2, 3: Heading3 } as const
 
-/** 本块的标题级别（0 = 不是标题块） */
-const entryHeadingLevel = computed(() => {
-  if (block.value.type !== 'bullet') return 0
-  const level = parseHeading(block.value.content ?? '')?.level ?? 0
-  return level === 1 || level === 2 || level === 3 ? level : 0
+/** 文本块判定：入口菜单顶部的「文本样式」行只对文本块出现 */
+const isTextBlock = computed(() => block.value.type === 'bullet')
+
+/**
+ * 正文标题级别的**原值**（0 = 不是标题；4–6 也照实返回）。
+ * 判据是 `parseHeading` —— 与 BulletRender 渲染 `h1`–`h3`、入口字形同一份规则，
+ * 标题级别只活在前缀里，`format` 里没有它。
+ */
+const headingLevel = computed(() => {
+  if (!isTextBlock.value) return 0
+  return parseHeading(block.value.content ?? '')?.level ?? 0
 })
+
+/**
+ * 「文本样式」行的高亮位：只认 0–3；h4–h6 给 -1，四格都不点亮。
+ * 把无声明态硬塞进某一格，会让用户点 H1 之前读到的当前态是错的。
+ */
+const textStyleLevel = computed(() => (headingLevel.value <= 3 ? headingLevel.value : -1))
+
+/** 入口字形用的级别：0 与 -1（无声明态）都落回文本字形 */
+const entryHeadingLevel = computed(() => Math.max(textStyleLevel.value, 0))
 
 /**
  * 入口类型图标（所有块类型都有）：没注册 `entryIcon` 的类型按文本块处理，落 `Type` 字形。
@@ -150,7 +166,7 @@ const entryHeadingLevel = computed(() => {
  */
 const entryIcon = computed(() => {
   const level = entryHeadingLevel.value
-  if (level) return HEADING_ENTRY_ICONS[level]
+  if (level === 1 || level === 2 || level === 3) return HEADING_ENTRY_ICONS[level]
   return handler.value?.entryIcon ?? Type
 })
 
@@ -161,6 +177,66 @@ const entryIcon = computed(() => {
 const entryIconSize = computed(() => (entryHeadingLevel.value ? 16 : 14))
 /** 入口相对块顶的下偏移：让图标压在本类型首行（表头行等）上 */
 const entryTop = computed(() => handler.value?.entryTop)
+
+/**
+ * 入口菜单「文本样式」行：把本块在 普通文本 / H1 / H2 / H3 之间切换。
+ *
+ * 两条路，按「本块此刻是否正在编辑」分：
+ *
+ * - **活动态**：改活的编辑器（与 `/h1` 斜杠命令同一手法）。只写 store 不行 ——
+ *   编辑器 300ms 后的下一次防抖保存会把内存里的旧正文写回去，刚加上的前缀随即被抹掉。
+ *   走编辑器事务则复用它自己的保存链路（`@save` → `handleSave`），撤销也只记一步。
+ * - **渲染态**：本块没有编辑器实例，直接写 store。行内格式按前缀长度差平移 ——
+ *   `updateBlockContent` 在正文变化又没给 marks 时会清空它们，切一次标题丢一片粗体
+ *   是不能接受的副作用。
+ *
+ * 重复点同一格是无操作：不产生事务，也就不占掉一步撤销。
+ */
+async function setTextStyle(level: 0 | 1 | 2 | 3) {
+  if (!isTextBlock.value) return
+  const prefix = level === 0 ? '' : '#'.repeat(level) + ' '
+
+  const editor = editorRef.value
+  if (editor) {
+    // 活动态以编辑器正文为准：编辑态是 decode 后的文本，与 store 里的编码正文长度不同
+    const live = editor.getText()
+    const parsedLive = parseHeading(live)
+    if ((parsedLive?.level ?? 0) === level) return
+    const oldPrefixLength = parsedLive ? live.length - parsedLive.title.length : 0
+    const next = prefix + (parsedLive ? parsedLive.title : live)
+    const delta = next.length - live.length
+
+    const instance = editor.getEditor()
+    const prevPos = instance.state.selection.from
+    // 光标随前缀一起平移，并压在文档合法区间内（末位之后不可插）
+    const cursor = Math.min(Math.max(1, prevPos + delta), next.length + 1)
+    const chain = instance.chain()
+    if (oldPrefixLength > 0 && !prefix) {
+      chain.deleteRange({ from: 1, to: 1 + oldPrefixLength })
+    } else if (prefix) {
+      // 一个事务里「换掉旧前缀」：分两步删+插会给撤销栈留半截中间态
+      chain.insertContentAt({ from: 1, to: 1 + oldPrefixLength }, prefix)
+    }
+    chain.setTextSelection(cursor).run()
+    return
+  }
+
+  const current = block.value.content ?? ''
+  const parsed = parseHeading(current)
+  const next = prefix + (parsed ? parsed.title : current)
+  if (next === current) return
+  const delta = prefix.length - (parsed ? current.length - parsed.title.length : 0)
+  const marks = readInlineMarks(block.value.format, current.length)
+  const shifted = delta === 0
+    ? marks
+    : marks.map((mark) => ({ ...mark, start: mark.start + delta, end: mark.end + delta }))
+  await blockStore.updateBlockContent(blockId.value, next, { inlineMarks: shifted })
+}
+
+/** 菜单点击出口：模板里不直接 await（与 `run()` 同款，异步失败静默） */
+function onSelectTextStyle(level: 0 | 1 | 2 | 3) {
+  void setTextStyle(level)
+}
 
 const decodedContent = computed(() => {
   // 编辑态显示中文 label：存储 type → 显示 label（decode）
@@ -1039,6 +1115,18 @@ watch(isActive, (active) => {
         @pointerleave="onEntryMenuPointerLeave"
         @mousedown.prevent
       >
+        <!-- 文本样式行（普通文本 / H1 / H2 / H3）：只对文本块出现，排在菜单最上面
+             —— 「这是什么块」之后紧跟着就是「换成哪种文本」，顺序与用户的问题一致。
+             文本块没有类型专属项，所以下面这条分隔线由本处补上（通用段此时 no-divider-top）。 -->
+        <BlockMenuTextStyle
+          v-if="isTextBlock"
+          :level="textStyleLevel"
+          @select="onSelectTextStyle"
+        />
+        <span
+          v-if="isTextBlock"
+          class="menu-sep"
+        />
         <EntryMenuExtra v-if="menuHasExtraItems" />
         <BlockMenuCommon
           :block-id="blockId"
