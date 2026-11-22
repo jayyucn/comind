@@ -16,6 +16,10 @@ import { onLayoutChange } from '../../services/layout-change'
  *
  * 样式复用项目令牌：--corner-glow / --grad-surface / --grad-border / --radius-md / --shadow-floating / --dur-base / --ease-out。
  */
+/** 首选放置侧。四侧为「起点对齐」语义（bottom/top 对齐锚点左缘，left/right 对齐锚点顶边）；
+ *  `-center` 变体只改纵向：与锚点垂直居中。为入口菜单加的，不影响四侧既有行为。 */
+type Placement = 'bottom' | 'top' | 'left' | 'right' | 'left-center' | 'right-center'
+
 const props = withDefaults(
   defineProps<{
     /** 是否显示弹层。 */
@@ -30,7 +34,7 @@ const props = withDefaults(
      *  不传（默认 null）则退化为遗留点模式，仅按 position 做视口收边（与 ADR-0009 一致）。 */
     anchorEl?: HTMLElement | DOMRect | (() => HTMLElement | DOMRect | null) | null
     /** 首选放置侧，默认 'bottom'；空间不足时自动翻到对侧。仅 anchorEl 模式生效。 */
-    placement?: 'bottom' | 'top' | 'left' | 'right'
+    placement?: Placement
     /** 是否模态：true（默认）铺一层全屏 overlay 接住「点空白关闭」；
      *  false 时不铺 overlay，改为在 document 上监听 mousedown 判「点在面板外」。
      *  选区工具条这类不该挡住页面交互的浮层必须用 false——overlay 会把整页指针事件吃掉。 */
@@ -212,15 +216,20 @@ watch(
   { deep: true, immediate: true },
 )
 
-const FLIP: Record<'bottom' | 'top' | 'left' | 'right', 'bottom' | 'top' | 'left' | 'right'> = {
+const FLIP: Record<Placement, Placement> = {
   bottom: 'top',
   top: 'bottom',
   left: 'right',
   right: 'left',
+  // 左侧放不下时落到下方，而不是翻到右侧：入口菜单翻右侧会压住正文开头（锚点就在正文左缘）。
+  // bottom 的落位天然是「锚点左缘 + 下沿 +GAP」，正好是入口胶囊的下方。
+  'left-center': 'bottom',
+  'right-center': 'left-center',
 }
 
 /** 仅当调用方提供锚点或点时才以内联 fixed 定位面板；否则交回 CSS。
  *  锚点模式（ADR-0038）：首选侧起点对齐 → 空间不足自动翻对侧 → 仍放不下贴视口边。
+ *  `-center` 变体沿用同一套避让，只是侧向纵向改为与锚点居中。
  *  遗留点模式：仅按测量尺寸做视口收边，行为保持与 ADR-0009 完全一致。 */
 const panelStyle = computed(() => {
   const vw = typeof window !== 'undefined' ? window.innerWidth : Number.MAX_SAFE_INTEGER
@@ -236,14 +245,20 @@ const panelStyle = computed(() => {
     // 用 scrollHeight/Width 反映内容真实尺寸（不受 maxHeight 裁剪影响），裁剪决策据此得出、稳定不抖动。
     const naturalH = panelScrollH.value || ph
     const naturalW = panelScrollW.value || pw
-    const place = (s: 'bottom' | 'top' | 'left' | 'right') => {
+    const place = (s: Placement) => {
       if (s === 'bottom') return { left: rect.left, top: rect.bottom + ANCHOR_GAP }
       if (s === 'top') return { left: rect.left, top: rect.top - ph - ANCHOR_GAP }
-      if (s === 'right') return { left: rect.right + ANCHOR_GAP, top: rect.top }
-      return { left: rect.left - pw - ANCHOR_GAP, top: rect.top } // left
+      // 侧向：四侧原语义是「与锚点顶边对齐」，保持不变；-center 变体只把纵向换成
+      // 与锚点垂直居中（菜单读起来像从锚点旁探出的一列，而不是从顶边往下挂）。
+      const top =
+        s === 'left-center' || s === 'right-center'
+          ? rect.top + rect.height / 2 - ph / 2
+          : rect.top
+      if (s === 'right' || s === 'right-center') return { left: rect.right + ANCHOR_GAP, top }
+      return { left: rect.left - pw - ANCHOR_GAP, top } // left / left-center
     }
     // 某侧是否「在视口内且不与锚点重叠」
-    const fits = (s: 'bottom' | 'top' | 'left' | 'right', w: number, h: number) => {
+    const fits = (s: Placement, w: number, h: number) => {
       const p = place(s)
       const inView =
         p.left >= EDGE_MARGIN &&
@@ -257,23 +272,20 @@ const panelStyle = computed(() => {
         p.top >= rect.bottom
       return inView && noOverlap
     }
-    const order: Array<'bottom' | 'top' | 'left' | 'right'> = [
-      props.placement,
-      FLIP[props.placement],
-    ]
+    const order: Placement[] = [props.placement, FLIP[props.placement]]
     let chosen = order.find((s) => fits(s, naturalW, naturalH))
 
     let effW = naturalW
     let effH = naturalH
     if (!chosen) {
       // 两侧都放不下：取空间更大的一侧，并把面板尺寸限制在可用空间内（不遮锚点为前提）
-      const freeOf = (s: 'bottom' | 'top' | 'left' | 'right') => {
+      const freeOf = (s: Placement) => {
         const room =
           s === 'top' || s === 'bottom'
             ? s === 'top'
               ? rect.top
               : vh - rect.bottom
-            : s === 'left'
+            : s === 'left' || s === 'left-center'
               ? rect.left
               : vw - rect.right
         return room - ANCHOR_GAP - EDGE_MARGIN

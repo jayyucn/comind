@@ -149,7 +149,43 @@ describe('BasePopover 锚点避让（ADR-0038）', () => {
     await w.vm.$nextTick()
     // 1000+4+300=1304 > 1024-8 → 翻到左侧：900-300-4=596
     expect(panel.style.left).toBe('596px')
-    expect(panel.style.top).toBe('100px')
+    expect(panel.style.top).toBe('100px') // 侧向不带 -center 时仍与锚点顶边对齐
+    w.unmount()
+    anchor.remove()
+  })
+
+  it('左侧居中放置（left-center）：纵向与锚点居中', async () => {
+    const anchor = fakeAnchor({ left: 400, top: 300, right: 500, bottom: 340 })
+    const w = mount(BasePopover, {
+      props: { visible: true, anchorEl: anchor, placement: 'left-center' },
+      slots: { default: '<div style="width:300px;height:200px">p</div>' },
+      attachTo: document.body,
+    })
+    const panel = panelEl()!
+    fakeSize(panel, 300, 200)
+    await w.vm.$nextTick()
+    await w.vm.$nextTick()
+    // 400-300-4=96；top = 300 + 40/2 − 200/2 = 220
+    expect(panel.style.left).toBe('96px')
+    expect(panel.style.top).toBe('220px')
+    w.unmount()
+    anchor.remove()
+  })
+
+  it('左侧居中放置空间不足时落到下方（不翻到右侧）', async () => {
+    const anchor = fakeAnchor({ left: 100, top: 300, right: 200, bottom: 340 })
+    const w = mount(BasePopover, {
+      props: { visible: true, anchorEl: anchor, placement: 'left-center' },
+      slots: { default: '<div style="width:300px;height:200px">p</div>' },
+      attachTo: document.body,
+    })
+    const panel = panelEl()!
+    fakeSize(panel, 300, 200)
+    await w.vm.$nextTick()
+    await w.vm.$nextTick()
+    // 左侧只剩 100(<300+4+8) → 落到下方：left 对齐锚点左缘 100，top = 340+4
+    expect(panel.style.left).toBe('100px')
+    expect(panel.style.top).toBe('344px')
     w.unmount()
     anchor.remove()
   })

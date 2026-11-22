@@ -1005,7 +1005,7 @@ watch(isActive, (active) => {
     <BasePopover
       :visible="menuOpen"
       :anchor-el="menuAnchor"
-      placement="left"
+      placement="left-center"
       :modal="false"
       @close="closeEntryMenu"
     >
