@@ -1,5 +1,5 @@
 use crate::{
-    types::{Block, BlockRenderData, Link, PageWithBlocks, RenderSegment},
+    types::{is_text_like, Block, BlockRenderData, Link, PageWithBlocks, RenderSegment},
     storage::repository,
     services::{DateRefService, FieldValueService, TagService},
 };
@@ -13,7 +13,7 @@ pub fn build_segments_for_block(
     storage: &mut dyn repository::StorageAdapter,
     block: &Block,
 ) -> Result<Vec<RenderSegment>, Box<dyn Error>> {
-    if block.r#type != "bullet" && block.r#type != "property" {
+    if !is_text_like(&block.r#type) {
         return Ok(Vec::new());
     }
 
@@ -74,7 +74,7 @@ pub fn build_page_with_blocks(
     let block_ids: Vec<String> = blocks.iter().map(|b| b.id.clone()).collect();
     let segment_block_ids: Vec<String> = blocks
         .iter()
-        .filter(|b| b.r#type == "bullet" || b.r#type == "property")
+        .filter(|b| is_text_like(&b.r#type))
         .map(|b| b.id.clone())
         .collect();
 
@@ -123,7 +123,7 @@ pub fn build_page_with_blocks(
     for block in &blocks {
         let children = children_map.get(&block.id).cloned().unwrap_or_default();
 
-        let segments = if block.r#type == "bullet" || block.r#type == "property" {
+        let segments = if is_text_like(&block.r#type) {
             let links = links_by_block.get(&block.id).map(|v| v.as_slice()).unwrap_or(&[]);
             build_segments(block, links, &id_to_title, &rel_cache, &tag_cache)?
         } else {

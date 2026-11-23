@@ -42,7 +42,7 @@ function makeNode(content: string): TreeNode {
       pos: 0,
       content,
       format: {},
-      type: 'bullet',
+      type: 'text',
       createdAt: 0,
       updatedAt: 0,
     },

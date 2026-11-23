@@ -11,9 +11,9 @@ describe('useBlockCollapse', () => {
   function makeNode(collapsed = false): { node: TreeNode; block: any } {
     const block = {
       id: 'b1', pageId: 'p1', parentId: null, pos: 0,
-      content: '', format: { collapsed }, type: 'bullet', createdAt: 0, updatedAt: 0
+      content: '', format: { collapsed }, type: 'text', createdAt: 0, updatedAt: 0
     }
-    const childBlock = { id: 'b2', pageId: 'p1', parentId: 'b1', pos: 0, content: '', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0 }
+    const childBlock = { id: 'b2', pageId: 'p1', parentId: 'b1', pos: 0, content: '', format: {}, type: 'text', createdAt: 0, updatedAt: 0 }
     const node: TreeNode = { id: 'b1', block, children: [{ id: 'b2', block: childBlock, children: [] }] }
     return { node, block }
   }
@@ -47,7 +47,7 @@ describe('useBlockCollapse', () => {
   })
 
   it('toggleCollapse is no-op when no children', async () => {
-    const block = { id: 'b1', pageId: 'p1', parentId: null, pos: 0, content: '', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0 }
+    const block = { id: 'b1', pageId: 'p1', parentId: null, pos: 0, content: '', format: {}, type: 'text', createdAt: 0, updatedAt: 0 }
     const node: TreeNode = { id: 'b1', block, children: [] }
     const blockStore = useBlockStore()
     blockStore.blocks = [block]
@@ -62,7 +62,7 @@ describe('useBlockCollapse', () => {
   it('0 子节点 + collapsed=true（删除掏空后的 stale 残留）⇒ 生效态为展开', () => {
     const block = {
       id: 'b1', pageId: 'p1', parentId: null, pos: 0,
-      content: '', format: { collapsed: true }, type: 'bullet', createdAt: 0, updatedAt: 0
+      content: '', format: { collapsed: true }, type: 'text', createdAt: 0, updatedAt: 0
     }
     const node: TreeNode = { id: 'b1', block, children: [] }
     const nodeRef = ref(node)
@@ -80,11 +80,11 @@ describe('useBlockCollapse', () => {
   it('stale 残留块获得子节点后，从展开态变为折叠态（说明复位必须落在写入侧）', () => {
     const block = {
       id: 'b1', pageId: 'p1', parentId: null, pos: 0,
-      content: '', format: { collapsed: true }, type: 'bullet', createdAt: 0, updatedAt: 0
+      content: '', format: { collapsed: true }, type: 'text', createdAt: 0, updatedAt: 0
     }
     const childBlock = {
       id: 'b2', pageId: 'p1', parentId: 'b1', pos: 0,
-      content: '', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0
+      content: '', format: {}, type: 'text', createdAt: 0, updatedAt: 0
     }
     const node = ref<TreeNode>({ id: 'b1', block, children: [] })
     const { collapsed } = useBlockCollapse(node)
@@ -99,7 +99,7 @@ describe('useBlockCollapse', () => {
     function fieldOnlyNode(collapsed = false): { node: TreeNode; block: any } {
       const block = {
         id: 'b1', pageId: 'p1', parentId: null, pos: 0,
-        content: '', format: { collapsed }, type: 'bullet', createdAt: 0, updatedAt: 0
+        content: '', format: { collapsed }, type: 'text', createdAt: 0, updatedAt: 0
       }
       return { node: { id: 'b1', block, children: [] }, block }
     }

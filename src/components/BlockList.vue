@@ -825,7 +825,7 @@ async function handleDocPaste(e: ClipboardEvent) {
     if (
       target
       && target.pageId === props.pageId
-      && target.type === 'bullet'
+      && target.type === 'text'
       && target.content.trim() === ''
       && blockStore.getChildren(target.id).length === 0
     ) {
@@ -868,7 +868,7 @@ async function handleDocPaste(e: ClipboardEvent) {
       anchorBlock
       && anchorBlock.pageId === props.pageId
       && anchorBlock.content.trim() === ''
-      && anchorBlock.type === 'bullet'
+      && anchorBlock.type === 'text'
     ) {
       editorStore.deactivateBlock()
       await blockStore.deleteBlock(anchorBlockId)
@@ -1063,7 +1063,7 @@ const wrapPageRefState = computed<{ enabled: boolean; hint?: string } | null>(()
 
   const block = blockStore.getBlock(tr.anchor.blockId)
   // 表格等原子块的 content 不承载正文，没有「单块文本」可包
-  if (!block || block.type !== 'bullet') return null
+  if (!block || block.type !== 'text') return null
 
   const lo = Math.min(tr.anchor.offset, tr.head.offset)
   const hi = Math.max(tr.anchor.offset, tr.head.offset)

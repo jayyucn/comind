@@ -108,7 +108,7 @@ describe('T9 — 阅读态 string replace 替换', () => {
     blockStore.blocks.push({
       id: 'block-a',
       content: '任务 @2026-07-15 ⏰ 完成',
-      type: 'bullet' as any,
+      type: 'text' as any,
       page: 'test-page',
       children: [],
       format: {},

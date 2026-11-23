@@ -1,12 +1,13 @@
 // 写笔记业务（票 06 / ADR-0040 D3/D4/D7）：高亮升格为知识库 Block。
 // 阅读器窗口（独立 WebView，经 wasm client 直写同一 SQLite）调用的写路径：
-// 新建 → 书 Page 根级 append bullet Block（content=想法）+ 书笔记字段值
+// 新建 → 书 Page 根级 append text Block（content=想法）+ 书笔记字段值
 // book/part/chapter/cfi/quote + 回填高亮行 block_id（upsert 全量，ON CONFLICT 更新）；
 // 更新 → 已有 block_id 的高亮再写，只改同一条 Block 的 content（#9 语义）；
 // 删除 → 高亮行与其笔记 Block 联动删除（delete_block_cascade，不留孤儿块）。
 // 写入/删除成功后 emitTo 主窗口 'reader:data-changed'（主窗口重载对应 page
 // blocks，ADR-0040 D4：独立 WebView = 独立 Pinia 内存态，跨窗口事件刷新）。
 import { emitTo } from '@tauri-apps/api/event'
+
 import { useBlockStore } from '../stores/blocks'
 import { useFieldValueStore } from '../stores/fieldValue'
 import { initCoreClient, isTauriEnvironment } from '../wasm/client'
@@ -73,7 +74,7 @@ export async function createOrUpdateNoteBlock(
     pageId: input.bookPageId,
     content: input.text,
     parentId: null,
-    type: 'bullet',
+    type: 'text',
   })
   // 先落库再写字段值（字段值表有 block 外键约束）
   await blockStore.flushSave(block.id)

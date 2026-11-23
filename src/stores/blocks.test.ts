@@ -609,7 +609,7 @@ describe('loadBlock', () => {
       pos: 1000,
       content: 'From DB',
       format: '{}',
-      type: 'bullet',
+      type: 'text',
       created_at: 1000,
       updated_at: 2000
     }

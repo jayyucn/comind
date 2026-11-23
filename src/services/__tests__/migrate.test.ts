@@ -69,7 +69,7 @@ describe('migrateDateProperties', () => {
         { id: 'page-1' },
       ]),
       getBlocksByPage: vi.fn().mockResolvedValue([
-        { id: 'block-1', page_id: 'page-1', parent_id: null, pos: 1000, content: '买牛奶', format: '{}', type: 'bullet' },
+        { id: 'block-1', page_id: 'page-1', parent_id: null, pos: 1000, content: '买牛奶', format: '{}', type: 'text' },
       ]),
       getFieldValues: vi.fn().mockResolvedValue([
         row({ id: 'prop-1', key: 'deadline', value_json: '"2026-07-20"', value_type: 'date' }),
@@ -99,7 +99,7 @@ describe('migrateDateProperties', () => {
         { id: 'page-1' },
       ]),
       getBlocksByPage: vi.fn().mockResolvedValue([
-        { id: 'block-1', page_id: 'page-1', parent_id: null, pos: 1000, content: '周报', format: '{}', type: 'bullet' },
+        { id: 'block-1', page_id: 'page-1', parent_id: null, pos: 1000, content: '周报', format: '{}', type: 'text' },
       ]),
       getFieldValues: vi.fn().mockResolvedValue([
         row({ id: 'prop-1', key: 'scheduled', value_json: '"2026-07-15"', value_type: 'date' }),
@@ -127,7 +127,7 @@ describe('migrateDateProperties', () => {
         { id: 'page-1' },
       ]),
       getBlocksByPage: vi.fn().mockResolvedValue([
-        { id: 'block-1', page_id: 'page-1', parent_id: null, pos: 1000, content: '@2026-07-20 ⏰ 买牛奶', format: '{}', type: 'bullet' },
+        { id: 'block-1', page_id: 'page-1', parent_id: null, pos: 1000, content: '@2026-07-20 ⏰ 买牛奶', format: '{}', type: 'text' },
       ]),
       getFieldValues: vi.fn().mockResolvedValue([
         row({ id: 'prop-1', key: 'deadline', value_json: '"2026-07-20"', value_type: 'date' }),
@@ -146,7 +146,7 @@ describe('migrateDateProperties', () => {
         { id: 'page-1' },
       ]),
       getBlocksByPage: vi.fn().mockResolvedValue([
-        { id: 'block-1', page_id: 'page-1', parent_id: null, pos: 1000, content: '', format: '{}', type: 'bullet' },
+        { id: 'block-1', page_id: 'page-1', parent_id: null, pos: 1000, content: '', format: '{}', type: 'text' },
       ]),
       getFieldValues: vi.fn().mockResolvedValue([
         row({ id: 'prop-1', key: 'deadline', value_json: '"2026-07-20"', value_type: 'date' }),
@@ -166,7 +166,7 @@ describe('migrateDateProperties', () => {
         { id: 'page-1' },
       ]),
       getBlocksByPage: vi.fn().mockResolvedValue([
-        { id: 'block-1', page_id: 'page-1', parent_id: null, pos: 1000, content: '普通内容', format: '{}', type: 'bullet' },
+        { id: 'block-1', page_id: 'page-1', parent_id: null, pos: 1000, content: '普通内容', format: '{}', type: 'text' },
       ]),
       getFieldValues: vi.fn().mockResolvedValue([
         row({ id: 'prop-1', key: 'status', value_json: 'Todo', value_type: 'string' }),
@@ -186,10 +186,10 @@ describe('migrateDateProperties', () => {
       ]),
       getBlocksByPage: vi.fn()
         .mockResolvedValueOnce([
-          { id: 'b1', page_id: 'page-1', parent_id: null, pos: 1000, content: '任务A', format: '{}', type: 'bullet' },
+          { id: 'b1', page_id: 'page-1', parent_id: null, pos: 1000, content: '任务A', format: '{}', type: 'text' },
         ])
         .mockResolvedValueOnce([
-          { id: 'b2', page_id: 'page-2', parent_id: null, pos: 1000, content: '任务B', format: '{}', type: 'bullet' },
+          { id: 'b2', page_id: 'page-2', parent_id: null, pos: 1000, content: '任务B', format: '{}', type: 'text' },
         ]),
       getFieldValues: vi.fn()
         .mockResolvedValueOnce([
@@ -210,8 +210,8 @@ describe('migrateDateProperties', () => {
         { id: 'page-1' },
       ]),
       getBlocksByPage: vi.fn().mockResolvedValue([
-        { id: 'b1', page_id: 'page-1', parent_id: null, pos: 1000, content: '失败block', format: '{}', type: 'bullet' },
-        { id: 'b2', page_id: 'page-1', parent_id: null, pos: 1000, content: '成功block', format: '{}', type: 'bullet' },
+        { id: 'b1', page_id: 'page-1', parent_id: null, pos: 1000, content: '失败block', format: '{}', type: 'text' },
+        { id: 'b2', page_id: 'page-1', parent_id: null, pos: 1000, content: '成功block', format: '{}', type: 'text' },
       ]),
       getFieldValues: vi.fn()
         .mockResolvedValueOnce([
@@ -260,7 +260,7 @@ describe('migrateDateProperties', () => {
         { id: 'page-1' },
       ]),
       getBlocksByPage: vi.fn().mockResolvedValue([
-        { id: 'block-1', page_id: 'page-1', parent_id: null, pos: 1000, content: '内容', format: '{}', type: 'bullet' },
+        { id: 'block-1', page_id: 'page-1', parent_id: null, pos: 1000, content: '内容', format: '{}', type: 'text' },
       ]),
       getFieldValues: vi.fn().mockResolvedValue([
         row({ id: 'prop-1', key: 'deadline', value_json: '"2026-07-20"', value_type: 'date', deleted_at: 123 }),

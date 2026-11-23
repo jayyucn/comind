@@ -69,7 +69,7 @@ describe('resetBlockToText — 重置为空白文本块', () => {
     expect(created!.parentId).toBe(null)
     expect(created!.pos).toBe(table.pos)
     expect(created!.content).toBe('')
-    expect(created!.type).toBe('bullet')
+    expect(created!.type).toBe('text')
     // 类型专属配置（format.table）不能跟着新块活下来
     expect(created!.format).toEqual({})
 
@@ -105,7 +105,7 @@ describe('resetBlockToText — 重置为空白文本块', () => {
     // 删除被闸门拦住：同一个块留下，但已不是表格
     expect(created!.id).toBe(only.id)
     expect(store.blocks).toHaveLength(1)
-    expect(created!.type).toBe('bullet')
+    expect(created!.type).toBe('text')
     expect(created!.content).toBe('')
     expect(created!.format).toEqual({})
     // 字段值随删除一起消失（否则「空文本块」下面还挂着一行状态）

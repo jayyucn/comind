@@ -258,7 +258,7 @@ mod tests {
     fn setup_block(storage: &mut SQLiteAdapter, content: &str) -> String {
         // page 需要一个宿主 block_id（page 同时是一个 block）
         let page = PageService::create(storage, "", "Test Page", None, None, None, None, None).unwrap();
-        let block = BlockService::create(storage, &page.id, None, content, "{}", "bullet", None, true).unwrap();
+        let block = BlockService::create(storage, &page.id, None, content, "{}", "text", None, true).unwrap();
         block.id
     }
 

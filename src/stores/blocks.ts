@@ -714,7 +714,7 @@ export const useBlockStore = defineStore('blocks', () => {
       pageId: opts.pageId,
       pos: newPos,
       format: opts.format ?? {},
-      type: opts.type ?? 'bullet',
+      type: opts.type ?? 'text',
       createdAt: Date.now(),
       updatedAt: Date.now()
     }
@@ -1256,9 +1256,9 @@ export const useBlockStore = defineStore('blocks', () => {
 
     const lo = renderedOffsetToEncodedOffset(startBlock.content, startBlock.renderSegments, start.offset)
     const hi = renderedOffsetToEncodedOffset(endBlock.content, endBlock.renderSegments, end.offset)
-    // 只有普通文本块参与裁剪/合并（heading 等同为 bullet + format）
-    const startIsText = startBlock.type === 'bullet'
-    const endIsText = endBlock.type === 'bullet'
+    // 只有普通文本块参与裁剪/合并（heading 等同为 text + format）
+    const startIsText = startBlock.type === 'text'
+    const endIsText = endBlock.type === 'text'
     // 光标口径换算：cursorPos 是 ProseMirror position（文档位置 = 文本偏移 + 1）
     const caret = (textOffset: number) => textOffset + 1
 
@@ -1624,7 +1624,7 @@ export const useBlockStore = defineStore('blocks', () => {
 
   /** 本块是不是「文本块 + 有有序列表前缀」（段落样式只存在于文本块，同 renderer 口径） */
   function isOrderedListBlock(block: Block): boolean {
-    return block.type === 'bullet' && parseParagraphStyle(block.content).style === 'ol'
+    return block.type === 'text' && parseParagraphStyle(block.content).style === 'ol'
   }
 
   /** 同父同页的兄弟（pos 升序），供纯函数推演 */
@@ -1633,7 +1633,7 @@ export const useBlockStore = defineStore('blocks', () => {
       id: b.id,
       // 段落样式只存在于文本块（bullet）。code/image/query/table 的 content 里
       // 即使恰好以 `1. ` 开头也不是列表 —— 用空串让它们充当段边界，不参与编号。
-      content: b.type === 'bullet' ? b.content : '',
+      content: b.type === 'text' ? b.content : '',
       format: b.format,
     }))
   }
@@ -1732,7 +1732,7 @@ export const useBlockStore = defineStore('blocks', () => {
           group.map(b => ({
             id: b.id,
             // 同 orderedListSiblings：非文本块不参与编号，只当段边界
-            content: b.type === 'bullet' ? b.content : '',
+            content: b.type === 'text' ? b.content : '',
             format: b.format,
           })),
         )
@@ -1891,7 +1891,7 @@ export const useBlockStore = defineStore('blocks', () => {
 
     // 有序列表序号：本块的手写值若与推导值不符 ⇒ 落成锚点，并把后续项重排。
     // 只在「本来/现在是 ol」时调度 —— 普通正文的每一次打字都排一次扫页是纯浪费。
-    if (!orderedListApplying && (wasOrderedList || (block.type === 'bullet' && isOrderedListItem(content)))) {
+    if (!orderedListApplying && (wasOrderedList || (block.type === 'text' && isOrderedListItem(content)))) {
       scheduleOrderedListReindex(block.pageId, blockId)
     }
   }
@@ -1973,7 +1973,7 @@ export const useBlockStore = defineStore('blocks', () => {
     // 闸门保留下来的同一块（页里唯一顶层块）：没有「删除」可依赖，就地收尾
     const survivor = blocks.value.find(b => b.id === blockId)
     if (survivor) {
-      survivor.type = 'bullet'
+      survivor.type = 'text'
       survivor.format = {}
       survivor.properties = []
       survivor.renderSegments = undefined
@@ -1987,7 +1987,7 @@ export const useBlockStore = defineStore('blocks', () => {
       return survivor
     }
 
-    return createBlock({ pageId, content: '', parentId, pos, type: 'bullet', format: {} })
+    return createBlock({ pageId, content: '', parentId, pos, type: 'text', format: {} })
   }
 
   /**

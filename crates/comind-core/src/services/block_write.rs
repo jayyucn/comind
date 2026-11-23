@@ -457,7 +457,7 @@ mod tests {
             pos,
             content: "test content".to_string(),
             format: "{}".to_string(),
-            r#type: "bullet".to_string(),
+            r#type: "text".to_string(),
             created_at: 1,
             updated_at: 1,
             version: 0,

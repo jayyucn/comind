@@ -100,7 +100,7 @@ describe('handleConfirm — 自动标记 Todo', () => {
   it('content 模式：插入 schedule dateRef，无 status → 自动补 Todo', async () => {
     const panel = useDateTimePickerPanel()
 
-    blockState.blocks = [{ id: 'b1', content: '买牛奶', type: 'bullet' }]
+    blockState.blocks = [{ id: 'b1', content: '买牛奶', type: 'text' }]
     editorState.dateRefEditor = {
       visible: true,
       blockId: 'b1',
@@ -128,7 +128,7 @@ describe('handleConfirm — 自动标记 Todo', () => {
   it('content 模式：插入 deadline dateRef，无 status → 自动补 Todo', async () => {
     const panel = useDateTimePickerPanel()
 
-    blockState.blocks = [{ id: 'b2', content: '交报告', type: 'bullet' }]
+    blockState.blocks = [{ id: 'b2', content: '交报告', type: 'text' }]
     editorState.dateRefEditor = {
       visible: true,
       blockId: 'b2',
@@ -158,7 +158,7 @@ describe('handleConfirm — 自动标记 Todo', () => {
     // 仅关心本次 handleConfirm 是否"补" Todo
     hoisted.setFieldValue.mockClear()
 
-    blockState.blocks = [{ id: 'b3', content: '已完成的任务', type: 'bullet' }]
+    blockState.blocks = [{ id: 'b3', content: '已完成的任务', type: 'text' }]
     editorState.dateRefEditor = {
       visible: true,
       blockId: 'b3',
@@ -223,7 +223,7 @@ describe('handleConfirm — 自动标记 Todo', () => {
   it('blockId 缺失时不设置 status', async () => {
     const panel = useDateTimePickerPanel()
 
-    blockState.blocks = [{ id: 'b5', content: '普通块', type: 'bullet' }]
+    blockState.blocks = [{ id: 'b5', content: '普通块', type: 'text' }]
     editorState.dateRefEditor = {
       visible: true,
       blockId: null,

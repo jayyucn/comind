@@ -25,7 +25,7 @@ function createBlock(id: string, pageId: string, parentId: string | null, pos: n
     pos,
     content,
     format: {},
-    type: 'bullet',
+    type: 'text',
     properties: {},
     createdAt: 0,
     updatedAt: 0

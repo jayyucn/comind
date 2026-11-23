@@ -564,7 +564,7 @@ describe('usePageStore', () => {
       blocks: [
         {
           id: 'b1', page_id: 'p1', parent_id: null, pos: 1000,
-          content: '写周报', format: '{}', type: 'bullet',
+          content: '写周报', format: '{}', type: 'text',
           created_at: 1, updated_at: 2, version: 0, deleted_at: null,
         },
       ],

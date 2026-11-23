@@ -32,6 +32,29 @@ fn default_timestamp() -> i64 {
     chrono::Utc::now().timestamp_millis()
 }
 
+/// 块正文类型的规范名（ADR-0063 D1）。**写入路径一律用它**。
+pub const DEFAULT_BLOCK_TYPE: &str = "text";
+
+/// 读侧类型归一（ADR-0063 D1）：历史值 `bullet` 与缺失值都归一为 `text`，其余原样。
+///
+/// 这是双读归一的**唯一落点**：只在从存储读出的位置调用，写入路径不得调用
+/// （写入只写规范值，否则等于隐式迁移）。
+pub fn normalize_block_type(raw: Option<&str>) -> String {
+    match raw {
+        None | Some("bullet") | Some("") => DEFAULT_BLOCK_TYPE.to_string(),
+        Some(other) => other.to_string(),
+    }
+}
+
+/// 需要生成 renderSegments 的块类型（正文类）。
+///
+/// `bullet` 是历史名，保留到存量数据清空为止；`text` 是规范名。
+/// **新增正文类块类型（如 callout-*）必须加进这里**，否则该类型块的正文
+/// 不会生成 renderSegments，渲染层拿到的是空片段。
+pub fn is_text_like(block_type: &str) -> bool {
+    matches!(block_type, "text" | "bullet" | "property")
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BlockCreateOptions {
     pub page_id: String,
@@ -59,7 +82,7 @@ impl Block {
             pos: 1000,
             content: options.content,
             format: "{}".to_string(),
-            r#type: options.r#type.unwrap_or_else(|| "bullet".to_string()),
+            r#type: options.r#type.unwrap_or_else(|| DEFAULT_BLOCK_TYPE.to_string()),
             created_at: now,
             updated_at: now,
             version: 0,

@@ -684,7 +684,7 @@ describe('BlockList 粘贴分发（#92）', () => {
     return JSON.stringify({
       version: 1,
       kind: 'blocks',
-      blocks: [{ content, type: 'bullet', format: null, properties: null, children: [] }],
+      blocks: [{ content, type: 'text', format: null, properties: null, children: [] }],
     })
   }
 

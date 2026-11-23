@@ -8,12 +8,12 @@
 /**
  * 模板块（树形结构）
  *
- * - 'bullet'   → 普通 Block（type='bullet'），content 即为可见文本
- * - 'heading'  → 标题 Block（type='bullet'，format.type='heading'，format.level=headingLevel）
+ * - 'text'   → 普通 Block（type='text'），content 即为可见文本
+ * - 'heading'  → 标题 Block（type='text'，format.type='heading'，format.level=headingLevel）
  * - 'property' → 属性 Block（type='property'，content 序列化为 `key:: value`）
  */
 export interface TemplateBlock {
-  type: 'bullet' | 'heading' | 'property'
+  type: 'text' | 'heading' | 'property'
   /** 可包含 {{name}} 占位符或 {{date}} 预定义变量 */
   content: string
   /** type=heading 时必填，写入 format.level */
@@ -109,7 +109,7 @@ export interface BlockDraft {
    * 与 `Block.format` 类型保持一致以便直接兼容。
    */
   format: Record<string, unknown>
-  type: 'bullet' | 'property' | 'query' | 'embed' | 'code' | 'image'
+  type: 'text' | 'property' | 'query' | 'embed' | 'code' | 'image'
   /** 来自 {{cursor}} 替换，插入后用于定位光标；仅第一个非 null 的生效 */
   cursorMarker: '__CURSOR__' | null
 }

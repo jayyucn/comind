@@ -2103,7 +2103,7 @@ mod tests {
     fn block_json(content: &str, create_missing_tags: Option<bool>) -> serde_json::Value {
         let mut v = serde_json::json!({
             "id": "b1", "page_id": "p1", "parent_id": null, "pos": 0,
-            "content": content, "format": "{}", "type": "bullet",
+            "content": content, "format": "{}", "type": "text",
         });
         if let Some(flag) = create_missing_tags {
             v["create_missing_tags"] = serde_json::json!(flag);

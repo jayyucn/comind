@@ -111,7 +111,7 @@ describe('Block - rel-type-label click handling', () => {
         pos: 1000,
         content: ORIGINAL_CONTENT,
         format: {},
-        type: 'bullet',
+        type: 'text',
         properties: {},
         createdAt: Date.now(),
         updatedAt: Date.now()
@@ -143,7 +143,7 @@ describe('Block - rel-type-label click handling', () => {
       pos: 1000,
       content: ORIGINAL_CONTENT,
       format: {},
-      type: 'bullet',
+      type: 'text',
       properties: {},
       createdAt: Date.now(),
       updatedAt: Date.now()
@@ -304,7 +304,7 @@ describe('Block - handleDelete 关系清理集成', () => {
       pos: 500,
       content: 'prev block',
       format: {},
-      type: 'bullet',
+      type: 'text',
       properties: {},
       createdAt: Date.now(),
       updatedAt: Date.now()
@@ -316,7 +316,7 @@ describe('Block - handleDelete 关系清理集成', () => {
       pos: 1000,
       content: 'see ((depends-on<->required-by))[[X]]',
       format: {},
-      type: 'bullet',
+      type: 'text',
       properties: {},
       createdAt: Date.now(),
       updatedAt: Date.now()
@@ -328,7 +328,7 @@ describe('Block - handleDelete 关系清理集成', () => {
       pos: 1000,
       content: 'reverse ((required-by))[[P]]',
       format: {},
-      type: 'bullet',
+      type: 'text',
       properties: {},
       createdAt: Date.now(),
       updatedAt: Date.now()
@@ -414,7 +414,7 @@ describe('characterization: render', () => {
     const blockStore = useBlockStore()
     blockStore.blocks = [{
       id: 'block-1', pageId: 'page-1', parentId: null, pos: 0,
-      content: 'hello', format: {}, type: 'bullet',
+      content: 'hello', format: {}, type: 'text',
       createdAt: 0, updatedAt: 0
     }]
     const node: TreeNode = {
@@ -436,7 +436,7 @@ describe('characterization: render', () => {
     const fieldValueStore = useFieldValueStore()
     blockStore.blocks = [{
       id: 'block-1', pageId: 'page-1', parentId: null, pos: 0,
-      content: '', format: {}, type: 'bullet',
+      content: '', format: {}, type: 'text',
       createdAt: 0, updatedAt: 0
     }]
     const node: TreeNode = {
@@ -463,7 +463,7 @@ describe('characterization: render', () => {
     const editorStore = useEditorStore()
     blockStore.blocks = [{
       id: 'block-1', pageId: 'page-1', parentId: null, pos: 0,
-      content: '', format: {}, type: 'bullet',
+      content: '', format: {}, type: 'text',
       createdAt: 0, updatedAt: 0
     }]
     const node: TreeNode = {
@@ -494,7 +494,7 @@ describe('characterization: editor lifecycle', () => {
     const editorStore = useEditorStore()
     blockStore.blocks = [{
       id: 'b1', pageId: 'p1', parentId: null, pos: 0,
-      content: '', format: {}, type: 'bullet',
+      content: '', format: {}, type: 'text',
       createdAt: 0, updatedAt: 0
     }]
     const setActiveEditorSpy = vi.spyOn(editorStore, 'setActiveEditor')
@@ -517,7 +517,7 @@ describe('characterization: editor lifecycle', () => {
     const editorStore = useEditorStore()
     blockStore.blocks = [{
       id: 'b1', pageId: 'p1', parentId: null, pos: 0,
-      content: '', format: {}, type: 'bullet',
+      content: '', format: {}, type: 'text',
       createdAt: 0, updatedAt: 0
     }]
     const setActiveEditorSpy = vi.spyOn(editorStore, 'setActiveEditor')
@@ -545,7 +545,7 @@ describe('characterization: editor lifecycle', () => {
     const editorStore = useEditorStore()
     blockStore.blocks = [{
       id: 'b1', pageId: 'p1', parentId: null, pos: 0,
-      content: '', format: {}, type: 'bullet',
+      content: '', format: {}, type: 'text',
       createdAt: 0, updatedAt: 0
     }]
     const setActiveEditorSpy = vi.spyOn(editorStore, 'setActiveEditor')
@@ -602,7 +602,7 @@ describe('characterization: save', () => {
     const updateSpy = vi.spyOn(blockStore, 'updateBlockContent').mockResolvedValue(undefined)
     blockStore.blocks = [{
       id: 'b1', pageId: 'p1', parentId: null, pos: 0,
-      content: 'old', format: {}, type: 'bullet',
+      content: 'old', format: {}, type: 'text',
       createdAt: 0, updatedAt: 0
     }]
     const node: TreeNode = { id: 'b1', block: blockStore.blocks[0], children: [] }
@@ -645,7 +645,7 @@ describe('characterization: delete', () => {
     const updateSpy = vi.spyOn(blockStore, 'updateBlockContent').mockResolvedValue(undefined)
     blockStore.blocks = [{
       id: 'b1', pageId: 'p1', parentId: null, pos: 0,
-      content: 'text', format: {}, type: 'bullet',
+      content: 'text', format: {}, type: 'text',
       createdAt: 0, updatedAt: 0
     }]
     vi.spyOn(blockStore, 'findPreviousBlockInTreeOrder').mockReturnValue(undefined)
@@ -671,8 +671,8 @@ describe('characterization: delete', () => {
     const editorStore = useEditorStore()
     const deleteSpy = vi.spyOn(blockStore, 'deleteBlocks').mockResolvedValue(undefined)
     blockStore.blocks = [
-      { id: 'prev', pageId: 'p1', parentId: null, pos: 0, content: 'prev', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0 },
-      { id: 'b1', pageId: 'p1', parentId: null, pos: 1, content: 'text', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0 }
+      { id: 'prev', pageId: 'p1', parentId: null, pos: 0, content: 'prev', format: {}, type: 'text', createdAt: 0, updatedAt: 0 },
+      { id: 'b1', pageId: 'p1', parentId: null, pos: 1, content: 'text', format: {}, type: 'text', createdAt: 0, updatedAt: 0 }
     ]
     vi.spyOn(blockStore, 'findPreviousBlockInTreeOrder').mockReturnValue(blockStore.blocks[0])
     const node: TreeNode = { id: 'b1', block: blockStore.blocks[1], children: [] }
@@ -706,11 +706,11 @@ describe('characterization: collapse', () => {
     const updateFormatSpy = vi.spyOn(blockStore, 'updateBlockFormat').mockResolvedValue(undefined)
     const childBlock = {
       id: 'b2', pageId: 'p1', parentId: 'b1', pos: 0,
-      content: '', format: {}, type: 'bullet' as const,
+      content: '', format: {}, type: 'text' as const,
       createdAt: 0, updatedAt: 0
     }
     blockStore.blocks = [
-      { id: 'b1', pageId: 'p1', parentId: null, pos: 0, content: '', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0 },
+      { id: 'b1', pageId: 'p1', parentId: null, pos: 0, content: '', format: {}, type: 'text', createdAt: 0, updatedAt: 0 },
       childBlock
     ]
     const node: TreeNode = {
@@ -748,7 +748,7 @@ describe('块入口胶囊打开本块菜单（ADR-0039 D9：入口不再开弹�
     const editorStore = useEditorStore()
     const openSpy = vi.spyOn(editorStore, 'openBlockModal')
     blockStore.blocks = [
-      { id: 'b1', pageId: 'p1', parentId: null, pos: 0, content: '', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0 },
+      { id: 'b1', pageId: 'p1', parentId: null, pos: 0, content: '', format: {}, type: 'text', createdAt: 0, updatedAt: 0 },
     ]
     const node: TreeNode = { id: 'b1', block: blockStore.blocks[0], children: [] }
     const wrapper = mount(Block, {
@@ -777,7 +777,7 @@ describe('块入口胶囊打开本块菜单（ADR-0039 D9：入口不再开弹�
   it('弹窗内（inBlockModal）点入口胶囊仍是 no-op', async () => {
     const blockStore = useBlockStore()
     blockStore.blocks = [
-      { id: 'b1', pageId: 'p1', parentId: null, pos: 0, content: '', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0 },
+      { id: 'b1', pageId: 'p1', parentId: null, pos: 0, content: '', format: {}, type: 'text', createdAt: 0, updatedAt: 0 },
     ]
     const node: TreeNode = { id: 'b1', block: blockStore.blocks[0], children: [] }
     const wrapper = mount(Block, {
@@ -806,7 +806,7 @@ describe('块入口胶囊悬停即开菜单（不必点击）', () => {
   function mountBlock() {
     const blockStore = useBlockStore()
     blockStore.blocks = [
-      { id: 'b1', pageId: 'p1', parentId: null, pos: 0, content: '', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0 },
+      { id: 'b1', pageId: 'p1', parentId: null, pos: 0, content: '', format: {}, type: 'text', createdAt: 0, updatedAt: 0 },
     ]
     const node: TreeNode = { id: 'b1', block: blockStore.blocks[0], children: [] }
     return mount(Block, {
@@ -978,7 +978,7 @@ describe('块选区命中面：Ctrl/Cmd+Click 覆盖整块行非内容区', () =
     blockStore = useBlockStore()
     blockStore.blocks = [{
       id: BLOCK_ID, pageId: PAGE_ID, parentId: null, pos: 1000,
-      content: 'hello', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0
+      content: 'hello', format: {}, type: 'text', createdAt: 0, updatedAt: 0
     }]
     pageStore = usePageStore()
     Object.defineProperty(pageStore, 'currentPageId', { value: PAGE_ID, configurable: true })
@@ -1137,7 +1137,7 @@ describe('collapse chevron 显示条件（有子块 / 仅字段 / 两者皆无�
   function makeBlock(tags?: string[]): any {
     return {
       id: BLOCK_ID, pageId: PAGE_ID, parentId: null, pos: 0,
-      content: 'x', format: {}, type: 'bullet', tags, createdAt: 0, updatedAt: 0
+      content: 'x', format: {}, type: 'text', tags, createdAt: 0, updatedAt: 0
     }
   }
 
@@ -1159,7 +1159,7 @@ describe('collapse chevron 显示条件（有子块 / 仅字段 / 两者皆无�
   it('有子块（无字段）→ 显示 chevron', async () => {
     const child = {
       id: 'b2', pageId: PAGE_ID, parentId: BLOCK_ID, pos: 0,
-      content: '', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0
+      content: '', format: {}, type: 'text', createdAt: 0, updatedAt: 0
     }
     const block = makeBlock()
     blockStore.blocks = [block, child]
@@ -1172,7 +1172,7 @@ describe('collapse chevron 显示条件（有子块 / 仅字段 / 两者皆无�
   it('折叠 + 有子块 → chevron 常亮（is-pinned）', async () => {
     const child = {
       id: 'b2', pageId: PAGE_ID, parentId: BLOCK_ID, pos: 0,
-      content: '', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0
+      content: '', format: {}, type: 'text', createdAt: 0, updatedAt: 0
     }
     const block = makeBlock()
     block.format = { collapsed: true }
@@ -1200,7 +1200,7 @@ describe('collapse chevron 显示条件（有子块 / 仅字段 / 两者皆无�
   it('有子块但未折叠 → chevron 不常亮（仍靠 hover 显现）', async () => {
     const child = {
       id: 'b2', pageId: PAGE_ID, parentId: BLOCK_ID, pos: 0,
-      content: '', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0
+      content: '', format: {}, type: 'text', createdAt: 0, updatedAt: 0
     }
     const block = makeBlock()
     blockStore.blocks = [block, child]
@@ -1250,7 +1250,7 @@ describe('入口胶囊字形：文本块标题级别', () => {
   function mountContent(content: string) {
     const blockStore = useBlockStore()
     blockStore.blocks = [
-      { id: 'b1', pageId: 'p1', parentId: null, pos: 0, content, format: {}, type: 'bullet', createdAt: 0, updatedAt: 0 },
+      { id: 'b1', pageId: 'p1', parentId: null, pos: 0, content, format: {}, type: 'text', createdAt: 0, updatedAt: 0 },
     ]
     const node: TreeNode = { id: 'b1', block: blockStore.blocks[0], children: [] }
     return mount(Block, {
@@ -1281,7 +1281,7 @@ describe('入口菜单：文本样式行（普通文本 / H1–H3 / 有序 / 无
     document.body.querySelectorAll('.block-entry-menu').forEach((n) => n.remove())
   })
 
-  function mountBlock(content: string, type: 'bullet' | 'image' = 'bullet') {
+  function mountBlock(content: string, type: 'text' | 'image' = 'text') {
     const blockStore = useBlockStore()
     blockStore.blocks = [
       { id: 'b1', pageId: 'p1', parentId: null, pos: 0, content, format: {}, type, createdAt: 0, updatedAt: 0 },
@@ -1293,7 +1293,7 @@ describe('入口菜单：文本样式行（普通文本 / H1–H3 / 有序 / 无
     })
   }
 
-  async function openMenu(content: string, type: 'bullet' | 'image' = 'bullet') {
+  async function openMenu(content: string, type: 'text' | 'image' = 'text') {
     const wrapper = mountBlock(content, type)
     await flushPromises()
     await wrapper.find('.block-entry-icon').trigger('click')

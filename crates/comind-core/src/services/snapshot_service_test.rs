@@ -29,8 +29,8 @@ mod tests {
             None,
             None,
         )?;
-        let plain = BlockService::create(adapter, &page.id, None, "昨日笔记", "{}", "bullet", None, true)?;
-        let task = BlockService::create(adapter, &page.id, None, "写周报", "{}", "bullet", None, true)?;
+        let plain = BlockService::create(adapter, &page.id, None, "昨日笔记", "{}", "text", None, true)?;
+        let task = BlockService::create(adapter, &page.id, None, "写周报", "{}", "text", None, true)?;
         FieldValueService::create(adapter, &task.id, "status", "Todo", "string", 0)?;
         Ok((page, plain.id, task.id))
     }

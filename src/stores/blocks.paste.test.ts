@@ -22,7 +22,7 @@ vi.mock('../wasm/client', () => ({
 }))
 
 function payload(content: string, children: BlockClipPayload[] = [], extra: Partial<BlockClipPayload> = {}): BlockClipPayload {
-  return { content, type: 'bullet', format: null, properties: null, children, ...extra }
+  return { content, type: 'text', format: null, properties: null, children, ...extra }
 }
 
 describe('pasteBlocks（ADR-0025 D6/D7/D8/D11）', () => {
@@ -159,10 +159,10 @@ describe('pasteBlocks（ADR-0025 D6/D7/D8/D11）', () => {
     const forest: BlockClipPayload[] = [{
       id: 'o1',
       content: '引用 o1 和 o2 与 ext-999',
-      type: 'bullet',
+      type: 'text',
       format: null,
       properties: null,
-      children: [{ id: 'o2', content: '目标块', type: 'bullet', format: null, properties: null, children: [] }],
+      children: [{ id: 'o2', content: '目标块', type: 'text', format: null, properties: null, children: [] }],
     }]
 
     const created = await store.pasteBlocks(forest, { pageId, anchorBlockId: anchor.id })

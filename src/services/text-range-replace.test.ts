@@ -18,7 +18,7 @@ function block(overrides: Partial<Block> = {}): Block {
     pos: 1000,
     content: '我看项目A了',
     format: {},
-    type: 'bullet',
+    type: 'text',
     createdAt: 1,
     updatedAt: 1,
     ...overrides,

@@ -134,7 +134,7 @@ const isSelected = computed(() => {
 const handler = computed(() => getHandler(block.value.type))
 
 /** 文本块判定：入口菜单顶部的「文本样式」行只对文本块出现 */
-const isTextBlock = computed(() => block.value.type === 'bullet')
+const isTextBlock = computed(() => block.value.type === 'text')
 
 /**
  * 本块的段落样式（普通文本 / H1–H3 / 无序 / 有序）。
@@ -270,7 +270,7 @@ const editInlineMarks = computed(() => {
  * 表格有成套逐格对齐 —— 给它们套 `text-align` 只会多一层无意义的继承。
  */
 const contentAlignStyle = computed<{ textAlign: BlockAlign } | undefined>(() => {
-  if (block.value.type !== 'bullet') return undefined
+  if (block.value.type !== 'text') return undefined
   return { textAlign: blockAlignOf(block.value.format) }
 })
 

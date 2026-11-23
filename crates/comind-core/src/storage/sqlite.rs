@@ -108,7 +108,7 @@ impl SQLiteAdapter {
                 pos             INTEGER NOT NULL DEFAULT 1000,
                 content         TEXT NOT NULL DEFAULT '',
                 format          TEXT NOT NULL DEFAULT '{}',
-                type            TEXT NOT NULL DEFAULT 'bullet',
+                type            TEXT NOT NULL DEFAULT 'text',
                 created_at      INTEGER NOT NULL,
                 updated_at      INTEGER NOT NULL,
                 version         INTEGER NOT NULL DEFAULT 0,

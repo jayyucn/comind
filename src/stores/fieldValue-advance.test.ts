@@ -77,7 +77,7 @@ describe('T11 — 自动推进 dateRef（Done 语义）', () => {
     const mockBlocks = [{
       id: 'block-1',
       content: '任务 @2026-07-15 ⏰|weekly 完成',
-      type: 'bullet',
+      type: 'text',
       page: 'test-page',
       children: [],
       format: {},
@@ -109,7 +109,7 @@ describe('T11 — 自动推进 dateRef（Done 语义）', () => {
     const mockBlocks = [{
       id: 'block-2',
       content: '@2026-07-15 📅|daily',
-      type: 'bullet',
+      type: 'text',
       page: 'test-page',
       children: [],
       format: {},
@@ -137,7 +137,7 @@ describe('T11 — 自动推进 dateRef（Done 语义）', () => {
     const mockBlocks = [{
       id: 'block-3',
       content: '@2026-01-31 ⏰|monthly',
-      type: 'bullet',
+      type: 'text',
       page: 'test-page',
       children: [],
       format: {},
@@ -166,7 +166,7 @@ describe('T11 — 自动推进 dateRef（Done 语义）', () => {
     const mockBlocks = [{
       id: 'block-4',
       content: '@2026-07-15 ⏰', // 无 recurrence
-      type: 'bullet',
+      type: 'text',
       page: 'test-page',
       children: [],
       format: {},
@@ -191,7 +191,7 @@ describe('T11 — 自动推进 dateRef（Done 语义）', () => {
     const mockBlocks = [{
       id: 'block-5',
       content: '普通任务',
-      type: 'bullet',
+      type: 'text',
       page: 'test-page',
       children: [],
       format: {},

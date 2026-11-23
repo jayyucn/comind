@@ -1,4 +1,4 @@
-use crate::types::Block;
+use crate::types::{normalize_block_type, Block};
 #[cfg(any(target_arch = "wasm32", test))]
 use std::collections::HashMap;
 #[cfg(not(target_arch = "wasm32"))]
@@ -40,7 +40,7 @@ pub fn row_to_block_native(row: &rusqlite::Row) -> Result<Block, rusqlite::Error
         pos: row.get(3)?,
         content: row.get(4)?,
         format: row.get(5)?,
-        r#type: row.get(6)?,
+        r#type: normalize_block_type(Some(&row.get::<_, String>(6)?)),
         created_at: row.get(7)?,
         updated_at: row.get(8)?,
         version: row.get(9)?,
@@ -52,7 +52,8 @@ pub fn row_to_block_native(row: &rusqlite::Row) -> Result<Block, rusqlite::Error
 }
 
 /// sql.js 路径：按 COLS 列名查表（顺序无关，列名唯一权威），与原生同源于 `BLOCK_COLS`。
-/// 保留原 sqljs 的语义：parent_id 空串→None，format 缺省 "{}"，type 缺省 "bullet"。
+/// 保留原 sqljs 的语义：parent_id 空串→None，format 缺省 "{}"；type 缺省/历史 `bullet`
+/// 统一归一见 `normalize_block_type`（ADR-0063 D1）。
 #[cfg(any(target_arch = "wasm32", test))]
 pub fn row_to_block_js(row: &HashMap<String, String>) -> Block {
     Block {
@@ -65,7 +66,7 @@ pub fn row_to_block_js(row: &HashMap<String, String>) -> Block {
         pos: row.get("pos").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
         content: row.get("content").cloned().unwrap_or_default(),
         format: row.get("format").cloned().unwrap_or_else(|| "{}".to_string()),
-        r#type: row.get("type").cloned().unwrap_or_else(|| "bullet".to_string()),
+        r#type: normalize_block_type(row.get("type").map(|s| s.as_str())),
         created_at: row.get("created_at").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
         updated_at: row.get("updated_at").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
         version: row.get("version").map(|s| s.parse::<i64>().unwrap_or(0)).unwrap_or(0),
@@ -267,6 +268,8 @@ mod tests {
         assert_eq!(b.pos, 1000);
         assert_eq!(b.version, 3);
         assert_eq!(b.deleted_at, None);
+        // ADR-0063 D1：历史值 `bullet` 读出时归一为 `text`
+        assert_eq!(b.r#type, "text");
     }
 
     #[test]
@@ -279,6 +282,7 @@ mod tests {
         assert_eq!(b.parent_id, Some("p2".to_string()));
         // 缺省列依旧给出合理默认值
         assert_eq!(b.format, "{}");
-        assert_eq!(b.r#type, "bullet");
+        // ADR-0063 D1：type 列缺失时缺省为规范名 `text`
+        assert_eq!(b.r#type, "text");
     }
 }

@@ -1923,8 +1923,8 @@ describe('BlockFieldZone（块字段区渲染载体）', () => {
     // person 页判据：主页块挂 'person' 标签（utils/person-page 单源）
     const { useBlockStore } = await import('../../stores/blocks')
     useBlockStore().blocks.push(
-      { id: 'blk-person', pageId: 'pg-person', parentId: null, pos: 0, content: '', format: {}, type: 'bullet', tags: ['person'], createdAt: 1, updatedAt: 1 },
-      { id: 'blk-other', pageId: 'pg-other', parentId: null, pos: 0, content: '', format: {}, type: 'bullet', tags: ['project'], createdAt: 1, updatedAt: 1 },
+      { id: 'blk-person', pageId: 'pg-person', parentId: null, pos: 0, content: '', format: {}, type: 'text', tags: ['person'], createdAt: 1, updatedAt: 1 },
+      { id: 'blk-other', pageId: 'pg-other', parentId: null, pos: 0, content: '', format: {}, type: 'text', tags: ['project'], createdAt: 1, updatedAt: 1 },
     )
     mockClient.getTagTree.mockResolvedValue([
       treeEntry({ id: 't-person', title: '任务', field_ids: ['f-owner-ref'], effective_field_ids: ['f-owner-ref'] }),

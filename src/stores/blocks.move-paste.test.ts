@@ -23,7 +23,7 @@ vi.mock('../wasm/client', () => ({
 }))
 
 function payload(id: string, content: string, children: BlockClipPayload[] = []): BlockClipPayload {
-  return { id, content, type: 'bullet', format: null, properties: null, children }
+  return { id, content, type: 'text', format: null, properties: null, children }
 }
 
 describe('pasteBlocksWithOp — 剪切载荷的搬移分支', () => {
@@ -47,7 +47,7 @@ describe('pasteBlocksWithOp — 剪切载荷的搬移分支', () => {
         },
         {
           id: 'src-child', page_id: 'B', parent_id: 'src', pos: 1000, content: '子块',
-          format: '{}', type: 'bullet', tags: [], created_at: 1, updated_at: 1,
+          format: '{}', type: 'text', tags: [], created_at: 1, updated_at: 1,
         },
       ]),
       getPage: vi.fn(),
@@ -71,11 +71,11 @@ describe('pasteBlocksWithOp — 剪切载荷的搬移分支', () => {
       },
       {
         id: 'anchor', pageId: 'B', parentId: null, pos: 1000, content: '锚点',
-        format: {}, type: 'bullet', createdAt: 1, updatedAt: 1,
+        format: {}, type: 'text', createdAt: 1, updatedAt: 1,
       },
       {
         id: 'src-child', pageId: 'A', parentId: 'src', pos: 1000, content: '子块',
-        format: {}, type: 'bullet', createdAt: 1, updatedAt: 1,
+        format: {}, type: 'text', createdAt: 1, updatedAt: 1,
       },
     ]
     return store
@@ -151,7 +151,7 @@ describe('pasteBlocksWithOp — 剪切载荷的搬移分支', () => {
     const store = seedTwoPages()
 
     const outcome = await store.pasteBlocksWithOp(
-      [{ content: '外部文本', type: 'bullet', format: null, properties: null, children: [] }],
+      [{ content: '外部文本', type: 'text', format: null, properties: null, children: [] }],
       { pageId: 'B', anchorBlockId: 'anchor', fallbackParentId: null },
       'cut',
     )

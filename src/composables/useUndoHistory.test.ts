@@ -36,7 +36,7 @@ function makeBlock(id: string, pageId: string, over: Partial<Block> = {}): Block
     pos: 1000,
     content: 'x',
     format: {},
-    type: 'bullet',
+    type: 'text',
     createdAt: 0,
     updatedAt: 0,
     ...over,

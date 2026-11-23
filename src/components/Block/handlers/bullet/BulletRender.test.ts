@@ -287,7 +287,7 @@ describe('BulletRender 列表项', () => {
   function seed(content: string) {
     const store = useBlockStore()
     store.blocks = [
-      { id: 'b1', pageId: 'p1', parentId: null, pos: 0, content, format: {}, type: 'bullet', createdAt: 0, updatedAt: 0 },
+      { id: 'b1', pageId: 'p1', parentId: null, pos: 0, content, format: {}, type: 'text', createdAt: 0, updatedAt: 0 },
     ]
   }
 

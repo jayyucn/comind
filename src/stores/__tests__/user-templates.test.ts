@@ -15,7 +15,7 @@ describe('user-templates store', () => {
     const t = await store.create({
       name: 'Test',
       sourcePageId: 'p1',
-      blocks: [{ type: 'bullet', content: 'hi' }],
+      blocks: [{ type: 'text', content: 'hi' }],
     })
     expect(t.id).toBeTruthy()
     expect(t.category).toBe('custom')
@@ -72,7 +72,7 @@ describe('user-templates store', () => {
     const store = useUserTemplatesStore()
     const t = await store.create({
       name: 'A', sourcePageId: 'p',
-      blocks: [{ type: 'bullet', content: 'x' }],
+      blocks: [{ type: 'text', content: 'x' }],
     })
     await store.update(t.id, { description: 'new desc', category: 'work' })
     const after = store.templates.find(x => x.id === t.id)
@@ -127,7 +127,7 @@ describe('user-templates store', () => {
       description: 'Original desc',
       category: 'personal',
       sourcePageId: 'p1',
-      blocks: [{ type: 'bullet', content: 'test' }],
+      blocks: [{ type: 'text', content: 'test' }],
     })
     
     await store.update(t.id, { name: 'Updated' })
@@ -136,7 +136,7 @@ describe('user-templates store', () => {
     expect(after?.name).toBe('Updated')
     expect(after?.description).toBe('Original desc')
     expect(after?.category).toBe('personal')
-    expect(after?.blocks).toEqual([{ type: 'bullet', content: 'test' }])
+    expect(after?.blocks).toEqual([{ type: 'text', content: 'test' }])
   })
 
   test('create 生成唯一 ID', async () => {

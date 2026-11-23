@@ -28,7 +28,7 @@ fn block_create_op(id: &str, page_id: &str) -> serde_json::Value {
             "pos": 100,
             "content": "hello world",
             "format": "{}",
-            "type": "bullet"
+            "type": "text"
         }
     })
 }
@@ -44,7 +44,7 @@ fn block_update_op(id: &str, page_id: &str, content: &str) -> serde_json::Value 
             "pos": 100,
             "content": content,
             "format": "{}",
-            "type": "bullet"
+            "type": "text"
         }
     })
 }
@@ -80,7 +80,7 @@ fn test_block_update_via_batch() -> Result<(), Box<dyn Error>> {
         None,
         "old",
         "{}",
-        "bullet",
+        "text",
         Some("blk1"),
      true)?;
 
@@ -103,7 +103,7 @@ fn test_block_delete_cascades_field_value() -> Result<(), Box<dyn Error>> {
         None,
         "task",
         "{}",
-        "bullet",
+        "text",
         Some("blk1"),
      true)?;
     FieldValueService::create(&mut adapter, "blk1", "status", "todo", "string", 0)?;
@@ -130,7 +130,7 @@ fn test_block_undelete_revive_then_noop() -> Result<(), Box<dyn Error>> {
         None,
         "x",
         "{}",
-        "bullet",
+        "text",
         Some("blk1"),
      true)?;
     BlockService::delete(&mut adapter, "blk1")?;
@@ -156,7 +156,7 @@ fn test_field_value_set_upsert_revives_soft_deleted() -> Result<(), Box<dyn Erro
         None,
         "x",
         "{}",
-        "bullet",
+        "text",
         Some("blk1"),
      true)?;
     let prop = FieldValueService::create(&mut adapter, "blk1", "status", "todo", "string", 0)?;
@@ -627,7 +627,7 @@ fn test_set_tags_auto_fills_field_defaults_for_new_tags() -> Result<(), Box<dyn 
     let mut adapter = SQLiteAdapter::open_in_memory()?;
     let page = PageService::create(&mut adapter, "", "Page", None, None, None, None, None)?;
     BlockService::create(
-        &mut adapter, &page.id, None, "task", "{}", "bullet", Some("blk1"), true,
+        &mut adapter, &page.id, None, "task", "{}", "text", Some("blk1"), true,
     )?;
 
     // 建一个带默认值的数值字段定义（default_value 落库为 JSON 文本「8」）

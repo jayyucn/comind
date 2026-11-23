@@ -11,7 +11,7 @@ function makeBlock(overrides: Partial<Block> & Pick<Block, 'id' | 'content'>): B
     pageId: 'page-1',
     parentId: null,
     pos: 1000,
-    type: 'bullet',
+    type: 'text',
     format: {},
     createdAt: 0,
     updatedAt: 0,
@@ -25,7 +25,7 @@ function blocks(items: Array<{ id: string; content: string; type?: Block['type']
     makeBlock({
       id: it.id,
       content: it.content,
-      type: it.type ?? 'bullet',
+      type: it.type ?? 'text',
       parentId: it.parentId ?? null,
       pos: it.pos ?? (i + 1) * 1000,
     })
@@ -72,7 +72,7 @@ describe('textRangeToText', () => {
       { id: 'a', content: 'start' },
       { id: 'img', content: '![alt](url)', type: 'image' },
       { id: 'code', content: 'const x = 1', type: 'code' },
-      { id: 'h', content: '# Title', type: 'bullet' },
+      { id: 'h', content: '# Title', type: 'text' },
       { id: 'z', content: 'end' },
     ])
     expect(textRangeToText(bs, range(offset('a', 0), offset('z', 3)))).toBe(

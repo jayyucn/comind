@@ -50,7 +50,7 @@ async function seed(content: string): Promise<string> {
     pageId: 'p1',
     content,
     pos: 1,
-    type: 'bullet',
+    type: 'text',
   })
   return block.id
 }

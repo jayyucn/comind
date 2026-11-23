@@ -175,13 +175,13 @@ describe('loadPageBlocks（mock WASM）', () => {
 
     mockGetPageWithBlocks.mockResolvedValue(makePageWithBlocks(pageId, [
       {
-        block: { id: 'b1', page_id: pageId, parent_id: null, pos: 100, content: 'Block A', format: '{}', type: 'bullet', created_at: 0, updated_at: 0 },
+        block: { id: 'b1', page_id: pageId, parent_id: null, pos: 100, content: 'Block A', format: '{}', type: 'text', created_at: 0, updated_at: 0 },
         children: [],
         render_segments: [{ type: 'text', start: 0, end: 8 }],
         properties: [],
       },
       {
-        block: { id: 'b2', page_id: pageId, parent_id: null, pos: 200, content: 'Block B', format: '{}', type: 'bullet', created_at: 0, updated_at: 0 },
+        block: { id: 'b2', page_id: pageId, parent_id: null, pos: 200, content: 'Block B', format: '{}', type: 'text', created_at: 0, updated_at: 0 },
         children: [],
         render_segments: [],
         properties: [],
@@ -200,7 +200,7 @@ describe('loadPageBlocks（mock WASM）', () => {
 
     mockGetPageWithBlocks.mockRejectedValue(new Error('RPC unavailable'))
     mockGetBlocksByPage.mockResolvedValue([
-      { id: 'b1', page_id: pageId, parent_id: null, pos: 100, content: 'Fallback Block', format: '{}', type: 'bullet', created_at: 0, updated_at: 0 },
+      { id: 'b1', page_id: pageId, parent_id: null, pos: 100, content: 'Fallback Block', format: '{}', type: 'text', created_at: 0, updated_at: 0 },
     ])
 
     const blocks = await store.loadPageBlocks(pageId)
@@ -228,14 +228,14 @@ describe('loadPageBlocks（mock WASM）', () => {
       pos: 100,
       content: 'history',
       format: {},
-      type: 'bullet',
+      type: 'text',
       createdAt: 0,
       updatedAt: 0,
     })
 
     mockGetPageWithBlocks.mockResolvedValue(makePageWithBlocks('page-a', [
       {
-        block: { id: 'a1', page_id: 'page-a', parent_id: null, pos: 100, content: 'A', format: '{}', type: 'bullet', created_at: 0, updated_at: 0 },
+        block: { id: 'a1', page_id: 'page-a', parent_id: null, pos: 100, content: 'A', format: '{}', type: 'text', created_at: 0, updated_at: 0 },
         children: [],
         render_segments: [],
         properties: [],
@@ -280,7 +280,7 @@ describe('loadMultiPageBlocks（S10 批量 getPagesWithBlocks 携带 renderSegme
     mockGetPagesWithBlocks.mockResolvedValue([
       makePageWithBlocks('hist-1', [
         {
-          block: { id: 'h1b1', page_id: 'hist-1', parent_id: null, pos: 100, content: '((proj))[[页面]] 内容', format: '{}', type: 'bullet', created_at: 0, updated_at: 0 },
+          block: { id: 'h1b1', page_id: 'hist-1', parent_id: null, pos: 100, content: '((proj))[[页面]] 内容', format: '{}', type: 'text', created_at: 0, updated_at: 0 },
           children: [],
           render_segments: [{ type: 'typed_link', start: 0, end: 13 }],
           properties: [],
@@ -288,7 +288,7 @@ describe('loadMultiPageBlocks（S10 批量 getPagesWithBlocks 携带 renderSegme
       ]),
       makePageWithBlocks('hist-2', [
         {
-          block: { id: 'h2b1', page_id: 'hist-2', parent_id: null, pos: 100, content: '@2026-08-11 📅', format: '{}', type: 'bullet', created_at: 0, updated_at: 0 },
+          block: { id: 'h2b1', page_id: 'hist-2', parent_id: null, pos: 100, content: '@2026-08-11 📅', format: '{}', type: 'text', created_at: 0, updated_at: 0 },
           children: [],
           render_segments: [{ type: 'date_ref', start: 0, end: 11 }],
           properties: [],
@@ -322,7 +322,7 @@ describe('loadMultiPageBlocks（S10 批量 getPagesWithBlocks 携带 renderSegme
     mockGetPagesWithBlocks.mockResolvedValue([
       makePageWithBlocks('hist-ok', [
         {
-          block: { id: 'ok1', page_id: 'hist-ok', parent_id: null, pos: 100, content: 'OK', format: '{}', type: 'bullet', created_at: 0, updated_at: 0 },
+          block: { id: 'ok1', page_id: 'hist-ok', parent_id: null, pos: 100, content: 'OK', format: '{}', type: 'text', created_at: 0, updated_at: 0 },
           children: [],
           render_segments: [{ type: 'text', start: 0, end: 2 }],
           properties: [],
@@ -352,7 +352,7 @@ describe('loadMultiPageBlocks（S10 批量 getPagesWithBlocks 携带 renderSegme
     resolveIpc([
       makePageWithBlocks('hist-abort', [
         {
-          block: { id: 'ab1', page_id: 'hist-abort', parent_id: null, pos: 100, content: 'aborted', format: '{}', type: 'bullet', created_at: 0, updated_at: 0 },
+          block: { id: 'ab1', page_id: 'hist-abort', parent_id: null, pos: 100, content: 'aborted', format: '{}', type: 'text', created_at: 0, updated_at: 0 },
           children: [],
           render_segments: [{ type: 'text', start: 0, end: 7 }],
           properties: [],
@@ -382,7 +382,7 @@ describe('ensurePageBlocks - loadBlock 单块注入后整页补齐（Backlinks �
       pos: 100,
       content,
       format: '{}',
-      type: 'bullet',
+      type: 'text',
       created_at: 0,
       updated_at: 0,
     }

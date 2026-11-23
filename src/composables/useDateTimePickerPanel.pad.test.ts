@@ -169,7 +169,7 @@ const NEW_SCHEDULE = { kind: 'schedule' as const, iso: '2026-07-20', recurrence:
 describe('handleConfirm — content 模式两侧补空格', () => {
   it('行中替换（两侧已有空格）：不重复补', async () => {
     const panel = useDateTimePickerPanel()
-    blockState.blocks = [{ id: 'b1', content: '任务 @2026-07-15 ⏰ 完成', type: 'bullet' }]
+    blockState.blocks = [{ id: 'b1', content: '任务 @2026-07-15 ⏰ 完成', type: 'text' }]
     const { from, to } = contentRange('任务 @2026-07-15 ⏰ 完成', '@2026-07-15 ⏰')
     editorState.dateRefEditor = {
       visible: true, blockId: 'b1', from, to, source: 'content',
@@ -181,7 +181,7 @@ describe('handleConfirm — content 模式两侧补空格', () => {
 
   it('行尾编辑（原无尾随空格）：左侧已有空格不动 + 补尾随空格', async () => {
     const panel = useDateTimePickerPanel()
-    blockState.blocks = [{ id: 'b1', content: 'only @2026-07-15 📅', type: 'bullet' }]
+    blockState.blocks = [{ id: 'b1', content: 'only @2026-07-15 📅', type: 'text' }]
     const { from, to } = contentRange('only @2026-07-15 📅', '@2026-07-15 📅')
     editorState.dateRefEditor = {
       visible: true, blockId: 'b1', from, to, source: 'content',
@@ -193,7 +193,7 @@ describe('handleConfirm — content 模式两侧补空格', () => {
 
   it('文字后插入（行尾）：前后都补', async () => {
     const panel = useDateTimePickerPanel()
-    blockState.blocks = [{ id: 'b1', content: '买牛奶', type: 'bullet' }]
+    blockState.blocks = [{ id: 'b1', content: '买牛奶', type: 'text' }]
     editorState.dateRefEditor = {
       visible: true, blockId: 'b1', from: 3, to: 3, source: 'content',
       kind: 'schedule', iso: '2026-07-20', recurrence: 'none', position: { x: 0, y: 0 },
@@ -204,7 +204,7 @@ describe('handleConfirm — content 模式两侧补空格', () => {
 
   it('块首插入（无左邻）：仅补右', async () => {
     const panel = useDateTimePickerPanel()
-    blockState.blocks = [{ id: 'b1', content: 'x', type: 'bullet' }]
+    blockState.blocks = [{ id: 'b1', content: 'x', type: 'text' }]
     editorState.dateRefEditor = {
       visible: true, blockId: 'b1', from: 0, to: 0, source: 'content',
       kind: 'schedule', iso: '2026-07-20', recurrence: 'none', position: { x: 0, y: 0 },
@@ -215,7 +215,7 @@ describe('handleConfirm — content 模式两侧补空格', () => {
 
   it('换行后行首编辑（左邻为 \\n）：补左空格，防单行渲染粘连', async () => {
     const panel = useDateTimePickerPanel()
-    blockState.blocks = [{ id: 'b1', content: '交报告\n@2026-07-15 📅', type: 'bullet' }]
+    blockState.blocks = [{ id: 'b1', content: '交报告\n@2026-07-15 📅', type: 'text' }]
     const { from, to } = contentRange('交报告\n@2026-07-15 📅', '@2026-07-15 📅')
     editorState.dateRefEditor = {
       visible: true, blockId: 'b1', from, to, source: 'content',

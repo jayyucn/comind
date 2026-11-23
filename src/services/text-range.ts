@@ -280,7 +280,7 @@ export function planTextRangeReplacement(
 
   const block = blocks.find(b => b.id === start.blockId)
   // 只有普通文本块有「部分选中」语义；表格等原子块的 content 不承载正文
-  if (!block || block.type !== 'bullet') return null
+  if (!block || block.type !== 'text') return null
 
   const lo = renderedOffsetToEncodedOffset(block.content, block.renderSegments, start.offset)
   const hi = renderedOffsetToEncodedOffset(block.content, block.renderSegments, end.offset)

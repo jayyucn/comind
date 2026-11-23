@@ -56,7 +56,7 @@ function makeBlock(
   format: Record<string, unknown> = {},
   content = '',
 ): Block {
-  return { id, pageId: PAGE_ID, parentId, pos, content, format, type: 'bullet', createdAt: 0, updatedAt: 0 }
+  return { id, pageId: PAGE_ID, parentId, pos, content, format, type: 'text', createdAt: 0, updatedAt: 0 }
 }
 
 function setProps(blockId: string, p: { part?: string; chapter?: string; cfi?: string }): void {

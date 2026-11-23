@@ -1,14 +1,15 @@
 <script setup lang="ts">
-import { computed, ref, watch, onMounted, onBeforeUnmount } from 'vue'
-import { useBlockStore } from '../../../../stores/blocks'
-import { usePageStore } from '../../../../stores/pages'
-import { useFieldValueStore } from '../../../../stores/fieldValue'
-import { useEditorStore } from '../../../../stores/editor'
+import { computed, onBeforeUnmount,onMounted, ref, watch } from 'vue'
+
 import { useNavigateToPage } from '../../../../composables/useNavigateToPage'
-import { decodeFieldValueData } from '../../../../utils/field-value-codec'
-import SubtreeRenderer from './SubtreeRenderer'
+import { useBlockStore } from '../../../../stores/blocks'
+import { useEditorStore } from '../../../../stores/editor'
+import { useFieldValueStore } from '../../../../stores/fieldValue'
+import { usePageStore } from '../../../../stores/pages'
 import type { SubtreeNode } from '../../../../types/block'
 import type { Block } from '../../../../types/block'
+import { decodeFieldValueData } from '../../../../utils/field-value-codec'
+import SubtreeRenderer from './SubtreeRenderer'
 
 const props = defineProps<{
   content: string
@@ -70,7 +71,7 @@ function isInEditableInput(e: { target: EventTarget | null }): boolean {
 }
 
 /**
- * embed 选中态下按 Backspace → 清空当前 block，恢复成空的 bullet block：
+ * embed 选中态下按 Backspace → 清空当前 block，恢复成空的 text block：
  * 删掉 embed 专属字段值（sourceBlockId/sourcePageId）+ type 改 bullet + content 置空。
  */
 function handleDocKeyDown(e: KeyboardEvent) {
@@ -95,7 +96,7 @@ async function clearToBullet() {
     }
   }
   // 2. 恢复成空 bullet：改类型会触发 Block 重建（EmbedRender 卸载并移除监听）
-  await blockStore.updateBlockType(props.blockId, 'bullet')
+  await blockStore.updateBlockType(props.blockId, 'text')
   await blockStore.updateBlockContent(props.blockId, '')
 }
 

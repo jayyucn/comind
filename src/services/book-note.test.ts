@@ -118,7 +118,7 @@ describe('createOrUpdateNoteBlock（新建笔记）', () => {
     expect(saved.id).toBe(result.blockId)
     expect(saved.page_id).toBe('book-1')
     expect(saved.parent_id).toBeNull()
-    expect(saved.type).toBe('bullet')
+    expect(saved.type).toBe('text')
     expect(saved.content).toBe('我的想法')
   })
 
@@ -127,7 +127,7 @@ describe('createOrUpdateNoteBlock（新建笔记）', () => {
       blocks: [{
         block: {
           id: 'exist-1', page_id: 'book-1', parent_id: null, pos: 1000,
-          content: '已有笔记', format: '{}', type: 'bullet', created_at: 0, updated_at: 0,
+          content: '已有笔记', format: '{}', type: 'text', created_at: 0, updated_at: 0,
         },
         children: [],
         render_segments: [],
@@ -255,7 +255,7 @@ describe('createOrUpdateNoteBlock（更新已有笔记）', () => {
     echoSaveBlockTree([])
     mockClient.getBlock.mockResolvedValue({
       id: 'b-1', page_id: 'book-1', parent_id: null, pos: 1000,
-      content: '旧想法', format: '{}', type: 'bullet', created_at: 1, updated_at: 1,
+      content: '旧想法', format: '{}', type: 'text', created_at: 1, updated_at: 1,
     })
 
     const result = await createOrUpdateNoteBlock({
@@ -287,7 +287,7 @@ describe('createOrUpdateNoteBlock（更新已有笔记）', () => {
     echoSaveBlockTree([])
     mockClient.getBlock.mockResolvedValue({
       id: 'b-1', page_id: 'book-1', parent_id: null, pos: 1000,
-      content: '旧想法', format: '{}', type: 'bullet', created_at: 1, updated_at: 1,
+      content: '旧想法', format: '{}', type: 'text', created_at: 1, updated_at: 1,
     })
 
     await createOrUpdateNoteBlock({
@@ -308,7 +308,7 @@ describe('loadNoteText', () => {
   it('读取已有笔记 Block 的当前文本（输入浮层预填）', async () => {
     mockClient.getBlock.mockResolvedValue({
       id: 'b-1', page_id: 'book-1', parent_id: null, pos: 1000,
-      content: '旧想法', format: '{}', type: 'bullet', created_at: 1, updated_at: 1,
+      content: '旧想法', format: '{}', type: 'text', created_at: 1, updated_at: 1,
     })
 
     await expect(loadNoteText('b-1')).resolves.toBe('旧想法')

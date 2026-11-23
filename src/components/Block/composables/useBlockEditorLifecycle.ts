@@ -590,11 +590,11 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
     editorStore.deactivateBlock()
   })
 
-  /** 空代码块 Backspace：转为 bullet 并重激活聚焦（Notion 惯例）。
+  /** 空代码块 Backspace：转为 text 并重激活聚焦（Notion 惯例）。
    *  deactivate→nextTick→activate 确保编辑器组件随类型切换重挂载、
    *  watch(isActive) 触发 focusActiveEditor。 */
   const handleBackspaceEmpty = withContentSync(async () => {
-    await blockStore.updateBlockType(blockId.value, 'bullet')
+    await blockStore.updateBlockType(blockId.value, 'text')
     editorStore.deactivateBlock()
     await nextTick()
     editorStore.activateBlock(blockId.value)

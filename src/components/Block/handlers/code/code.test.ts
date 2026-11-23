@@ -17,7 +17,7 @@ describe('Code Block — 类型注册与渲染', () => {
   beforeEach(() => {
     const registry = (useBlockRegistry as any).registry
     if (registry instanceof Map) {
-      const typesToRemove = [...registry.keys()].filter(t => t !== 'bullet')
+      const typesToRemove = [...registry.keys()].filter(t => t !== 'text')
       typesToRemove.forEach(t => registry.delete(t))
     }
   })

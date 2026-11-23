@@ -70,7 +70,7 @@ test.describe('Web WASM Performance Benchmark', () => {
           pos: i * 1000,
           content: `Test block ${i} content`,
           format: '{}',
-          type: 'bullet',
+          type: 'text',
           created_at: Date.now(),
           updated_at: Date.now()
         }

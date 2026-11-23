@@ -7,7 +7,7 @@ import BulletRender from './BulletRender.vue'
 const { register } = useBlockRegistry()
 
 register({
-  type: 'bullet',
+  type: 'text',
   label: 'Bullet',
   editorComponent: Editor,
   renderComponent: BulletRender,

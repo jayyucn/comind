@@ -13,7 +13,7 @@ function makeBlock(overrides: Partial<Block> = {}): Block {
     pos: 0,
     content: '',
     format: {},
-    type: 'bullet',
+    type: 'text',
     createdAt: 0,
     updatedAt: 0,
     ...overrides

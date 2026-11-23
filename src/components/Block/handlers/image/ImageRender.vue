@@ -189,8 +189,8 @@ async function replaceImage() {
 }
 
 async function deleteImage() {
-  // 删除图片：将 block 转为 bullet 类型的空 block，并把光标插入其中
-  await blockStore.updateBlockType(props.blockId, 'bullet')
+  // 删除图片：将 block 转为 text 类型的空 block，并把光标插入其中
+  await blockStore.updateBlockType(props.blockId, 'text')
   await blockStore.updateBlockContent(props.blockId, '')
   editorStore.deactivateBlock()
   editorStore.activateBlock(props.blockId, 1)

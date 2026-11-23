@@ -55,7 +55,7 @@ describe('Ideas 页快照读取守卫（Seam ② store 级）', () => {
       pos: 1000,
       content: '写周报',
       format: '{}',
-      type: 'bullet',
+      type: 'text',
       created_at: Date.now(),
       updated_at: Date.now(),
     } satisfies BlockUpdate])

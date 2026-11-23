@@ -149,8 +149,8 @@ describe('PageRefPicker（页面引用 picker）', () => {
     const { useBlockStore } = await import('../../stores/blocks')
     const blockStore = useBlockStore()
     blockStore.blocks.push(
-      { id: 'blk-person', pageId: 'pg1', parentId: null, pos: 0, content: '', format: {}, type: 'bullet', tags: ['person'], createdAt: 1, updatedAt: 1 },
-      { id: 'blk-other', pageId: 'pg2', parentId: null, pos: 0, content: '', format: {}, type: 'bullet', tags: ['project'], createdAt: 1, updatedAt: 1 },
+      { id: 'blk-person', pageId: 'pg1', parentId: null, pos: 0, content: '', format: {}, type: 'text', tags: ['person'], createdAt: 1, updatedAt: 1 },
+      { id: 'blk-other', pageId: 'pg2', parentId: null, pos: 0, content: '', format: {}, type: 'text', tags: ['project'], createdAt: 1, updatedAt: 1 },
     )
     usePageStore().pages.push(
       page({ id: 'p-person', title: '张三', blockId: 'blk-person' }),
@@ -174,7 +174,7 @@ describe('PageRefPicker（页面引用 picker）', () => {
   it('personOnly：无候选时出「暂无可选人员」空态', async () => {
     const { useBlockStore } = await import('../../stores/blocks')
     useBlockStore().blocks.push(
-      { id: 'blk-x', pageId: 'pg2', parentId: null, pos: 0, content: '', format: {}, type: 'bullet', tags: ['project'], createdAt: 1, updatedAt: 1 },
+      { id: 'blk-x', pageId: 'pg2', parentId: null, pos: 0, content: '', format: {}, type: 'text', tags: ['project'], createdAt: 1, updatedAt: 1 },
     )
     usePageStore().pages.push(page({ id: 'p-other', title: '项目页', blockId: 'blk-x' }))
     const wrapper = mount(PageRefPicker, { props: { personOnly: true } })
@@ -190,7 +190,7 @@ describe('PageRefPicker（页面引用 picker）', () => {
     const { useBlockStore } = await import('../../stores/blocks')
     const blockStore = useBlockStore()
     blockStore.blocks.push(
-      { id: 'blk-person', pageId: 'pg1', parentId: null, pos: 0, content: '', format: {}, type: 'bullet', tags: ['person'], createdAt: 1, updatedAt: 1 },
+      { id: 'blk-person', pageId: 'pg1', parentId: null, pos: 0, content: '', format: {}, type: 'text', tags: ['person'], createdAt: 1, updatedAt: 1 },
     )
     usePageStore().pages.push(
       page({ id: 'p-person', title: '张三', blockId: 'blk-person' }),

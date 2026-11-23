@@ -3,7 +3,7 @@ import { parseExternalPaste, resolveClipboardForest, COMIND_BLOCK_MIME } from '.
 import type { BlockClipPayload } from '../types/block'
 
 function bullet(content: string, children: BlockClipPayload[] = []): BlockClipPayload {
-  return { content, type: 'bullet', format: null, properties: null, children }
+  return { content, type: 'text', format: null, properties: null, children }
 }
 
 function contents(forest: BlockClipPayload[]): string[] {
@@ -23,7 +23,7 @@ describe('parseExternalPaste — 纯文本', () => {
     const forest = parseExternalPaste({ plain: '第一行\n第二行\n第三行' })
     expect(forest).toHaveLength(3)
     expect(forest.map(b => b.content)).toEqual(['第一行', '第二行', '第三行'])
-    expect(forest.every(b => b.type === 'bullet')).toBe(true)
+    expect(forest.every(b => b.type === 'text')).toBe(true)
   })
 
   test('每行 trim 且跳过空行', () => {
@@ -47,7 +47,7 @@ describe('parseExternalPaste — HTML（优先于纯文本）', () => {
   test('<p> 映射为 bullet', () => {
     const forest = parseExternalPaste({ html: '<p>段落</p>' })
     expect(forest).toHaveLength(1)
-    expect(forest[0].type).toBe('bullet')
+    expect(forest[0].type).toBe('text')
     expect(forest[0].content).toBe('段落')
   })
 
@@ -108,7 +108,7 @@ describe('parseExternalPaste — HTML（优先于纯文本）', () => {
     const html = '<blockquote><p>引用一</p><p>引用二</p></blockquote>'
     const forest = parseExternalPaste({ html })
     expect(contents(forest)).toEqual(['引用一', '引用二'])
-    expect(forest.every(b => b.type === 'bullet')).toBe(true)
+    expect(forest.every(b => b.type === 'text')).toBe(true)
   })
 
   test('非列表嵌套（div 套 div）展平为同级', () => {
@@ -165,7 +165,7 @@ describe('parseExternalPaste — 表格（ADR-0061）', () => {
   test('段落 + 表格混合 → 只把表格抽成 table 节点，其余照旧', () => {
     const html = '<p>前置</p><table><tr><td>1</td><td>2</td></tr></table><p>后续</p>'
     const forest = parseExternalPaste({ html })
-    expect(forest.map(b => b.type)).toEqual(['bullet', 'table', 'bullet'])
+    expect(forest.map(b => b.type)).toEqual(['text', 'table', 'text'])
     expect(forest[0]!.content).toBe('前置')
     expect(forest[2]!.content).toBe('后续')
   })
@@ -173,14 +173,14 @@ describe('parseExternalPaste — 表格（ADR-0061）', () => {
   test('单列表格仍是布局容器 → 沿用旧展平（不产 table 块）', () => {
     const html = '<table><tr><td><div>块一</div><div>块二</div></td></tr></table>'
     const forest = parseExternalPaste({ html })
-    expect(forest.every(b => b.type === 'bullet')).toBe(true)
+    expect(forest.every(b => b.type === 'text')).toBe(true)
     expect(contents(forest)).toEqual(['块一', '块二'])
   })
 
   test('纯文本 GFM 表格 → table 块', () => {
     const plain = '前置\n| a | b |\n| --- | --- |\n| 1 | 2 |'
     const forest = parseExternalPaste({ plain })
-    expect(forest.map(b => b.type)).toEqual(['bullet', 'table'])
+    expect(forest.map(b => b.type)).toEqual(['text', 'table'])
     expect(tableDataOf(forest)!.rows).toEqual([['a', 'b'], ['1', '2']])
   })
 
@@ -193,7 +193,7 @@ describe('parseExternalPaste — 表格（ADR-0061）', () => {
 
   test('TSV 列数不一致 → 回落逐行 bullet', () => {
     const forest = parseExternalPaste({ plain: 'a\tb\n1\t2\t3' })
-    expect(forest.every(b => b.type === 'bullet')).toBe(true)
+    expect(forest.every(b => b.type === 'text')).toBe(true)
     expect(forest.map(b => b.content)).toEqual(['a\tb', '1\t2\t3'])
   })
 })

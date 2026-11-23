@@ -25,7 +25,7 @@ import { parseGfmTable, parseHtmlTableData, parseTsvTable, tablePayload } from '
 export { COMIND_BLOCK_MIME }
 
 function bullet(content: string, children: BlockClipPayload[] = []): BlockClipPayload {
-  return { content, type: 'bullet', format: null, properties: null, children }
+  return { content, type: 'text', format: null, properties: null, children }
 }
 
 // ── 纯文本路径（D6） ──────────────────────────────────────────────

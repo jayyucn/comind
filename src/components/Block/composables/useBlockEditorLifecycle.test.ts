@@ -132,7 +132,7 @@ describe('useBlockEditorLifecycle', () => {
 
     blockStore.blocks = [{
       id: 'b1', pageId: 'p1', parentId: null, pos: 0,
-      content: 'hello', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0
+      content: 'hello', format: {}, type: 'text', createdAt: 0, updatedAt: 0
     }]
 
     const blockId = ref('b1')
@@ -191,7 +191,7 @@ describe('useBlockEditorLifecycle', () => {
       const { lifecycle, blockStore, editorStore, relationshipCleanup } = setup()
       const prevBlock = {
         id: 'prev', pageId: 'p1', parentId: null, pos: 0,
-        content: '', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0
+        content: '', format: {}, type: 'text', createdAt: 0, updatedAt: 0
       }
       blockStore.blocks.push(prevBlock as any)
       vi.spyOn(blockStore, 'findPreviousVisibleBlock').mockReturnValue(prevBlock as any)
@@ -216,7 +216,7 @@ describe('useBlockEditorLifecycle', () => {
       const flushSpy = vi.spyOn(blockStore, 'flushSave').mockResolvedValue(undefined)
       vi.spyOn(blockStore, 'insertBlockAtCursor').mockResolvedValue({
         id: 'b2', pageId: 'p1', parentId: null, pos: 1,
-        content: '', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0
+        content: '', format: {}, type: 'text', createdAt: 0, updatedAt: 0
       } as any)
       const activateSpy = vi.spyOn(editorStore, 'activateBlock').mockImplementation(() => {})
       await lifecycle.handleSplit(5)
@@ -233,7 +233,7 @@ describe('useBlockEditorLifecycle', () => {
       vi.spyOn(blockStore, 'flushSave').mockResolvedValue(undefined)
       const insertSpy = vi.spyOn(blockStore, 'insertBlockAtCursor').mockResolvedValue({
         id: 'b2', pageId: 'p1', parentId: null, pos: 1,
-        content: '', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0
+        content: '', format: {}, type: 'text', createdAt: 0, updatedAt: 0
       } as any)
       vi.spyOn(editorStore, 'activateBlock').mockImplementation(() => {})
 
@@ -245,7 +245,7 @@ describe('useBlockEditorLifecycle', () => {
       // insertBlockAtCursor: textOffset = 18, contentLen = 18, isAtLineEnd = true ✅
       blockStore.blocks = [{
         id: 'b1', pageId: 'p1', parentId: null, pos: 0,
-        content: '((part-of))[[D]]sd', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0
+        content: '((part-of))[[D]]sd', format: {}, type: 'text', createdAt: 0, updatedAt: 0
       }]
       vi.spyOn(blockStore, 'getBlock').mockReturnValue(blockStore.blocks[0] as any)
 
@@ -281,14 +281,14 @@ describe('useBlockEditorLifecycle', () => {
       const { blockStore, editorStore } = setup()
       blockStore.blocks = [{
         id: 'b1', pageId: 'p1', parentId: null, pos: 0,
-        content: 'hello', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0,
+        content: 'hello', format: {}, type: 'text', createdAt: 0, updatedAt: 0,
         renderSegments: [{ start: 0, end: 5, type: 'text', value: 'hello' }]
       }]
       vi.spyOn(blockStore, 'getBlock').mockReturnValue(blockStore.blocks[0] as any)
       const flushSpy = vi.spyOn(blockStore, 'flushSave').mockResolvedValue(undefined)
       vi.spyOn(blockStore, 'insertBlockAtCursor').mockResolvedValue({
         id: 'b2', pageId: 'p1', parentId: null, pos: 1,
-        content: '', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0
+        content: '', format: {}, type: 'text', createdAt: 0, updatedAt: 0
       } as any)
       vi.spyOn(editorStore, 'deactivateBlock').mockImplementation(() => {})
       vi.spyOn(editorStore, 'activateBlock').mockImplementation(() => {})
@@ -322,14 +322,14 @@ describe('useBlockEditorLifecycle', () => {
       const { blockStore, editorStore } = setup()
       blockStore.blocks = [{
         id: 'b1', pageId: 'p1', parentId: null, pos: 0,
-        content: 'hello', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0,
+        content: 'hello', format: {}, type: 'text', createdAt: 0, updatedAt: 0,
         renderSegments: [{ start: 0, end: 5, type: 'text', value: 'hello' }]
       }]
       vi.spyOn(blockStore, 'getBlock').mockReturnValue(blockStore.blocks[0] as any)
       const flushSpy = vi.spyOn(blockStore, 'flushSave').mockResolvedValue(undefined)
       const insertSpy = vi.spyOn(blockStore, 'insertBlockAtCursor').mockResolvedValue({
         id: 'b2', pageId: 'p1', parentId: null, pos: 0,
-        content: '', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0
+        content: '', format: {}, type: 'text', createdAt: 0, updatedAt: 0
       } as any)
       vi.spyOn(editorStore, 'deactivateBlock').mockImplementation(() => {})
       vi.spyOn(editorStore, 'activateBlock').mockImplementation(() => {})
@@ -357,13 +357,13 @@ describe('useBlockEditorLifecycle', () => {
       // Enter 建出的空块：createBlock 不产 renderSegments，且行尾拆分只 _scheduleSave 不 await 落库
       blockStore.blocks = [{
         id: 'b1', pageId: 'p1', parentId: null, pos: 0,
-        content: '', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0
+        content: '', format: {}, type: 'text', createdAt: 0, updatedAt: 0
       }]
       vi.spyOn(blockStore, 'getBlock').mockReturnValue(blockStore.blocks[0] as any)
       const flushSpy = vi.spyOn(blockStore, 'flushSave').mockResolvedValue(undefined)
       const insertSpy = vi.spyOn(blockStore, 'insertBlockAtCursor').mockResolvedValue({
         id: 'b2', pageId: 'p1', parentId: null, pos: 1,
-        content: '', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0
+        content: '', format: {}, type: 'text', createdAt: 0, updatedAt: 0
       } as any)
       vi.spyOn(editorStore, 'deactivateBlock').mockImplementation(() => {})
       const activateSpy = vi.spyOn(editorStore, 'activateBlock').mockImplementation(() => {})
@@ -392,7 +392,7 @@ describe('useBlockEditorLifecycle', () => {
       const { blockStore, editorStore } = setup()
       blockStore.blocks = [{
         id: 'b1', pageId: 'p1', parentId: null, pos: 0,
-        content: 'hello', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0,
+        content: 'hello', format: {}, type: 'text', createdAt: 0, updatedAt: 0,
         renderSegments: [{ start: 0, end: 5, type: 'text', value: 'hello' }]
       }]
       vi.spyOn(blockStore, 'getBlock').mockReturnValue(blockStore.blocks[0] as any)
@@ -403,8 +403,8 @@ describe('useBlockEditorLifecycle', () => {
       const flushGate = new Promise<void>(resolve => { releaseFlush = resolve })
       const flushSpy = vi.spyOn(blockStore, 'flushSave').mockReturnValue(flushGate)
 
-      const newB2 = { id: 'b2', pageId: 'p1', parentId: null, pos: 1, content: '', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0 }
-      const newB3 = { id: 'b3', pageId: 'p1', parentId: null, pos: 2, content: '', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0 }
+      const newB2 = { id: 'b2', pageId: 'p1', parentId: null, pos: 1, content: '', format: {}, type: 'text', createdAt: 0, updatedAt: 0 }
+      const newB3 = { id: 'b3', pageId: 'p1', parentId: null, pos: 2, content: '', format: {}, type: 'text', createdAt: 0, updatedAt: 0 }
       const insertSpy = vi.spyOn(blockStore, 'insertBlockAtCursor')
         .mockResolvedValueOnce(newB2 as any)
         .mockResolvedValueOnce(newB3 as any)
@@ -441,14 +441,14 @@ describe('useBlockEditorLifecycle', () => {
       const { blockStore, editorStore } = setup()
       blockStore.blocks = [{
         id: 'b1', pageId: 'p1', parentId: null, pos: 0,
-        content: 'hello', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0,
+        content: 'hello', format: {}, type: 'text', createdAt: 0, updatedAt: 0,
         renderSegments: [{ start: 0, end: 5, type: 'text', value: 'hello' }]
       }]
       vi.spyOn(blockStore, 'getBlock').mockReturnValue(blockStore.blocks[0] as any)
       const flushSpy = vi.spyOn(blockStore, 'flushSave').mockResolvedValue(undefined)
       const insertSpy = vi.spyOn(blockStore, 'insertBlockAtCursor').mockResolvedValue({
         id: 'b2', pageId: 'p1', parentId: null, pos: 1,
-        content: 'lo', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0
+        content: 'lo', format: {}, type: 'text', createdAt: 0, updatedAt: 0
       } as any)
       vi.spyOn(editorStore, 'deactivateBlock').mockImplementation(() => {})
       vi.spyOn(editorStore, 'activateBlock').mockImplementation(() => {})
@@ -482,13 +482,13 @@ describe('useBlockEditorLifecycle', () => {
       ]
       blockStore.blocks = [{
         id: 'b1', pageId: 'p1', parentId: null, pos: 0,
-        content: encodedContent, format: {}, type: 'bullet', createdAt: 0, updatedAt: 0,
+        content: encodedContent, format: {}, type: 'text', createdAt: 0, updatedAt: 0,
         renderSegments: segments as any
       }]
       vi.spyOn(blockStore, 'getBlock').mockReturnValue(blockStore.blocks[0] as any)
       const insertSpy = vi.spyOn(blockStore, 'insertBlockAtCursor').mockResolvedValue({
         id: 'b2', pageId: 'p1', parentId: null, pos: 1,
-        content: '', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0
+        content: '', format: {}, type: 'text', createdAt: 0, updatedAt: 0
       } as any)
       vi.spyOn(editorStore, 'deactivateBlock').mockImplementation(() => {})
       vi.spyOn(editorStore, 'activateBlock').mockImplementation(() => {})
@@ -524,7 +524,7 @@ describe('useBlockEditorLifecycle', () => {
       const { blockStore, editorStore } = setup()
       blockStore.blocks = [{
         id: 'b1', pageId: 'p1', parentId: null, pos: 0,
-        content: 'hello', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0,
+        content: 'hello', format: {}, type: 'text', createdAt: 0, updatedAt: 0,
         renderSegments: [{ start: 0, end: 5, type: 'text', value: 'hello' }]
       }]
       vi.spyOn(blockStore, 'getBlock').mockReturnValue(blockStore.blocks[0] as any)
@@ -552,7 +552,7 @@ describe('useBlockEditorLifecycle', () => {
       expect(insertSpy).toHaveBeenCalledTimes(1)   // 无锚点可续 ⇒ 不再 drain
 
       // 后续一次正常 Enter：计次若悬挂，这里会多 drain 一个块（3 次 insert）
-      const b2 = { id: 'b2', pageId: 'p1', parentId: null, pos: 1, content: '', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0 }
+      const b2 = { id: 'b2', pageId: 'p1', parentId: null, pos: 1, content: '', format: {}, type: 'text', createdAt: 0, updatedAt: 0 }
       insertSpy.mockResolvedValue(b2 as any)
       await lifecycle2.handleSplit(6)
 
@@ -582,7 +582,7 @@ describe('useBlockEditorLifecycle', () => {
       vi.spyOn(ctx.blockStore, 'insertBlockAtCursor').mockImplementation(async () => {
         const created = {
           id: 'b2', pageId: 'p1', parentId: null, pos: 1,
-          content: '', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0,
+          content: '', format: {}, type: 'text', createdAt: 0, updatedAt: 0,
         }
         ctx.blockStore.blocks.push(created as never)
         return created as never
@@ -639,7 +639,7 @@ describe('useBlockEditorLifecycle', () => {
       const neighbour = {
         id: dir === 'prev' ? 'prev' : 'next',
         pageId: 'p1', parentId: null, pos: dir === 'prev' ? 0 : 2,
-        content: 'neighbour', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0,
+        content: 'neighbour', format: {}, type: 'text', createdAt: 0, updatedAt: 0,
         renderSegments: [{ type: 'text', start: 0, end: 9 }],
       }
       blockStore.blocks.push(neighbour as never)
@@ -1318,7 +1318,7 @@ describe('useBlockEditorLifecycle', () => {
       const pageStore = usePageStore()
       const relationshipCleanup = useBlockRelationshipCleanup()
       const panesStore = usePanesStore()
-      blockStore.blocks = [{ id: 'b1', pageId: 'p1', parentId: null, pos: 0, content: 'x', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0 }]
+      blockStore.blocks = [{ id: 'b1', pageId: 'p1', parentId: null, pos: 0, content: 'x', format: {}, type: 'text', createdAt: 0, updatedAt: 0 }]
       const blockId = ref('b1')
       const editorRef = ref<BlockTypeEditorExposed | null>(null)
       const cursorPos = ref(0)

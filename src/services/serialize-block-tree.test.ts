@@ -16,7 +16,7 @@ function mk(
     pos,
     content: opts.content ?? '',
     format: opts.format ?? {},
-    type: opts.type ?? 'bullet',
+    type: opts.type ?? 'text',
     createdAt: 0,
     updatedAt: 0,
   }

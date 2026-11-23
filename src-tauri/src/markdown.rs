@@ -99,11 +99,11 @@ fn parse_block_content(line: &str) -> (String, String, String) {
         let r#type = if content.contains("::") {
             "property"
         } else {
-            "bullet"
+            "text"
         };
         (content, format, r#type.to_string())
     } else {
-        (line.to_string(), "{}".to_string(), "bullet".to_string())
+        (line.to_string(), "{}".to_string(), "text".to_string())
     }
 }
 

@@ -37,7 +37,7 @@ const mocks = vi.hoisted(() => ({
   // 快照上下文内容源 fixture（page-hist 当日快照：单根块 b1）
   snapshotFixture: {
     blocks: [
-      { id: 'b1', pageId: 'page-hist', parentId: null, pos: 0, content: '快照根内容', format: {}, type: 'bullet' },
+      { id: 'b1', pageId: 'page-hist', parentId: null, pos: 0, content: '快照根内容', format: {}, type: 'text' },
     ],
     properties: {},
   },
@@ -73,8 +73,8 @@ vi.mock('../../stores/editor', () => ({
 
 vi.mock('../../stores/blocks', () => ({
   useBlockStore: () => ({
-    getBlock: (id: string) => (id ? { id, pageId: 'p1', parentId: null, pos: 0, content: 'x', format: {}, type: 'bullet' } : null),
-    blocks: [{ id: 'b1', pageId: 'p1', parentId: null, pos: 0, content: 'x', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0 }],
+    getBlock: (id: string) => (id ? { id, pageId: 'p1', parentId: null, pos: 0, content: 'x', format: {}, type: 'text' } : null),
+    blocks: [{ id: 'b1', pageId: 'p1', parentId: null, pos: 0, content: 'x', format: {}, type: 'text', createdAt: 0, updatedAt: 0 }],
     loadBlock: vi.fn().mockResolvedValue(undefined),
   }),
 }))

@@ -196,7 +196,7 @@ describe('useBlockMenuActions — 块入口菜单的通用动作', () => {
         .spyOn(blockStore, 'resetBlockToText')
         .mockImplementation(async () => {
           order.push('reset')
-          return mkBlock({ id: 'fresh', content: '', type: 'bullet' })
+          return mkBlock({ id: 'fresh', content: '', type: 'text' })
         })
       vi.spyOn(editorStore, 'activateBlock').mockImplementation(async (id: string) => {
         order.push(`activate:${id}`)

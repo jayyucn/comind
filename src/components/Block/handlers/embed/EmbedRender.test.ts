@@ -55,7 +55,7 @@ describe('EmbedRender 逻辑测试', () => {
 
     test('目标块不是 embed 类型不应触发循环', async () => {
       const pageId = 'page-1'
-      const bulletBlock = await blockStore.createBlock({ pageId, content: 'Bullet', type: 'bullet' })
+      const bulletBlock = await blockStore.createBlock({ pageId, content: 'Bullet', type: 'text' })
       const result = simulateDetectCircular(bulletBlock.id, blockStore.blocks)
       expect(result).toBe(false)
     })
@@ -111,7 +111,7 @@ describe('EmbedRender 逻辑测试', () => {
 
     test('非循环的嵌套 embed 应返回 false', async () => {
       const pageId = 'page-1'
-      const blockA = await blockStore.createBlock({ pageId, content: 'A', type: 'bullet' })
+      const blockA = await blockStore.createBlock({ pageId, content: 'A', type: 'text' })
       const blockB = await blockStore.createBlock({ pageId, content: 'B', type: 'embed', properties: { sourceBlockId: blockA.id } })
 
       const result = simulateDetectCircular(blockB.id, blockStore.blocks)
@@ -131,7 +131,7 @@ describe('EmbedRender 逻辑测试', () => {
       const blockOnPage2 = await blockStore.createBlock({
         pageId: pageId2,
         content: 'Block on Page 2',
-        type: 'bullet'
+        type: 'text'
       })
 
       const embedBlock = await blockStore.createBlock({
@@ -182,7 +182,7 @@ describe('EmbedRender 逻辑测试', () => {
         pos: 1000,
         content: 'External Block',
         format: {},
-        type: 'bullet',
+        type: 'text',
         properties: {},
         createdAt: Date.now(),
         updatedAt: Date.now()
@@ -269,15 +269,15 @@ describe('EmbedRender 逻辑测试', () => {
       const { register, getHandler } = useBlockRegistry()
 
       register({
-        type: 'bullet',
+        type: 'text',
         label: 'Bullet',
         editorComponent: {} as any,
         renderComponent: {} as any
       })
 
-      const handler = getHandler('bullet')
+      const handler = getHandler('text')
       expect(handler).toBeDefined()
-      expect(handler?.type).toBe('bullet')
+      expect(handler?.type).toBe('text')
     })
 
     test('未注册的类型应返回 undefined', async () => {

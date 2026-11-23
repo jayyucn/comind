@@ -23,7 +23,7 @@ function mk(
     pos: 0,
     content,
     format: (opts.format === undefined ? {} : opts.format) as Record<string, unknown>,
-    type: opts.type ?? 'bullet',
+    type: opts.type ?? 'text',
     createdAt: 0,
     updatedAt: 0,
   }
@@ -228,7 +228,7 @@ describe('writeClipboardPayload — 落盘与降级链', () => {
   const payload: BlockClipboardPayload = {
     version: 1,
     kind: 'blocks',
-    blocks: [{ content: '块', type: 'bullet', format: null, properties: null, children: [] }],
+    blocks: [{ content: '块', type: 'text', format: null, properties: null, children: [] }],
   }
 
   beforeEach(() => {

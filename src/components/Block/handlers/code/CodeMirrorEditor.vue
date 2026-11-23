@@ -240,7 +240,7 @@ function createEditor() {
           return false
         }
       },
-      // 空文档按 Backspace → 交给 Block 层转为 bullet（Notion 惯例）；
+      // 空文档按 Backspace → 交给 Block 层转为 text（Notion 惯例）；
       // 非空则返回 false 落入 defaultKeymap 正常删字符。
       {
         key: 'Backspace',
