@@ -3,6 +3,17 @@ import { computed, ref } from 'vue'
 
 import type { BatchOperation } from '@/wasm/types'
 
+import {
+  isOrderedListItem,
+  nextOrderedListIndexAfter,
+  orderedListIndexAt,
+  orderedListIndexForNewItem,
+  type OrderedListSibling,
+  planOrderedListNumbering,
+  readOrderedListAnchor,
+  withOrderedListAnchor,
+} from '../composables/ordered-list-index'
+import { parseParagraphStyle } from '../composables/useContentRenderer'
 import { markQueryViewOrphan, restoreQueryViewNamespace } from '../services/query-view-namespace'
 import { renderedOffsetToEncodedOffset } from '../services/render-text'
 import { normalizeTextRange, planTextRangeReplacement, type TextRange } from '../services/text-range'
@@ -36,6 +47,7 @@ import {
 import type { CoreClient } from '../wasm/client'
 import { initCoreClient, isTauriEnvironment, triggerSync } from '../wasm/client'
 import { useBlockCardStore } from './blockCard'
+import { useEditorStore } from './editor'
 import { useFieldValueStore } from './fieldValue'
 import { usePageStore } from './pages'
 import { useTagsStore } from './tags'
@@ -1413,6 +1425,10 @@ export const useBlockStore = defineStore('blocks', () => {
     block.updatedAt = Date.now()
     _scheduleSave(block)
 
+    // 跨父 ⇒ 序号锚点作废（决策：锚点只在本父层内有效），两段各自重排
+    clearOrderedListAnchor(block)
+    scheduleOrderedListReindex(block.pageId)
+
     // 落入折叠父块 ⇒ 展开（ADR-0045 D4）：落点必须是可见结果
     reconcileCollapse([], [prev.id])
   }
@@ -1441,6 +1457,10 @@ export const useBlockStore = defineStore('blocks', () => {
 
     block.updatedAt = Date.now()
     _scheduleSave(block)
+
+    // 跨父 ⇒ 序号锚点作废，新旧两段各自重排（同 indent）
+    clearOrderedListAnchor(block)
+    scheduleOrderedListReindex(block.pageId)
 
     // 原父块可能被掏空 ⇒ 复位；升入的新父块若折叠 ⇒ 展开（ADR-0045 D2/D4）
     reconcileCollapse([parent.id], newParentId ? [newParentId] : [])
@@ -1496,6 +1516,32 @@ export const useBlockStore = defineStore('blocks', () => {
     // 2. 保存快照（深拷贝当前状态，用于 RPC 失败时回滚）
     const snapshot = blocks.value.map(b => ({ ...b }))
 
+    // 2.5 有序列表段首被删 ⇒ 接替者从 1 重排（决策：删首项回到 1）。
+    //     必须在这里（块还在 blocks 里）判定「被删的是不是段首」，删除之后就无从查证。
+    //     判据是「前一个存活兄弟不是 ol」—— 同父、同页、pos 相邻，与推导层同一口径。
+    for (const rootId of rootIds) {
+      const victim = blocks.value.find(b => b.id === rootId)
+      if (!victim || !isOrderedListBlock(victim)) continue
+      const siblings = getSortedSiblings(blocks.value, victim)
+      const index = siblings.findIndex(b => b.id === rootId)
+      if (index < 0) continue
+      const prev = index > 0 ? siblings[index - 1] : null
+      if (prev && !toDelete.has(prev.id) && isOrderedListBlock(prev)) continue
+      // 跳过同批被删的项，找真正接替段首的那一块
+      let successor: Block | null = null
+      for (let i = index + 1; i < siblings.length; i++) {
+        if (toDelete.has(siblings[i].id)) continue
+        successor = siblings[i]
+        break
+      }
+      if (!successor || !isOrderedListBlock(successor)) continue
+      // 接替者已有锚点 ⇒ 那是用户手写过的起点，保留
+      if (readOrderedListAnchor(successor.format) !== null) continue
+      successor.format = withOrderedListAnchor(successor.format, 1)
+      successor.updatedAt = Date.now()
+      _scheduleSave(successor)
+    }
+
     // 3. 立即从 reactive 数组移除（同步，触发 tree rebuild）
     const blockCardStore = useBlockCardStore()
     // 查询块把视图配置挂在 `screen_view` 的 per-block 命名空间上，块删了它就成孤儿。
@@ -1548,11 +1594,211 @@ export const useBlockStore = defineStore('blocks', () => {
         console.warn('[deleteBlocks] rolled back to snapshot')
       }
     }, 0)
+
+    // 删掉的可能是段中项 ⇒ 后续项补号（段首那条见 2.5，会在推导里被锚点固定）
+    for (const pageId of affectedPages) scheduleOrderedListReindex(pageId)
   }
 
   /** 删除单个 Block（委托给批量删除） */
   async function deleteBlock(blockId: string) {
     await deleteBlocks([blockId])
+  }
+
+  // ── 有序列表序号推导 ────────────────────────────────────────────────
+  //
+  // 序号是 content 的字面前缀（不是块类型），结构一动就会失真：删中间项得 `1, 3, 4`，
+  // 缩进/粘贴/拖动后同段落各说各话。这里把「第几项」推导出来并**写回 content** ——
+  // 渲染态（BulletRender）、编辑态（ParagraphStylePreviewExtension）、查询预览读的都是
+  // 同一份字面，不值得为「只改显示」再造一条并行的真相。
+  //
+  // 推导规则与锚点语义全在 `composables/ordered-list-index.ts`（纯函数，有单测）；
+  // 这里只负责三件纯函数管不了的事：谁能写（活动块跳过）、锚点的生灭、何时落库。
+
+  /** 合并窗口：一次结构/内容变更只推导一次。只影响落库，显示本就即时（字号、前缀都读内存） */
+  const ORDERED_LIST_REINDEX_MS = 150
+  /** 推导过程中禁止再次触发推导（写回 content 会经过 `updateBlockContent`） */
+  let orderedListApplying = false
+  const orderedListTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  /** 窗口内被用户手改过序号的块：只有它才可能「手写跳号」，其余一律按推导值改写 */
+  const orderedListAuthored = new Map<string, string>()
+
+  /** 本块是不是「文本块 + 有有序列表前缀」（段落样式只存在于文本块，同 renderer 口径） */
+  function isOrderedListBlock(block: Block): boolean {
+    return block.type === 'bullet' && parseParagraphStyle(block.content).style === 'ol'
+  }
+
+  /** 同父同页的兄弟（pos 升序），供纯函数推演 */
+  function orderedListSiblings(block: Block): OrderedListSibling[] {
+    return getSortedSiblings(blocks.value, block).map(b => ({
+      id: b.id,
+      // 段落样式只存在于文本块（bullet）。code/image/query/table 的 content 里
+      // 即使恰好以 `1. ` 开头也不是列表 —— 用空串让它们充当段边界，不参与编号。
+      content: b.type === 'bullet' ? b.content : '',
+      format: b.format,
+    }))
+  }
+
+  /**
+   * 写回单个块的序号（只改首段数字）。
+   *
+   * 两处必须跟着平移，否则「改个号」会顺手毁掉别的：
+   * 1. `inlineMarks`：`updateBlockContent` 在正文变化且未给 marks 时清空它们 ——
+   *    删中间一项就把后面所有粗体吃掉一半，是这条链路上最容易漏的副作用。
+   * 2. `renderSegments`：段边界是按旧 content 算的，前缀差 ±1 个字符时整体平移即可。
+   *    清空（`updateBlockContent` 的默认行为）会让这一块在落库回填前退回纯文本渲染，
+   *    肉眼看到 `[[页]]` 的括号闪一下。
+   */
+  function writeOrderedListNumber(block: Block, nextContent: string) {
+    const delta = nextContent.length - block.content.length
+    const previousSegments = block.renderSegments
+    if (delta !== 0) {
+      const marks = readInlineMarks(block.format, block.content.length)
+      block.format = writeInlineMarks(
+        block.format,
+        marks.map(mark => ({ ...mark, start: mark.start + delta, end: mark.end + delta })),
+      )
+    }
+    block.content = nextContent
+    block.updatedAt = Date.now()
+    // 段边界整体平移 delta（不是「去掉前缀」：前缀既可能变长也可能变短，`shiftSegments`
+    // 只接受非负前缀长度、会在这里把 +1 的位移吞掉）。完全落进前缀区的段直接丢掉。
+    if (previousSegments && delta !== 0) {
+      block.renderSegments = previousSegments
+        .map(seg => ({ ...seg, start: seg.start + delta, end: seg.end + delta }))
+        .filter(seg => seg.end > 0 && seg.start >= 0)
+    }
+    _scheduleSave(block)
+    useBlockCardStore().invalidate(block.id)
+  }
+
+  /**
+   * 扫一页并把有序列表序号写回 content。
+   *
+   * @param opts.authoredBlockId 本次改动来自「用户在这个块里手写了序号」。
+   *   手写值 ≠ 不靠锚点时的推导值 ⇒ 落成锚点（跳号从此固定，后续跟着变）；
+   *   相等 ⇒ 清掉锚点（回到自然顺排）。这是「前面不动、允许断点」的唯一入口。
+   * @param opts.skipIds 额外跳过的块（活动块会自动加入）。
+   * @returns 被改写的块 id
+   */
+  function applyOrderedListNumbering(
+    pageId: string,
+    opts: { authoredBlockId?: string | null; skipIds?: Iterable<string> } = {},
+  ): string[] {
+    const pageBlocks = blocks.value.filter(b => b.pageId === pageId)
+    if (pageBlocks.length === 0) return []
+
+    const skip = new Set(opts.skipIds ?? [])
+    // 正在打字的块不写回（决策：跳过活动块，失活后再对齐）—— 写进去会被编辑器
+    // 300ms 后的下一次防抖保存整段覆盖，白改且会闪。
+    const activeId = useEditorStore().activeBlockId
+    if (activeId) skip.add(activeId)
+
+    const authored = opts.authoredBlockId ?? null
+    if (authored) {
+      const target = blocks.value.find(b => b.id === authored && b.pageId === pageId)
+      if (target) {
+        const siblings = orderedListSiblings(target)
+        // 忽略自身锚点后重推：得到「不靠锚点它该是几」
+        const withoutAnchor = siblings.map(s =>
+          s.id === authored ? { ...s, format: withOrderedListAnchor(s.format, null) } : s,
+        )
+        const derived = planOrderedListNumbering(withoutAnchor).find(entry => entry.id === authored)
+        if (derived && derived.literal !== null && derived.desired !== null) {
+          const nextAnchor = derived.literal === derived.desired ? null : derived.literal
+          if (readOrderedListAnchor(target.format) !== nextAnchor) {
+            target.format = withOrderedListAnchor(target.format, nextAnchor)
+            target.updatedAt = Date.now()
+            _scheduleSave(target)
+          }
+        }
+      }
+    }
+
+    // 按父块分组（子块独立成段，决策 4）；组内保持 pos 顺序
+    const groups = new Map<string, Block[]>()
+    for (const block of pageBlocks) {
+      const key = block.parentId ?? '__root__'
+      const group = groups.get(key)
+      if (group) group.push(block)
+      else groups.set(key, [block])
+    }
+
+    const changed: string[] = []
+    orderedListApplying = true
+    try {
+      for (const group of groups.values()) {
+        group.sort((a, b) => a.pos - b.pos)
+        const plan = planOrderedListNumbering(
+          group.map(b => ({
+            id: b.id,
+            // 同 orderedListSiblings：非文本块不参与编号，只当段边界
+            content: b.type === 'bullet' ? b.content : '',
+            format: b.format,
+          })),
+        )
+        for (const entry of plan) {
+          if (!entry.changed || skip.has(entry.id)) continue
+          const block = group.find(b => b.id === entry.id)
+          if (!block) continue
+          writeOrderedListNumber(block, entry.content)
+          changed.push(block.id)
+        }
+      }
+    } finally {
+      orderedListApplying = false
+    }
+    return changed
+  }
+
+  /**
+   * 防抖调度推导（同一页合并成一次）。
+   *
+   * `authoredBlockId` 与页一起记账：多个块在窗口内被改，只有「手写序号」这层语义
+   * 需要 per-block 精确，故按页只留最后一个作者（用户一次只会手改一个序号）。
+   */
+  function scheduleOrderedListReindex(pageId: string, authoredBlockId: string | null = null) {
+    if (orderedListApplying) return
+    if (authoredBlockId) orderedListAuthored.set(pageId, authoredBlockId)
+    const pending = orderedListTimers.get(pageId)
+    if (pending) clearTimeout(pending)
+    orderedListTimers.set(
+      pageId,
+      setTimeout(() => {
+        orderedListTimers.delete(pageId)
+        const authored = orderedListAuthored.get(pageId) ?? null
+        orderedListAuthored.delete(pageId)
+        applyOrderedListNumbering(pageId, { authoredBlockId: authored })
+      }, ORDERED_LIST_REINDEX_MS),
+    )
+  }
+
+  /** 本块作为有序列表项时的序号（含锚点影响）；不在段内为 null */
+  function orderedListIndexFor(blockId: string): number | null {
+    const block = blocks.value.find(b => b.id === blockId)
+    if (!block) return null
+    return orderedListIndexAt(orderedListSiblings(block), blockId)
+  }
+
+  /** 本块之后新起一项的序号（Enter 续行；决策：向父调度器要号，而不是字面 +1） */
+  function nextOrderedListIndex(blockId: string): number {
+    const block = blocks.value.find(b => b.id === blockId)
+    if (!block) return 1
+    return nextOrderedListIndexAfter(orderedListSiblings(block), blockId)
+  }
+
+  /** 本块转成有序列表时应使用的序号（菜单；接上前面的连续 ol，否则从 1 起） */
+  function orderedListIndexForNew(blockId: string): number {
+    const block = blocks.value.find(b => b.id === blockId)
+    if (!block) return 1
+    return orderedListIndexForNewItem(orderedListSiblings(block), blockId)
+  }
+
+  /** 清掉本块的序号锚点（跨父搬移后作废，决策 20） */
+  function clearOrderedListAnchor(block: Block) {
+    if (readOrderedListAnchor(block.format) === null) return
+    block.format = withOrderedListAnchor(block.format, null)
+    block.updatedAt = Date.now()
+    _scheduleSave(block)
   }
 
   /**
@@ -1571,6 +1817,7 @@ export const useBlockStore = defineStore('blocks', () => {
     const block = blocks.value.find(b => b.id === blockId)
     if (!block) return
 
+    const wasOrderedList = isOrderedListBlock(block)
     const commitTags = opts?.commitTags ?? true
     if (commitTags) {
       pendingCommitTags.add(blockId)
@@ -1640,6 +1887,12 @@ export const useBlockStore = defineStore('blocks', () => {
     if (/@\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2})?\s*[📅⏰]/u.test(content)) {
       const fieldValueStore = useFieldValueStore()
       await fieldValueStore.ensureTodo(blockId)
+    }
+
+    // 有序列表序号：本块的手写值若与推导值不符 ⇒ 落成锚点，并把后续项重排。
+    // 只在「本来/现在是 ol」时调度 —— 普通正文的每一次打字都排一次扫页是纯浪费。
+    if (!orderedListApplying && (wasOrderedList || (block.type === 'bullet' && isOrderedListItem(content)))) {
+      scheduleOrderedListReindex(block.pageId, blockId)
     }
   }
 
@@ -1846,6 +2099,9 @@ export const useBlockStore = defineStore('blocks', () => {
       }
     }
 
+    // 粘贴进来的列表项带着源文档的序号 ⇒ 按落点重排（载荷里没有锚点，一律按推导值顺排）
+    scheduleOrderedListReindex(opts.pageId)
+
     return created
   }
 
@@ -2012,6 +2268,8 @@ export const useBlockStore = defineStore('blocks', () => {
     await restoreNode(forest)
 
     reconcileCollapse([], parentId ? [parentId] : [])
+    // 搬进来的列表项沿用源页序号 ⇒ 按新落点重排
+    scheduleOrderedListReindex(opts.pageId)
     return movedRoots
   }
 
@@ -2132,6 +2390,11 @@ export const useBlockStore = defineStore('blocks', () => {
     saveErrors,
     retrySave,
     updateBlockContent,
+    applyOrderedListNumbering,
+    scheduleOrderedListReindex,
+    orderedListIndexFor,
+    nextOrderedListIndex,
+    orderedListIndexForNew,
     updateBlockFormat,
     updateBlockType,
     resetBlockToText,

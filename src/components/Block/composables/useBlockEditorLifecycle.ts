@@ -283,13 +283,15 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
    * 列表续行的前缀：
    * - 非列表项 → `null`（不干预：普通段落 / 标题按原逻辑拆分，标题不续行是既定行为）
    * - 空列表项（`- ` 后面没有正文）→ `''`：退出列表，源块去掉标记、新块不带标记
-   * - 有正文的列表项 → 下一个标记（有序 +1）
+   * - 有正文的列表项 → 下一个标记。**有序的号向父调度器要**（推导值 + 1，含锚点影响），
+   *   而不是「字面 + 1」—— 正在打字的块字面可能落后于推导（手写跳号 / 前面刚删过项）。
    */
-  function listContinuationPrefix(content: string): string | null {
+  function listContinuationPrefix(targetBlockId: string): string | null {
+    const content = blockStore.getBlock(targetBlockId)?.content ?? ''
     const paragraph = parseParagraphStyle(content)
     if (paragraph.style !== 'ul' && paragraph.style !== 'ol') return null
     if (paragraph.title.trim() === '') return ''
-    return paragraph.style === 'ul' ? '- ' : `${(paragraph.listIndex ?? 1) + 1}. `
+    return paragraph.style === 'ul' ? '- ' : `${blockStore.nextOrderedListIndex(targetBlockId)}. `
   }
 
   /** 连按 Enter 的续号：`2. ` → `3. `；无序标记原样返回 */
@@ -368,7 +370,7 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
       // 子树根块：强制新块成为根的子块，避免 Enter 在页面级建兄弟而逃出可见子树（ADR-0039）
       const isSubtreeRoot = blockModalRootId?.value === blockId.value
       // 列表续行：必须在**拆分之前**取源正文（拆完只剩前半截，序号应以原项为准）
-      const continuation = listContinuationPrefix(blockStore.getBlock(blockId.value)?.content ?? '')
+      const continuation = listContinuationPrefix(blockId.value)
       const newBlock = await blockStore.insertBlockAtCursor(
         blockId.value,
         effectivePos,

@@ -810,9 +810,17 @@ defineExpose({
    2. **插入符必须有高度** —— `font-size: 0` 只满足第 1 条，第 2 条会一起归零
       （`Range.getClientRects()` 实测 h=0），光标一贴到前缀就整个消失。
 
-   所以走 inline-block：宽度压成 0、字号跟所在段落一致，字符横向溢出绘制但看不见；
-   插入符站在块内、用的是该字号的字体度量。`white-space: nowrap` 是必需的 —— 宽度 0 的盒里若允许
-   换行，`# ` 会逐字断成两行。
+   所以走 inline-block：宽度压成 0，字符横向溢出绘制但看不见，插入符站在块内。
+
+   **`white-space: pre` 是必需的，别改 `nowrap`**：前缀末尾是空格（`# ` / `- ` / `1. `），
+   `nowrap` 会把这枚尾随空格折叠成零 advance，浏览器的 caret 随即映射到空格**之前** ——
+   接着敲的字不是追加而是**替换掉那个空格**（`1. ` + `a` 变成 `1.a`，列表当场不再是列表）。
+
+   **`font-family: monospace` + `letter-spacing: -1ch` 也是必需的**：`width: 0` 只压住盒子，
+   盒内字符仍按各自字宽排开，插入符/选区按字形位置画 —— 前缀末尾的插入符会落到正文右侧
+   十几像素处（敲字时"光标跳一下"）。等宽字体下每个字符的 advance 恒为 `1ch`，`-1ch`
+   把它精确抵消成 0：盒内所有插入点都落在盒子左缘（＝正文起点），选区宽度也是 0。
+   字形本来透明，换字体没有视觉代价；`ch` 与 `em` 一样随字号缩放，标题前缀同样成立。
 
    **字号必须与所在段落一致**：插入符高度取所在文本的字号度量，同一块里两种字号就是
    两种高度的光标 —— 标题前缀若停在正文默认字号，行首光标 24px、标题正文 35px（h1）。
@@ -831,21 +839,30 @@ defineExpose({
 .editor-wrapper :deep(.pm-prefix-hidden) {
   display: inline-block;
   width: 0;
-  white-space: nowrap;
-  /* 负字距把字形的 advance 也抵消掉。`width: 0` 只压住**盒子**宽度，字形本身的
-     宽度还在：浏览器画选区（以及命中测试）用的是字形宽 —— 选中 `#### ` 时会有
-     41px 宽的高亮压在正文第一个字上，看起来就像「前面多了个空格」。
-     把 advance 压到 0 后选区宽度也是 0，任何位置都不会冒出一块底色。
-     -0.7em 覆盖实测的 `# ` / `#### ` / `- ` / `12. ` 四种前缀（都是 ASCII，字宽 < 0.7em）。
-     基准是**前缀自身的字号**：标题前缀跟着标题放大到 16.8–24px，实测 h1–h4 的选区宽
-     仍是 0（负得更多而已）。将来若换宽体字体或前缀字号再变大，要重测这一条。 */
-  letter-spacing: -0.7em;
+  white-space: pre;
+  font-family: monospace;
+  /* 等宽字体的上下高度只有 1.0em（正文字体约 1.5em）：同字号插入符会从 24 矮到 16。
+     放大把度量补回来；`ch` 与字号同比例缩放，advance 仍精确归零，字形本就透明 */
+  font-size: 1.5em;
+  letter-spacing: -1ch;
+  line-height: inherit;
   -webkit-text-fill-color: transparent;
   /* 第二道保险：万一有人把上面换回 `color: transparent`，插入符也不会跟着消失 */
   caret-color: var(--text-primary);
 }
 
-/* 字距是把 advance 压到 0（理论上选区宽 0）；这条再兜一层：万一某字体字宽超预期，
+/* 标题前缀的字号是「标题字号 × 1.46」而不是继承来的 1.5em：插入符高度取的是字号度量，
+   前缀必须自己放大到标题正文那颗插入符的高度（h1 35 / h2 30 / h3 26，实测），
+   否则行首光标 24px、正文 35px —— 同一个块里两种高度的光标。1.46 是实测比例（正文字体
+   上下高度 1.46–1.5em，等宽字体 1.0em）。宽度由 `width: 0` 硬压，字号放大不撑开布局。 */
+.editor-wrapper :deep(.pm-prefix-hidden.heading-preview-h1) { font-size: calc(var(--heading-1) * 1.46); }
+.editor-wrapper :deep(.pm-prefix-hidden.heading-preview-h2) { font-size: calc(var(--heading-2) * 1.46); }
+.editor-wrapper :deep(.pm-prefix-hidden.heading-preview-h3) { font-size: calc(var(--heading-3) * 1.46); }
+.editor-wrapper :deep(.pm-prefix-hidden.heading-preview-h4) { font-size: calc(var(--heading-4) * 1.46); }
+.editor-wrapper :deep(.pm-prefix-hidden.heading-preview-h5) { font-size: calc(var(--heading-5) * 1.46); }
+.editor-wrapper :deep(.pm-prefix-hidden.heading-preview-h6) { font-size: calc(var(--heading-6) * 1.46); }
+
+/* `-1ch` 已经把 advance 精确压到 0（选区宽 0）；这条再兜一层：万一换字体后字宽超预期，
    前缀被选中时也不会画底色。选区只该属于正文。 */
 .editor-wrapper :deep(.pm-prefix-hidden::selection) {
   background-color: transparent;

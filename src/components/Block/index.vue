@@ -190,11 +190,15 @@ const entryTop = computed(() => handler.value?.entryTop)
  *   是不能接受的副作用。
  *
  * 重复点同一格是无操作：不产生事务，也就不占掉一步撤销。
- * 切到有序列表固定从 `1. ` 起（序号落在正文里，见 ADR 之后的手工维护约定）。
+ * 切到有序列表的起始号向父调度器要（`orderedListIndexForNew`）：前面接着连续的有序列表
+ * 就顺延，否则从 `1. ` 起 —— 序号落在正文里，由 `stores/blocks.ts` 的推导统一维护。
  */
 async function setParagraphStyle(style: ParagraphStyle) {
   if (!isTextBlock.value) return
-  const prefix = paragraphPrefixOf(style)
+  // 有序列表的起始号向父调度器要：接上前面的连续列表，否则从 1 起（其余样式与前缀序号无关）
+  const prefix = style === 'ol'
+    ? paragraphPrefixOf('ol', blockStore.orderedListIndexForNew(blockId.value))
+    : paragraphPrefixOf(style)
 
   const editor = editorRef.value
   if (editor) {

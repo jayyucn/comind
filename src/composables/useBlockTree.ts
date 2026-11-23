@@ -1,4 +1,5 @@
-import type { TreeNode, Block } from '../types/block'
+import type { Block, TreeNode } from '../types/block'
+import { readOrderedListAnchor, withOrderedListAnchor } from './ordered-list-index'
 
 /**
  * 从扁平 Block 数组构建树形结构
@@ -113,6 +114,11 @@ export function syncTreeToStore(
         if (parentId) affected?.gained.add(parentId)
         if (block.parentId) affected?.emptied.add(block.parentId)
         block.parentId = parentId
+        // 跨父搬移 ⇒ 有序列表锚点作废（锚点只在原父层内有意义）。
+        // 拖动是这里唯一的「跨父」入口（缩进/反缩进走 store 自己的 indent/outdent）。
+        if (readOrderedListAnchor(block.format) !== null) {
+          block.format = withOrderedListAnchor(block.format, null)
+        }
         dirty = true
       }
       if (block.pos !== expectedPos) {

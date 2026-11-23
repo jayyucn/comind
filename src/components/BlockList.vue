@@ -106,6 +106,8 @@ function handleDragEnd(intent?: DragEndIntent | null) {
     blockStore.scheduleSave(id)
   }
   blockStore.reconcileCollapse(affected.emptied, affected.gained)
+  // 同级顺序变了 ⇒ 有序列表序号要重排（拖动是唯一绕过 store 的跨父/换序入口）
+  blockStore.scheduleOrderedListReindex(props.pageId)
 }
 
 // ── 双击底部留白区域创建新 block ──
