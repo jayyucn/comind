@@ -621,6 +621,24 @@ describe('useBlockEditorLifecycle', () => {
       expect(blockStore.updateBlockContent).not.toHaveBeenCalled()
       expect(editorStore.activateBlock).toHaveBeenCalledWith('b2', 1)
     })
+
+    it('高亮块续行：新块带同一语义（format.callout 随创建下发）', async () => {
+      const { lifecycle, blockStore } = setupList('重点')
+      blockStore.blocks[0].format = { callout: 'danger' }
+      await lifecycle.handleSplit(3)
+      // 第 4 参是新块创建时的 format：不带的话连写几段警示要逐块重设
+      expect(blockStore.insertBlockAtCursor).toHaveBeenCalledWith(
+        'b1', expect.any(Number), false, { callout: 'danger' }, undefined,
+      )
+    })
+
+    it('普通块续行：不下发任何 format', async () => {
+      const { lifecycle, blockStore } = setupList('普通段落')
+      await lifecycle.handleSplit(5)
+      expect(blockStore.insertBlockAtCursor).toHaveBeenCalledWith(
+        'b1', expect.any(Number), false, undefined, undefined,
+      )
+    })
   })
 
   /**

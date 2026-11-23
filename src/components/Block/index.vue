@@ -41,6 +41,14 @@ import { usePageStore } from '../../stores/pages'
 import type { TreeNode } from '../../types/block'
 import type { BlockSetupContext, BlockTypeEditorExposed, BlockTypeHooks } from '../../types/block-type'
 import { type BlockAlign,blockAlignOf } from '../../utils/block-align'
+import {
+  CALLOUT_TONE_LABELS,
+  CALLOUT_TONES,
+  calloutFormatPatch,
+  type CalloutTone,
+  calloutToneOf,
+  DEFAULT_CALLOUT_TONE,
+} from '../../utils/callout'
 import { hasHiddenAncestor } from '../../utils/element-visibility'
 import { mapInlineMarkOffsets, readInlineMarks } from '../../utils/inline-marks'
 import {
@@ -52,6 +60,7 @@ import BlockFieldZone from './BlockFieldZone.vue'
 import BlockDraggableList from './components/BlockDraggableList.vue'
 import BlockMenuCommon from './components/BlockMenuCommon.vue'
 import BlockMenuTextStyle from './components/BlockMenuTextStyle.vue'
+import CalloutToneIcon from './components/CalloutToneIcon.vue'
 import TaskProgressBar from './components/TaskProgressBar.vue'
 import { useBlockCollapse } from './composables/useBlockCollapse'
 import { blockDragActive, type DragEndIntent } from './composables/useBlockDragDrop'
@@ -145,8 +154,28 @@ const isTextBlock = computed(() => block.value.type === 'text')
  */
 const paragraph = computed(() => {
   if (!isTextBlock.value) return { style: 'text' as const, prefixLength: 0, title: '', listIndex: null }
-  return parseParagraphStyle(block.value.content ?? '')
+  // format 只作标题的双读兜底：模板插入的标题块正文里没有前缀，声明落在 format.type='heading'
+  return parseParagraphStyle(block.value.content ?? '', { format: block.value.format })
 })
+
+/**
+ * 本块的语义强调（`format.callout`）；非文本块一律 null。
+ *
+ * 与 `paragraph` 互斥：一个块要么是某种文本样式（正文前缀），要么是高亮（format）。
+ * 真源只有 `format` 一处，前缀只负责"把高亮挤掉"。
+ */
+const calloutTone = computed(() =>
+  isTextBlock.value ? calloutToneOf(block.value.format) : null,
+)
+
+/**
+ * 块内已有行内底色时，壳底要退让一档（`is-callout-quiet`）。
+ *
+ * 行内底色是 28% 的标记色，压在 8% 的语义底上会叠成深斑；在警示块里再叠一层
+ * 蓝/绿，读者分不清哪层是语义、哪层是手工标注。判定在宿主做、渲染态与编辑态同口径
+ * （两侧读同一份 `format.inlineMarks`），避免进编辑时视觉跳一下。
+ */
+const hasInlineBg = computed(() => readInlineMarks(block.value.format, (block.value.content ?? '').length).some(mark => !!mark.background))
 
 /** 段落样式 → 入口字形：胶囊是「这是什么块」的唯一出口，几级标题 / 是不是列表都该读得出来 */
 const STYLE_ENTRY_ICONS = {
@@ -205,7 +234,7 @@ async function setParagraphStyle(style: ParagraphStyle) {
     // 活动态以编辑器正文为准：编辑态是 decode 后的文本，与 store 里的编码正文长度不同
     const live = editor.getText()
     // allowEmptyTitle：内容还是 `# `（标题没打字）时也要认成 H1，否则会拼成 `## # `
-    const liveParagraph = parseParagraphStyle(live, { allowEmptyTitle: true })
+    const liveParagraph = parseParagraphStyle(live, { allowEmptyTitle: true, format: block.value.format })
     if (liveParagraph.style === style) return
     const next = prefix + liveParagraph.title
     const delta = next.length - live.length
@@ -222,11 +251,12 @@ async function setParagraphStyle(style: ParagraphStyle) {
       chain.insertContentAt({ from: 1, to: 1 + liveParagraph.prefixLength }, prefix)
     }
     chain.setTextSelection(cursor).run()
+    clearLegacyHeadingFormat()
     return
   }
 
   const current = block.value.content ?? ''
-  const currentParagraph = parseParagraphStyle(current, { allowEmptyTitle: true })
+  const currentParagraph = parseParagraphStyle(current, { allowEmptyTitle: true, format: block.value.format })
   // 同样式直接返回：有序列表的前缀带序号（`3. `），只比 `next === current` 会把
   // 「点自己那一格」判成变更、把序号重置回 1
   if (currentParagraph.style === style) return
@@ -237,11 +267,58 @@ async function setParagraphStyle(style: ParagraphStyle) {
     ? marks
     : marks.map((mark) => ({ ...mark, start: mark.start + delta, end: mark.end + delta }))
   await blockStore.updateBlockContent(blockId.value, next, { inlineMarks: shifted })
+  clearLegacyHeadingFormat()
+}
+
+/**
+ * 模板遗留真源的收口：一旦用**正文前缀**把样式定下来，就清掉 `format` 里的标题声明。
+ *
+ * 两种声明并存时，`TocPanel` 与模板序列化读 `format.type`、渲染读前缀 —— 两处各读一套，
+ * 块在目录里是标题、在正文里是段落。清掉后只剩前缀这一条真源。
+ */
+function clearLegacyHeadingFormat() {
+  if (block.value.format?.type !== 'heading') return
+  void blockStore.updateBlockFormat(blockId.value, { type: undefined, level: undefined })
 }
 
 /** 菜单点击出口：模板里不直接 await（与 `run()` 同款，异步失败静默） */
-function onSelectTextStyle(style: ParagraphStyle) {
-  void setParagraphStyle(style)
+function onSelectTextStyle(style: ParagraphStyle | 'callout') {
+  if (style === 'callout') {
+    void setCalloutTone(calloutTone.value ? null : DEFAULT_CALLOUT_TONE)
+    return
+  }
+  void setCalloutTone(null).then(() => setParagraphStyle(style))
+}
+
+/**
+ * 设置 / 移除语义强调。
+ *
+ * 互斥的方向是**不对称**的：设高亮时先把正文前缀降为正文（标题不能同时是高亮），
+ * 移除高亮时不动前缀（此刻它已经是正文，要不要改回标题由用户另行决定）。
+ */
+async function setCalloutTone(tone: CalloutTone | null) {
+  if (!isTextBlock.value) return
+  if (tone) await setParagraphStyle('text')
+  await blockStore.updateBlockFormat(blockId.value, calloutFormatPatch(tone))
+}
+
+const calloutIconEl = ref<HTMLElement | null>(null)
+const calloutMenuOpen = ref(false)
+
+/**
+ * 点块内的语义图标：编辑态先退出编辑再开浮层。
+ *
+ * 不退出的话，浮层开着而编辑器仍有焦点 —— 选完语义回车继续打字，光标位置与
+ * 「刚改完样式」的预期不符；退出编辑也让这次改动落成一步可撤销的 store 变更。
+ */
+function onCalloutIconClick() {
+  if (isActive.value) editorStore.deactivateBlock()
+  calloutMenuOpen.value = true
+}
+
+function onPickCalloutTone(tone: CalloutTone) {
+  calloutMenuOpen.value = false
+  void setCalloutTone(tone)
 }
 
 const decodedContent = computed(() => {
@@ -986,9 +1063,28 @@ watch(isActive, (active) => {
           <!-- 内容区 -->
           <div
             class="block-content"
+            :class="{
+              [`is-callout-${calloutTone}`]: calloutTone,
+              'is-callout-quiet': calloutTone && hasInlineBg,
+            }"
             :style="contentAlignStyle"
             @mousedown="onContentMousedown"
           >
+            <!-- 语义图标：既是"这是哪种语义"的标签，也是切换入口。
+                 与正文同处一个 flex 行 —— 让位 20px，正文因此比普通块右移 28px（含间隙）。
+                 `mousedown.stop`：这是自交互元素，按下不该把块拉进编辑态。 -->
+            <button
+              v-if="calloutTone"
+              ref="calloutIconEl"
+              type="button"
+              class="callout-tone-btn"
+              :title="`${CALLOUT_TONE_LABELS[calloutTone]}（点击切换）`"
+              :aria-label="`高亮语义：${CALLOUT_TONE_LABELS[calloutTone]}，点击切换`"
+              @mousedown.stop
+              @click.stop="onCalloutIconClick"
+            >
+              <CalloutToneIcon :tone="calloutTone" />
+            </button>
             <component
               :is="handler.editorComponent"
               v-if="isActive && handler"
@@ -1127,6 +1223,7 @@ watch(isActive, (active) => {
         <BlockMenuTextStyle
           v-if="isTextBlock"
           :style="paragraph.style"
+          :callout-tone="calloutTone"
           @select="onSelectTextStyle"
         />
         <span
@@ -1140,6 +1237,41 @@ watch(isActive, (active) => {
           :after-paste="entryMenuExtra?.afterPaste"
           @close="closeEntryMenu"
         />
+      </div>
+    </BasePopover>
+
+    <!-- 语义切换浮层：挂在块内的语义图标上。
+         `modal=false` 与入口菜单同因由 —— 这不是模态弹层，铺全屏 overlay 会把页面交互吃掉。
+         `mousedown.prevent`：选语义不该顺带把焦点还给编辑器。 -->
+    <BasePopover
+      :visible="calloutMenuOpen"
+      :anchor-el="calloutIconEl"
+      placement="bottom"
+      :modal="false"
+      @close="calloutMenuOpen = false"
+    >
+      <div
+        class="callout-tone-row"
+        role="group"
+        aria-label="高亮语义"
+        @mousedown.prevent
+      >
+        <button
+          v-for="tone in CALLOUT_TONES"
+          :key="tone"
+          type="button"
+          class="callout-tone-item"
+          :class="[`is-tone-${tone}`, { 'is-active': tone === calloutTone }]"
+          :title="CALLOUT_TONE_LABELS[tone]"
+          :aria-label="CALLOUT_TONE_LABELS[tone]"
+          :aria-pressed="tone === calloutTone"
+          @click="onPickCalloutTone(tone)"
+        >
+          <CalloutToneIcon
+            :tone="tone"
+            :size="16"
+          />
+        </button>
       </div>
     </BasePopover>
   </div>

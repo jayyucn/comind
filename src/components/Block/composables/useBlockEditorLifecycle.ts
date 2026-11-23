@@ -20,6 +20,7 @@ import type { useEditorStore } from '../../../stores/editor'
 import type { usePageStore } from '../../../stores/pages'
 import { useTagsStore } from '../../../stores/tags'
 import type { BlockTypeEditorExposed } from '../../../types/block-type'
+import { calloutToneOf } from '../../../utils/callout'
 import { DATE_REF_AT_REGEX, type DateRefKind, normalizeRecurrence, type RecurrenceRule, serializeDateRef } from '../../../utils/date-ref'
 import type { InlineMarkRange } from '../../../utils/inline-marks'
 import { mapInlineMarkOffsets, readInlineMarks } from '../../../utils/inline-marks'
@@ -371,11 +372,14 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
       const isSubtreeRoot = blockModalRootId?.value === blockId.value
       // 列表续行：必须在**拆分之前**取源正文（拆完只剩前半截，序号应以原项为准）
       const continuation = listContinuationPrefix(blockId.value)
+      // 高亮续行：新块继承同一语义（连写几段警示不必逐块重设）。
+      // 与列表同一条时机约束 —— 拆分之后源块可能已被改写，判定要在拆之前取。
+      const calloutInherit = calloutToneOf(blockStore.getBlock(blockId.value)?.format)
       const newBlock = await blockStore.insertBlockAtCursor(
         blockId.value,
         effectivePos,
         collapsed.value,
-        undefined,
+        calloutInherit ? { callout: calloutInherit } : undefined,
         isSubtreeRoot ? { forceParentId: blockId.value } : undefined
       )
       if (newBlock) {
@@ -396,7 +400,12 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
           pendingSplitCount--
           // 行尾（而不是 1）：带 `- ` 前缀的块里 pos=1 是「行首」，会走到「上方插入」分支，
           // 连按 Enter 建出来的块就反了序
-          const extra = await blockStore.insertBlockAtCursor(anchorId, anchorPos, false)
+          const extra = await blockStore.insertBlockAtCursor(
+            anchorId,
+            anchorPos,
+            false,
+            calloutInherit ? { callout: calloutInherit } : undefined,
+          )
           if (!extra) break
           if (nextPrefix) {
             await prefixNewListItem(extra.id, nextPrefix)

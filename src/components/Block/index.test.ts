@@ -1274,17 +1274,22 @@ describe('入口胶囊字形：文本块标题级别', () => {
   })
 })
 
-describe('入口菜单：文本样式行（普通文本 / H1–H3 / 有序 / 无序）', () => {
+describe('入口菜单：文本样式行（普通文本 / H1–H3 / 有序 / 无序 / 高亮）', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
     document.body.querySelectorAll('.block-entry-menu').forEach((n) => n.remove())
+    document.body.querySelectorAll('.callout-tone-row').forEach((n) => n.remove())
   })
 
-  function mountBlock(content: string, type: 'text' | 'image' = 'text') {
+  function mountBlock(
+    content: string,
+    type: 'text' | 'image' = 'text',
+    format: Record<string, unknown> = {},
+  ) {
     const blockStore = useBlockStore()
     blockStore.blocks = [
-      { id: 'b1', pageId: 'p1', parentId: null, pos: 0, content, format: {}, type, createdAt: 0, updatedAt: 0 },
+      { id: 'b1', pageId: 'p1', parentId: null, pos: 0, content, format, type, createdAt: 0, updatedAt: 0 },
     ]
     const node: TreeNode = { id: 'b1', block: blockStore.blocks[0], children: [] }
     return mount(Block, {
@@ -1293,8 +1298,12 @@ describe('入口菜单：文本样式行（普通文本 / H1–H3 / 有序 / 无
     })
   }
 
-  async function openMenu(content: string, type: 'text' | 'image' = 'text') {
-    const wrapper = mountBlock(content, type)
+  async function openMenu(
+    content: string,
+    type: 'text' | 'image' = 'text',
+    format: Record<string, unknown> = {},
+  ) {
+    const wrapper = mountBlock(content, type, format)
     await flushPromises()
     await wrapper.find('.block-entry-icon').trigger('click')
     await flushPromises()
@@ -1305,10 +1314,10 @@ describe('入口菜单：文本样式行（普通文本 / H1–H3 / 有序 / 无
     return Array.from(document.body.querySelectorAll<HTMLElement>('[data-text-style]'))
   }
 
-  it('文本块菜单顶部是 6 格样式行，当前样式高亮', async () => {
+  it('文本块菜单顶部是 7 格样式行，当前样式高亮', async () => {
     const wrapper = await openMenu('## 二级标题')
     const buttons = styleButtons()
-    expect(buttons.map((b) => b.dataset.textStyle)).toEqual(['text', 'h1', 'h2', 'h3', 'ol', 'ul'])
+    expect(buttons.map((b) => b.dataset.textStyle)).toEqual(['text', 'h1', 'h2', 'h3', 'ol', 'ul', 'callout'])
     expect(buttons[2].classList.contains('is-active')).toBe(true)
     expect(buttons[0].classList.contains('is-active')).toBe(false)
     wrapper.unmount()
@@ -1370,6 +1379,70 @@ describe('入口菜单：文本样式行（普通文本 / H1–H3 / 有序 / 无
     styleButtons()[0].click()
     await flushPromises()
     expect(blockStore.blocks[0].content).toBe('标题')
+    wrapper.unmount()
+  })
+
+  it('点「高亮」：落 format.callout 默认注意色，正文一个字不动', async () => {
+    const blockStore = useBlockStore()
+    const wrapper = await openMenu('重点段落')
+    styleButtons()[6].click()
+    await flushPromises()
+    expect(blockStore.blocks[0].format.callout).toBe('warn')
+    expect(blockStore.blocks[0].content).toBe('重点段落')
+    wrapper.unmount()
+  })
+
+  it('标题上点「高亮」：前缀同时降为正文（互斥一步到位）', async () => {
+    const blockStore = useBlockStore()
+    const wrapper = await openMenu('## 二级标题')
+    styleButtons()[6].click()
+    await flushPromises()
+    expect(blockStore.blocks[0].content).toBe('二级标题')
+    expect(blockStore.blocks[0].format.callout).toBe('warn')
+    wrapper.unmount()
+  })
+
+  it('高亮块再点「高亮」：取消（同一格即开关）', async () => {
+    const blockStore = useBlockStore()
+    const wrapper = await openMenu('重点', 'text', { callout: 'warn' })
+    styleButtons()[6].click()
+    await flushPromises()
+    expect(blockStore.blocks[0].format.callout).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('高亮块点「普通文本」：高亮一并清掉', async () => {
+    const blockStore = useBlockStore()
+    const wrapper = await openMenu('重点', 'text', { callout: 'danger' })
+    styleButtons()[0].click()
+    await flushPromises()
+    expect(blockStore.blocks[0].format.callout).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('高亮块渲染出语义壳与可点的语义图标', async () => {
+    const wrapper = await openMenu('重点', 'text', { callout: 'danger' })
+    expect(wrapper.find('.block-content').classes()).toContain('is-callout-danger')
+    expect(wrapper.find('.callout-tone-btn').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('无高亮的块不出现语义图标', async () => {
+    const wrapper = await openMenu('普通段落')
+    expect(wrapper.find('.callout-tone-btn').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('点语义图标：浮层给出四种语义，选「完成」即切换', async () => {
+    const blockStore = useBlockStore()
+    const wrapper = await openMenu('重点', 'text', { callout: 'warn' })
+    await wrapper.find('.callout-tone-btn').trigger('click')
+    await flushPromises()
+    const items = Array.from(document.body.querySelectorAll<HTMLElement>('.callout-tone-item'))
+    expect(items.map((item) => item.getAttribute('aria-label'))).toEqual(['提示', '注意', '完成', '禁止'])
+    items[2].click()
+    await flushPromises()
+    expect(blockStore.blocks[0].format.callout).toBe('success')
     wrapper.unmount()
   })
 

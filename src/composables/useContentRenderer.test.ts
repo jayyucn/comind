@@ -955,3 +955,32 @@ describe('shiftSegments — 去前缀后的坐标系平移', () => {
     expect(shiftSegments(segments, 0)).toBe(segments)
   })
 })
+
+describe('parseParagraphStyle — 标题的 format 双读兜底', () => {
+  it('正文无前缀但 format 声明 heading：按 format.level 认出标题', () => {
+    const info = parseParagraphStyle('二阶思维', { format: { type: 'heading', level: 2 } })
+    expect(info).toMatchObject({ style: 'h2', level: 2, prefixLength: 0, title: '二阶思维' })
+  })
+
+  it('前缀优先于 format（用户改样式后以正文为准）', () => {
+    const info = parseParagraphStyle('# 一阶', { format: { type: 'heading', level: 2 } })
+    expect(info).toMatchObject({ style: 'h1', level: 1, prefixLength: 2, title: '一阶' })
+  })
+
+  it('format 缺 level 时按 2 级兜底', () => {
+    expect(parseParagraphStyle('标题', { format: { type: 'heading' } }).style).toBe('h2')
+  })
+
+  it('4–6 级：level 保留但不点亮样式行', () => {
+    const info = parseParagraphStyle('四阶', { format: { type: 'heading', level: 4 } })
+    expect(info).toMatchObject({ style: null, level: 4 })
+  })
+
+  it('format 不是 heading（含 callout）时不影响判定', () => {
+    expect(parseParagraphStyle('重点', { format: { callout: 'warn' } }).style).toBe('text')
+  })
+
+  it('不传 format 时行为与原先一致', () => {
+    expect(parseParagraphStyle('普通段落').style).toBe('text')
+  })
+})

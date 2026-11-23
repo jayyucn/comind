@@ -365,6 +365,126 @@ $block-entry-corner-height: 12px;
   min-width: 0;
 }
 
+// ===== 高亮块（format.callout）=====
+// 壳只挂 .block-content —— 四层里只有它只含正文：
+// `.block` 连字段区与整棵子树、`.block-row` 含 .block-indent（左边界是页面最左）、
+// `.block-inner` 含胶囊（padding 会把胶囊一起右移）、`.block-body` 含字段区。
+// 几何：2px 描边 + 6px padding + 20px 图标 + 8px 间隙 = 正文内缩 36px，胶囊不动。
+$callout-tones: (
+  info: --info,
+  warn: --warning,
+  success: --success,
+  danger: --error,
+);
+
+@each $tone, $token in $callout-tones {
+  .block-content.is-callout-#{$tone} {
+    // 局部色相：行内底色的收敛规则也读它，保证块内只用一种色
+    --callout-tone: var(#{$token});
+    --callout-alpha: 8%;
+
+    padding-left: 6px;
+    border-left: 2px solid var(--callout-tone);
+    border-radius: 0 $radius-sm $radius-sm 0;
+    background: color-mix(in srgb, var(--callout-tone) var(--callout-alpha), transparent);
+  }
+}
+
+// 旧浏览器：没有 color-mix 就只留描边与图标的色相，不给一层灰底（灰底会读成"禁用"）
+@supports not (background: color-mix(in srgb, red 10%, transparent)) {
+  .block-content[class*='is-callout-'] {
+    background: transparent;
+  }
+}
+
+// 块内已有行内底色（28% 标记色）时壳底退到 3%：两层同强度会叠成深斑，
+// 也让「语义层」与「手工标注层」分不出主次。判定在宿主（读 format.inlineMarks）。
+.block-content.is-callout-quiet {
+  --callout-alpha: 3%;
+}
+
+// 激活态让壳底退让：--block-active-bg 铺在 .block-text 上，与语义底叠会串色
+// （暗色 --info 与 --block-active-bg 同为 #818CF8 系）。激活信号交给描边与图标。
+.block.active>.block-row .block-content[class*='is-callout-'] {
+  background: transparent;
+}
+
+// 语义图标：既是"这是哪种语义"的标签，也是切换入口。
+// `align-self:flex-start` 让它压在本块首行上，而不是在多行块里垂直居中。
+.block-content>.callout-tone-btn {
+  display: inline-flex;
+  flex: 0 0 20px;
+  align-items: center;
+  align-self: flex-start;
+  justify-content: center;
+  width: 20px;
+  height: 22px;
+  margin: 1px 8px 0 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--callout-tone, var(--text-tertiary));
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out);
+}
+
+.block-content>.callout-tone-btn:hover {
+  background: var(--bg-hover);
+}
+
+// 高亮块内的行内底色：收敛到壳的色相、强度降到 14%（原 28%）——
+// 警示块里再叠一层蓝/绿，读者分不清哪层是语义、哪层是手工标注。
+// 渲染产物是内联 style，只能 !important 覆盖；选择器已限定在 callout 壳内。
+.block-content[class*='is-callout-'] [data-inline-bg] {
+  background-color: color-mix(in srgb, var(--callout-tone) 14%, transparent) !important;
+}
+
+// ===== 语义切换浮层 =====
+.callout-tone-row {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+}
+
+.callout-tone-item {
+  display: inline-flex;
+  width: 26px;
+  height: 26px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+}
+
+.callout-tone-item:hover {
+  background: var(--bg-hover);
+}
+
+.callout-tone-item.is-active {
+  background: var(--accent-subtle);
+}
+
+.callout-tone-item.is-tone-info {
+  color: var(--info);
+}
+
+.callout-tone-item.is-tone-warn {
+  color: var(--warning);
+}
+
+.callout-tone-item.is-tone-success {
+  color: var(--success);
+}
+
+.callout-tone-item.is-tone-danger {
+  color: var(--error);
+}
+
 // ===== 文本内容 =====
 .block-text {
   outline: none;

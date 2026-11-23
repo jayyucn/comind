@@ -120,10 +120,14 @@ export interface ParagraphStyleInfo {
  * @param options.allowEmptyTitle 同 `parseHeading`：编辑态预览要认「`# ` 还没打字」。
  *   触发样式切换（`setParagraphStyle`）时也应放宽 —— 否则对一个内容为 `# ` 的块点 H2，
  *   会把 `# ` 当成正文拼成 `## # `。
+ * @param options.format 标题的**双读兜底**：模板插入的标题块只落了 `format`（
+ *   `{type:'heading', level}`），正文里没有前缀（`serialize-block-tree.ts` 的两端契约）。
+ *   不喂 format 时这类块会被判成普通正文 —— TOC 认它是标题、渲染却是正文。
+ *   只在正文完全没有前缀时才兜底，前缀永远优先（用户一旦改样式就写前缀，format 侧随之清掉）。
  */
 export function parseParagraphStyle(
   content: string,
-  options: { allowEmptyTitle?: boolean } = {},
+  options: { allowEmptyTitle?: boolean; format?: Record<string, unknown> | null } = {},
 ): ParagraphStyleInfo {
   const heading = parseHeading(content, options)
   if (heading) {
@@ -146,7 +150,27 @@ export function parseParagraphStyle(
       listIndex: list.index,
     }
   }
+  const legacy = legacyHeadingFromFormat(options.format)
+  if (legacy) {
+    return { style: legacy.style, level: legacy.level, prefixLength: 0, title: content, listIndex: null }
+  }
   return { style: 'text', level: null, prefixLength: 0, title: content, listIndex: null }
+}
+
+/**
+ * 模板遗留的标题声明：`format.type === 'heading'` + `level`。
+ *
+ * 与正文前缀并存是本库的既存事实（`TocPanel` 与模板序列化认它，渲染原先不认）。
+ * 这里把它折进同一条判定，避免"标题"在渲染与目录两处打架；级别按 1–6 收口，
+ * 4–6 级同前缀口径：`style` 为 null（文本样式行点不亮），但 `level` 仍保留。
+ */
+function legacyHeadingFromFormat(
+  format: Record<string, unknown> | null | undefined,
+): { style: ParagraphStyle | null; level: number } | null {
+  if (!format || format.type !== 'heading') return null
+  const raw = typeof format.level === 'number' && Number.isFinite(format.level) ? format.level : 2
+  const level = Math.min(6, Math.max(1, Math.trunc(raw)))
+  return { style: level <= 3 ? (`h${level}` as ParagraphStyle) : null, level }
 }
 
 /** 样式 → 正文前缀。切样式就是整体换掉前缀，正文一个字不动 */

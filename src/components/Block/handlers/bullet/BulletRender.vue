@@ -28,7 +28,8 @@ const hasSaveError = computed(() => {
   return !!blockStore.saveErrors[props.blockId]
 })
 
-const paragraph = computed(() => parseParagraphStyle(props.content))
+/** `format` 只用于标题的双读兜底（模板插入的标题块正文里没有前缀） */
+const paragraph = computed(() => parseParagraphStyle(props.content, { format: props.blockFormat }))
 
 const headingTag = computed(() => {
   const style = paragraph.value.style
