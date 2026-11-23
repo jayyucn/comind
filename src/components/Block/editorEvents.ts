@@ -12,6 +12,7 @@ import {
 } from '../../extensions/RelationshipTriggerExtension'
 import { WIKI_LINK_CLICK_EVENT, type WikiLinkClickPayload } from '../../extensions/WikiLinkExtension'
 import { getRelationshipLabel } from '../../types/relationship'
+import { docToText } from '../../utils/editor-text'
 
 export interface RelationshipMenuApi {
   open: (opts: {
@@ -392,7 +393,8 @@ export function createEditorEvents(ctx: EditorEventCtx): Record<string, (e: Even
           if (payload) {
             ctx.emit('save', payload.text, undefined, payload.marks)
           } else {
-            ctx.emit('save', editor.getText())
+            // 兜底也走落库口径：TipTap 的 getText 会跳过 hardBreak（段内换行丢失）。
+            ctx.emit('save', docToText(editor.state.doc))
           }
         }
         break

@@ -58,6 +58,12 @@ function makeEditor(opts: {
     view: { dom, endOfTextblock, coordsAtPos },
     getText: () => text,
     state: {
+      // 落库口径的取文本入口（docToText）走 descendants：fake 里用一个文本叶子代表正文。
+      doc: {
+        descendants: (cb: (node: any) => void) => {
+          if (text) cb({ isText: true, text, marks: [], type: { name: 'text' } })
+        },
+      },
       selection: {
         from,
         to,

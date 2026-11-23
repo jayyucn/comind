@@ -89,7 +89,7 @@ export function buildParagraphStyleDecorations(state: EditorState): DecorationSe
     // 零宽盒里溢出绘制，而前缀是 `color: transparent`，整行字直接看不见。
     if (info.level) {
       decorations.push(
-        Decoration.inline(prefixEnd, from + text.length, {
+        Decoration.inline(prefixEnd, from + node.content.size, {
           class: `heading-preview heading-preview-h${info.level}`,
         }),
       )

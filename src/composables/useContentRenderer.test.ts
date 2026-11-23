@@ -617,6 +617,14 @@ describe('parseHeading — 标题解析测试', () => {
     expect(result).toEqual({ level: 2, title: '[[页面A]]' })
   })
 
+  // Shift-Enter 的硬换行会进正文：标记只认首行，标题文本吃掉剩余全部（含 `\n`）。
+  // 旧实现用 `.+`（不跨行）+ `$`，一有换行就整体不匹配，标题静默退回普通正文。
+  it('标题含硬换行时仍识别为标题，正文保留换行', () => {
+    expect(parseHeading('# 第一行\n第二行')).toEqual({ level: 1, title: '第一行\n第二行' })
+    expect(parseHeading('## 第一行\n\n第三行', { allowEmptyTitle: true }))
+      .toEqual({ level: 2, title: '第一行\n\n第三行' })
+  })
+
   it('空标题不识别', () => {
     const result = parseHeading('# ')
     expect(result).toBeNull()
@@ -878,6 +886,14 @@ describe('parseList — 列表标记解析', () => {
     expect(parseList('* 强调')).toBeNull()
     expect(parseList('+ 加号')).toBeNull()
   })
+
+  // 同 parseHeading：硬换行进正文后，标记仍只认首行
+  it('列表项含硬换行时仍保留标记', () => {
+    expect(parseList('- 第一行\n第二行'))
+      .toEqual({ kind: 'unordered', index: null, title: '第一行\n第二行' })
+    expect(parseList('7. 第一行\n第二行'))
+      .toEqual({ kind: 'ordered', index: 7, title: '第一行\n第二行' })
+  })
 })
 
 describe('parseParagraphStyle — 段落样式单源', () => {
@@ -890,6 +906,12 @@ describe('parseParagraphStyle — 段落样式单源', () => {
   it('标题 → hN，前缀长含 `#` 与空格', () => {
     expect(parseParagraphStyle('## 标题')).toEqual({
       style: 'h2', level: 2, prefixLength: 3, title: '标题', listIndex: null,
+    })
+  })
+
+  it('跨行标题：前缀长度只算首行标记，正文吃掉换行', () => {
+    expect(parseParagraphStyle('# 甲\n乙')).toEqual({
+      style: 'h1', level: 1, prefixLength: 2, title: '甲\n乙', listIndex: null,
     })
   })
 

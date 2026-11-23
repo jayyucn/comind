@@ -46,6 +46,10 @@ export interface HeadingParseResult {
 /**
  * 标题前缀解析。
  *
+ * 标题可跨行（Shift-Enter 的硬换行会进正文）：标记只认**首行**，标题文本吃掉剩余的
+ * 全部内容（含 `\n`）。因此 `.+` / `.*` 这种默认不跨行的写法不能用 —— 内容里一旦有
+ * 换行，正则整体不匹配，标题会静默退回普通正文、连 `# ` 也一起显示出来。
+ *
  * @param options.allowEmptyTitle 允许「只有 `# ` 还没有标题文本」也算标题。只有编辑态
  *   预览需要它 —— 敲下 `# ` 就该立刻变大（不必等第一个字），而渲染态若也放宽，会留下
  *   一个空的 `<h1>` 行。默认 false，与历史行为一致。
@@ -54,9 +58,10 @@ export function parseHeading(
   text: string,
   options: { allowEmptyTitle?: boolean } = {},
 ): HeadingParseResult | null {
+  // `[^\S\n]` = 除换行以外的空白：标记后的分隔空格不能把行接下去
   const match = options.allowEmptyTitle
-    ? text.match(/^(#{1,6})\s+(.*)$/)
-    : text.match(/^(#{1,6})\s+(.+)$/)
+    ? text.match(/^(#{1,6})[^\S\n]+([\s\S]*)$/)
+    : text.match(/^(#{1,6})[^\S\n]+([\s\S]+)$/)
   if (match) {
     return { level: match[1].length, title: match[2] }
   }
@@ -83,11 +88,12 @@ export interface ListParseResult {
  *   就不成立，而列表项可以先是空的、再往里打字。
  */
 export function parseList(text: string): ListParseResult | null {
-  const ordered = text.match(/^(\d{1,9})\.\s(.*)$/)
+  // 同 `parseHeading`：正文可跨行，标记只认首行，正文吃掉剩余全部（含 `\n`）。
+  const ordered = text.match(/^(\d{1,9})\.[^\S\n]([\s\S]*)$/)
   if (ordered) {
     return { kind: 'ordered', index: Number(ordered[1]), title: ordered[2] }
   }
-  const unordered = text.match(/^-\s(.*)$/)
+  const unordered = text.match(/^-[^\S\n]([\s\S]*)$/)
   if (unordered) {
     return { kind: 'unordered', index: null, title: unordered[1] }
   }

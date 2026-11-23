@@ -30,6 +30,7 @@ import { useTagsStore } from '../stores/tags'
 import { type BlockAlign,blockAlignOf } from '../utils/block-align'
 import type { DateRefKind } from '../utils/date-ref'
 import { debounce } from '../utils/debounce'
+import { docToText, HARD_BREAK_TEXT } from '../utils/editor-text'
 import type { InlineMarkAttrs, InlineMarkRange } from '../utils/inline-marks'
 import { inlineMarksToHtml, normalizeInlineMarks, sameInlineMarks } from '../utils/inline-marks'
 import { padUnitForDoc } from '../utils/inline-unit-pad'
@@ -523,7 +524,9 @@ watch(
   () => props.content,
   (newContent) => {
     if (!editor.value) return
-    if (editor.value.getText() !== newContent) {
+    // 比的是「落库正文」口径（含 hardBreak 的 `\n`）：用 TipTap 的 getText 会跳过
+    // 硬换行，带换行的块每次外部写入都判成「内容不同」而重设文档，顺带丢掉光标。
+    if (docToText(editor.value.state.doc) !== newContent) {
       syncing = true
       settingContent = true
       editor.value.commands.setContent(textToHtml(newContent, props.inlineMarks), { parseOptions: PARSE_PRESERVE_WS })
@@ -591,7 +594,11 @@ function serializeMarks(doc: PMNode): InlineMarkRange[] {
   let length = 0
   const raw: InlineMarkRange[] = []
   doc.descendants((node) => {
-    if (!node.isText) return
+    // 硬换行在正文里占 1 个字符（`\n`）；不计数会让它之后的 marks 整体前移，着色串位。
+    if (!node.isText) {
+      if (node.type.name === 'hardBreak') length += HARD_BREAK_TEXT.length
+      return
+    }
     const text = node.text ?? ''
     const attrs: InlineMarkAttrs = {}
     for (const mark of node.marks) {
@@ -624,12 +631,12 @@ function serializeMarks(doc: PMNode): InlineMarkRange[] {
   return normalizeInlineMarks(raw, length)
 }
 
-/** 读取编辑器正文 + 行内格式（硬换行不进入正文，与既有 getText 口径一致）。 */
+/** 读取编辑器正文 + 行内格式。正文口径见 `docToText`：硬换行记作 `\n`。 */
 function getContentPayload(): { text: string; marks: InlineMarkRange[] } {
   const instance = editor.value
   if (!instance) return { text: '', marks: [] }
   const marks = serializeMarks(instance.state.doc)
-  const text = instance.state.doc.textBetween(0, instance.state.doc.content.size, '')
+  const text = docToText(instance.state.doc)
   return { text, marks: normalizeInlineMarks(marks, text.length) }
 }
 
@@ -716,7 +723,11 @@ defineExpose({
   focus,
   focusRange,
   focusAtCoords,
-  getText: () => editor.value?.getText() ?? '',
+  // 与落库同源：TipTap 的 getText 会跳过 hardBreak，用它读出来会把段内换行抹掉。
+  getText: () => {
+    const instance = editor.value
+    return instance ? docToText(instance.state.doc) : ''
+  },
   getContent: () => getContentPayload(),
   markSaved,
   getEditor,

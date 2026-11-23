@@ -110,11 +110,23 @@ describe('createEditorEvents — 声明式事件表', () => {
     }
   })
 
-  it('enter-as-block save 读取编辑器文本 emit', () => {
-    const ctx = makeCtx({ getEditor: () => ({ getText: () => 'hello' }) as any })
+  it('enter-as-block save 读取编辑器文本 emit（落库口径把硬换行记作 `\\n`）', () => {
+    const ctx = makeCtx({
+      getEditor: () => ({
+        state: {
+          doc: {
+            descendants: (cb: (node: any) => void) => {
+              cb({ isText: true, text: 'hello', marks: [], type: { name: 'text' } })
+              cb({ isText: false, text: '', marks: [], type: { name: 'hardBreak' } })
+              cb({ isText: true, text: 'world', marks: [], type: { name: 'text' } })
+            },
+          },
+        },
+      }) as any,
+    })
     const { dom } = setup(ctx)
     dom.dispatchEvent(new CustomEvent('enter-as-block', { detail: { type: 'save' } }))
-    expect(ctx.emit).toHaveBeenCalledWith('save', 'hello')
+    expect(ctx.emit).toHaveBeenCalledWith('save', 'hello\nworld')
   })
 
   /**
