@@ -804,13 +804,52 @@ defineExpose({
    标记与渲染态 `.block-list-marker` 同宽（14px）同色（--text-tertiary）同间距（--space-2）
    —— 两态正文起点落在同一列，进出编辑时文字不会左右跳。
 
-   藏法必须是「零字号」而**不是** `display: none`：后者让这几个字不参与渲染，光标也就
-   站不进去，Chrome 的原生退格会从「可见行首」一次删掉整段前缀（实测 `- 列表` 退格后
-   直接变成 `列表`，且 Home 永远到不了行首）。字号 0 保留文字位置与逐字符删除语义，
-   只把宽度吃成 0。 */
+   藏法有两个硬约束，缺一个就出可见故障：
+
+   1. **布局宽度必须是 0**（否则正文起点比渲染态右移十来像素）；
+   2. **插入符必须有高度** —— `font-size: 0` 只满足第 1 条，第 2 条会一起归零
+      （`Range.getClientRects()` 实测 h=0），光标一贴到前缀就整个消失。
+
+   所以走 inline-block：宽度压成 0、字号跟所在段落一致，字符横向溢出绘制但看不见；
+   插入符站在块内、用的是该字号的字体度量。`white-space: nowrap` 是必需的 —— 宽度 0 的盒里若允许
+   换行，`# ` 会逐字断成两行。
+
+   **字号必须与所在段落一致**：插入符高度取所在文本的字号度量，同一块里两种字号就是
+   两种高度的光标 —— 标题前缀若停在正文默认字号，行首光标 24px、标题正文 35px（h1）。
+   标题前缀由扩展额外挂上 `heading-preview-hN` 拿字号，这里不必特判；宽度是 `width: 0`
+   硬压的，字号变大不会撑开布局。
+
+   字怎么变透明也有讲究：用 `-webkit-text-fill-color`，**不能** `color: transparent`。
+   插入符颜色默认是 `currentColor`（即 `color`），`color` 一透明插入符也跟着透明 ——
+   高度修好了光标照样看不见。`text-fill-color` 只改字形填充，`color` 保持正常，
+   `caret-color: auto` 才能算出可见的插入符。
+
+   **别加 `overflow: hidden`**：那会把溢出的插入符一起裁掉（实测 rect 仍报 h=21，
+   但落在裁剪区里，视觉上还是看不见）。也别退回 `font-size: 0` / `display: none`
+   —— 后者连字符位置都不参与渲染，Chrome 的退格会一次删掉整段前缀（`- 列表` 退格后
+   直接变成 `列表`），Home 也永远到不了行首。 */
 .editor-wrapper :deep(.pm-prefix-hidden) {
-  font-size: 0;
-  opacity: 0;
+  display: inline-block;
+  width: 0;
+  white-space: nowrap;
+  /* 负字距把字形的 advance 也抵消掉。`width: 0` 只压住**盒子**宽度，字形本身的
+     宽度还在：浏览器画选区（以及命中测试）用的是字形宽 —— 选中 `#### ` 时会有
+     41px 宽的高亮压在正文第一个字上，看起来就像「前面多了个空格」。
+     把 advance 压到 0 后选区宽度也是 0，任何位置都不会冒出一块底色。
+     -0.7em 覆盖实测的 `# ` / `#### ` / `- ` / `12. ` 四种前缀（都是 ASCII，字宽 < 0.7em）。
+     基准是**前缀自身的字号**：标题前缀跟着标题放大到 16.8–24px，实测 h1–h4 的选区宽
+     仍是 0（负得更多而已）。将来若换宽体字体或前缀字号再变大，要重测这一条。 */
+  letter-spacing: -0.7em;
+  -webkit-text-fill-color: transparent;
+  /* 第二道保险：万一有人把上面换回 `color: transparent`，插入符也不会跟着消失 */
+  caret-color: var(--text-primary);
+}
+
+/* 字距是把 advance 压到 0（理论上选区宽 0）；这条再兜一层：万一某字体字宽超预期，
+   前缀被选中时也不会画底色。选区只该属于正文。 */
+.editor-wrapper :deep(.pm-prefix-hidden::selection) {
+  background-color: transparent;
+  -webkit-text-fill-color: transparent;
 }
 
 .editor-wrapper :deep(.pm-prefix-marker) {

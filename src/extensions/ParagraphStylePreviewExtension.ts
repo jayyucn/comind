@@ -20,8 +20,14 @@ import { parseParagraphStyle } from '../composables/useContentRenderer'
  *
  * 文档内容一个字都不改（只是视觉装饰），所以保存、撤销、光标偏移、跨块选区全都不受影响。
  *
- * 唯一的例外是**光标停在前缀内部**（两端不算）时整段不装饰：那几格字既看不见又改不了
- * 就没法用键盘修前缀（比如退格把 `- ` 拆掉退出列表）。
+ * 前缀**始终**藏起来，不因光标位置露出（`# ` 在标题里露出来比什么都显眼）。能不能藏得住
+ * 全看 Editor.vue 里 `.pm-prefix-hidden` 的写法：布局宽度压成 0、字号与所在段落一致，
+ * 插入符才有高度。别退回 `font-size: 0` —— 那样连插入符高度一起归零，光标贴到前缀
+ * 就整个消失（实测 `Range.getClientRects()` h=0）。
+ *
+ * 标题的前缀还要**带上同级字号类**（`heading-preview-hN`）：插入符高度取所在文本的字号
+ * 度量，前缀若停在正文默认字号，行首那颗光标就比标题正文矮一截（16px 前缀 24px 高、
+ * h1 正文 35px 高）。宽度由 `width: 0` 硬压，字号变大不会撑开布局。
  */
 
 interface PrefixMarker {
@@ -51,7 +57,7 @@ function createMarkerElement(marker: PrefixMarker): HTMLElement {
 /** 从文档状态算出全部装饰（导出供单测直接调用） */
 export function buildParagraphStyleDecorations(state: EditorState): DecorationSet {
   const decorations: Decoration[] = []
-  const { doc, selection } = state
+  const { doc } = state
 
   doc.descendants((node, pos) => {
     if (!node.isTextblock) return true
@@ -62,20 +68,25 @@ export function buildParagraphStyleDecorations(state: EditorState): DecorationSe
 
     const from = pos + 1
     const prefixEnd = from + info.prefixLength
-    const caretInPrefix = selection.empty && selection.from > from && selection.from < prefixEnd
 
-    if (!caretInPrefix) {
-      decorations.push(Decoration.inline(from, prefixEnd, { class: 'pm-prefix-hidden' }))
-      const marker = markerOf(info)
-      if (marker) {
-        decorations.push(Decoration.widget(from, () => createMarkerElement(marker), { side: -1 }))
-      }
+    // 标题的前缀要**跟着标题字号走**：插入符高度取所在文本的字号度量，前缀盒若停在
+    // 正文默认字号（16px），行首那颗光标只有 24px 高，标题正文处却是 35px —— 同一个
+    // 块里两种高度的光标（用户实测截图：行首 24px、正文 35px）。
+    // 借 `heading-preview-hN` 只是为了拿它的 `font-size` token；宽度由 `.pm-prefix-hidden`
+    // 的 `width: 0` 硬压，字号变大不会撑开布局（早先 `font-size: 0` 时代踩过这个坑）。
+    const prefixClass = info.level
+      ? `pm-prefix-hidden heading-preview-h${info.level}`
+      : 'pm-prefix-hidden'
+    decorations.push(Decoration.inline(from, prefixEnd, { class: prefixClass }))
+    const marker = markerOf(info)
+    if (marker) {
+      decorations.push(Decoration.widget(from, () => createMarkerElement(marker), { side: -1 }))
     }
 
     // 标题整行放大：类名与样式沿用既有的 heading-preview（含 h4–h6 的弱化）。
-    // 范围**从前缀之后起**，不含前缀 —— 两者若都从 pos 1 起，ProseMirror 会把两个
-    // inline 装饰合并到同一个 span 上（`pm-prefix-hidden heading-preview-h1`），
-    // 标题的 font-size 就把「零字号」覆盖回 24px，前缀虽然 transparent 却仍占宽度。
+    // 范围**必须从前缀之后起**：若从 pos 1 起，ProseMirror 会把两个 inline 装饰合并到同一个
+    // span 上，前缀那条 `display:inline-block; width:0` 就盖住整段标题 —— 标题跟着一起塞进
+    // 零宽盒里溢出绘制，而前缀是 `color: transparent`，整行字直接看不见。
     if (info.level) {
       decorations.push(
         Decoration.inline(prefixEnd, from + text.length, {
