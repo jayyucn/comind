@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { ref } from 'vue'
+import type { Ref } from 'vue'
 import { useBlockEditorLifecycle } from './useBlockEditorLifecycle'
 import { useBlockStore } from '../../../stores/blocks'
 import { useEditorStore } from '../../../stores/editor'
@@ -152,7 +153,7 @@ describe('useBlockEditorLifecycle', () => {
       selection: (selection ?? null) as never
     })
 
-    return { lifecycle, blockStore, editorStore, blockId, relationshipCleanup, cursorPos }
+    return { lifecycle, blockStore, editorStore, blockId, relationshipCleanup, cursorPos, editorRef }
   }
 
   describe('handleSave', () => {
@@ -562,6 +563,67 @@ describe('useBlockEditorLifecycle', () => {
   })
 
   /**
+   * 列表续行：Enter 在 `- ` / `1. ` 项里换行，新块继承标记（有序 +1）。
+   *
+   * 三条口径：
+   * - 有正文 → 新块带下一个标记，光标落在标记之后（否则一按 Enter 就把新项的字句
+   *   打在前缀里、变成 `- - foo`）；
+   * - 空列表项 → 退出列表（源块去掉标记、新块不带标记）；
+   * - 非列表项（含标题）→ 不干预，走原逻辑。
+   */
+  describe('handleSplit：列表续行', () => {
+    function setupList(content: string) {
+      const ctx = setup()
+      const block = ctx.blockStore.blocks[0]
+      block.content = content
+      // 有 segments（即使为空数组）⇒ 不走「内容非空却缺 segments」的补落库热路径
+      block.renderSegments = []
+      vi.spyOn(ctx.blockStore, 'flushSave').mockResolvedValue(undefined)
+      vi.spyOn(ctx.blockStore, 'insertBlockAtCursor').mockImplementation(async () => {
+        const created = {
+          id: 'b2', pageId: 'p1', parentId: null, pos: 1,
+          content: '', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0,
+        }
+        ctx.blockStore.blocks.push(created as never)
+        return created as never
+      })
+      vi.spyOn(ctx.blockStore, 'updateBlockContent')
+      vi.spyOn(ctx.editorStore, 'activateBlock').mockImplementation(() => {})
+      return ctx
+    }
+
+    it('无序项 → 新块继承 `- `，光标落在标记之后', async () => {
+      const { lifecycle, blockStore, editorStore } = setupList('- 条目')
+      await lifecycle.handleSplit(5)
+      expect(blockStore.blocks.find(b => b.id === 'b2')?.content).toBe('- ')
+      expect(blockStore.updateBlockContent).toHaveBeenCalledWith('b2', '- ', { inlineMarks: [] })
+      expect(editorStore.activateBlock).toHaveBeenCalledWith('b2', 3)
+    })
+
+    it('有序项 → 序号 +1（`3. ` → `4. `）', async () => {
+      const { lifecycle, blockStore, editorStore } = setupList('3. 第三项')
+      await lifecycle.handleSplit(8)
+      expect(blockStore.blocks.find(b => b.id === 'b2')?.content).toBe('4. ')
+      expect(editorStore.activateBlock).toHaveBeenCalledWith('b2', 4)
+    })
+
+    it('空列表项 → 退出列表：源块清空、新块不带标记', async () => {
+      const { lifecycle, blockStore, editorStore } = setupList('- ')
+      await lifecycle.handleSplit(3)
+      expect(blockStore.updateBlockContent).toHaveBeenCalledWith('b1', '')
+      expect(blockStore.blocks.find(b => b.id === 'b2')?.content).toBe('')
+      expect(editorStore.activateBlock).toHaveBeenCalledWith('b2', 1)
+    })
+
+    it('标题不续行（标题层没有「下一个」的概念）', async () => {
+      const { lifecycle, blockStore, editorStore } = setupList('# 标题')
+      await lifecycle.handleSplit(5)
+      expect(blockStore.updateBlockContent).not.toHaveBeenCalled()
+      expect(editorStore.activateBlock).toHaveBeenCalledWith('b2', 1)
+    })
+  })
+
+  /**
    * 跨块方向键（←/→ 与 ↑/↓ 同一条落点路径）。
    *
    * 两个曾经踩过的坑，各有一例钉住：
@@ -651,6 +713,86 @@ describe('useBlockEditorLifecycle', () => {
       await lifecycle.handleMoveLeft()
 
       expect(deactivateSpy).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('handleIndent / handleOutdent', () => {
+    /** 编辑器桩：只需满足 syncBlockContent（getText/getContent/markSaved）与光标读取（getEditor） */
+    function attachCaretEditor(editorRef: Ref<BlockTypeEditorExposed | null>, from = 4) {
+      editorRef.value = {
+        getText: () => 'hello',
+        getContent: () => ({ text: 'hello', marks: [] }),
+        markSaved: () => {},
+        getEditor: () => ({ state: { selection: { from } } }),
+        focus: () => {},
+        syncContent: () => {},
+      } as unknown as BlockTypeEditorExposed
+    }
+
+    it('缩进后带回原光标位重激活（缺省会落到行尾）', async () => {
+      const { lifecycle, blockStore, editorStore, editorRef } = setup()
+      // 有 segments ⇒ 不走「内容非空却缺 segments」的补落库分支
+      blockStore.blocks[0].renderSegments = []
+      vi.spyOn(blockStore, 'updateBlockContent').mockResolvedValue(undefined)
+      vi.spyOn(blockStore, 'indent').mockResolvedValue(undefined)
+      const deactivateSpy = vi.spyOn(editorStore, 'deactivateBlock').mockImplementation(() => {})
+      const activateSpy = vi.spyOn(editorStore, 'activateBlock').mockImplementation(() => {})
+      attachCaretEditor(editorRef, 4)
+
+      lifecycle.handleIndent()
+
+      await vi.waitFor(() => expect(activateSpy).toHaveBeenCalledWith('b1', 4))
+      expect(deactivateSpy).toHaveBeenCalled()
+      expect(blockStore.indent).toHaveBeenCalledWith('b1')
+    })
+
+    it('不阻塞落库：内容没改动时不同步 flushSave（Tab 是热路径）', async () => {
+      const { lifecycle, blockStore, editorStore, editorRef } = setup()
+      blockStore.blocks[0].renderSegments = []
+      vi.spyOn(blockStore, 'updateBlockContent').mockResolvedValue(undefined)
+      const flushSpy = vi.spyOn(blockStore, 'flushSave').mockResolvedValue(undefined)
+      vi.spyOn(blockStore, 'indent').mockResolvedValue(undefined)
+      vi.spyOn(editorStore, 'deactivateBlock').mockImplementation(() => {})
+      const activateSpy = vi.spyOn(editorStore, 'activateBlock').mockImplementation(() => {})
+      attachCaretEditor(editorRef)
+
+      lifecycle.handleIndent()
+
+      await vi.waitFor(() => expect(activateSpy).toHaveBeenCalled())
+      expect(flushSpy).not.toHaveBeenCalled()
+    })
+
+    it('内容刚改过（segments 缺失）才等一次落库，且排在失活之前', async () => {
+      const { lifecycle, blockStore, editorStore, editorRef } = setup()
+      blockStore.blocks[0].renderSegments = undefined
+      vi.spyOn(blockStore, 'updateBlockContent').mockResolvedValue(undefined)
+      vi.spyOn(blockStore, 'indent').mockResolvedValue(undefined)
+      vi.spyOn(editorStore, 'activateBlock').mockImplementation(() => {})
+      attachCaretEditor(editorRef)
+      const order: string[] = []
+      vi.spyOn(blockStore, 'flushSave').mockImplementation(async () => { order.push('flush') })
+      vi.spyOn(editorStore, 'deactivateBlock').mockImplementation(() => { order.push('deactivate') })
+
+      lifecycle.handleIndent()
+
+      await vi.waitFor(() => expect(order).toEqual(['flush', 'deactivate']))
+    })
+
+    it('窗口期连按不丢：两次请求都进流水线，正文只同步一次', async () => {
+      const { lifecycle, blockStore, editorStore, editorRef } = setup()
+      blockStore.blocks[0].renderSegments = []
+      const updateSpy = vi.spyOn(blockStore, 'updateBlockContent').mockResolvedValue(undefined)
+      const indentSpy = vi.spyOn(blockStore, 'indent').mockResolvedValue(undefined)
+      vi.spyOn(editorStore, 'deactivateBlock').mockImplementation(() => {})
+      vi.spyOn(editorStore, 'activateBlock').mockImplementation(() => {})
+      attachCaretEditor(editorRef)
+
+      // 上一轮还没跑完就再按一次（编辑器此刻不在 DOM 里，真实按键由捕获器补进来）
+      lifecycle.handleIndent()
+      lifecycle.handleIndent()
+
+      await vi.waitFor(() => expect(indentSpy).toHaveBeenCalledTimes(2))
+      expect(updateSpy).toHaveBeenCalledTimes(1)
     })
   })
 

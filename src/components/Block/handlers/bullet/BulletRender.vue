@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-import { parseHeading, useContentRenderer } from '../../../../composables/useContentRenderer'
+import { parseParagraphStyle, shiftSegments, useContentRenderer } from '../../../../composables/useContentRenderer'
 import { useBlockStore } from '../../../../stores/blocks'
 import { useTagsStore } from '../../../../stores/tags'
 import { readInlineMarks } from '../../../../utils/inline-marks'
@@ -28,11 +28,21 @@ const hasSaveError = computed(() => {
   return !!blockStore.saveErrors[props.blockId]
 })
 
-const heading = computed(() => parseHeading(props.content))
+const paragraph = computed(() => parseParagraphStyle(props.content))
 
 const headingTag = computed(() => {
-  if (!heading.value) return null
-  return `h${heading.value.level}` as const
+  const style = paragraph.value.style
+  return style === 'h1' || style === 'h2' || style === 'h3' ? style : null
+})
+
+/**
+ * 列表项（`- ` 无序 / `1. ` 有序）：渲染态画一个常显标记，正文缩进对齐。
+ * 与标题同一层语法 —— 都是正文前缀，不是块类型。
+ */
+const list = computed(() => {
+  const { style, listIndex } = paragraph.value
+  if (style !== 'ul' && style !== 'ol') return null
+  return { kind: style === 'ol' ? 'ordered' : 'unordered', index: listIndex }
 })
 
 /** Get render segments from the block store (pre-computed by Rust via getPageWithBlocks) */
@@ -62,25 +72,32 @@ function resolveTagColor(tagId: string, title: string): string | undefined {
 
 const inlineMarks = computed(() => readInlineMarks(props.blockFormat, props.content.length))
 
-const headingContent = computed(() => {
-  if (!heading.value) return ''
-  const segs = segments.value
-  // 标题渲染传入的是去掉 `# ` 前缀的 title，而 marks 偏移相对完整 content：
-  // 用负偏移把 marks 对齐到 title 坐标系。
-  const markOffset = heading.value.title.length - props.content.length
+/**
+ * 带前缀的行（标题 / 列表）：渲染丢掉前缀，正文用 `title`。
+ *
+ * 两处坐标都要跟着平移，否则按错偏移切字：
+ * - `markOffset` −前缀长：marks 存在 content 坐标系；
+ * - `shiftSegments` −前缀长：segments 由 Rust 按**完整 content** 算出（含前缀），
+ *   含 `#tag`/`[[link]]` 的标题以前在这里会串字。
+ */
+const prefixedContent = computed(() => {
+  const { title, prefixLength } = paragraph.value
+  if (prefixLength === 0) return ''
   const input = {
-    content: heading.value.title,
+    content: title,
     blockId: props.blockId ?? '',
     resolveTagColor,
     inlineMarks: inlineMarks.value,
-    markOffset,
+    markOffset: -prefixLength,
   }
-  return segs ? renderContentToHtml({ ...input, segments: segs })
-              : renderContentToHtml({ ...input, segments: [] })
+  const segs = segments.value
+  return segs
+    ? renderContentToHtml({ ...input, segments: shiftSegments(segs, prefixLength) })
+    : renderContentToHtml({ ...input, segments: [] })
 })
 
 const normalContent = computed(() => {
-  if (heading.value) return ''
+  if (paragraph.value.prefixLength > 0) return ''
   const segs = segments.value
   const input = {
     content: props.content,
@@ -112,8 +129,27 @@ function handleClick(e: MouseEvent) {
       :class="['block-heading', headingTag]"
     >
       <!-- eslint-disable-next-line vue/no-v-html -- 渲染器对所有插值已做 HTML 转义（useContentRenderer.escapeHtmlEntities），受控输出 -->
-      <span v-html="headingContent" />
+      <span v-html="prefixedContent" />
     </component>
+    <!-- 列表项：常显标记 + 正文。标记单独占一列（flex 的挂起缩进），正文换行时对齐在
+         marker 右侧而不是绕回 marker 底下。 -->
+    <div
+      v-else-if="list"
+      class="block-list"
+      :class="`is-${list.kind}`"
+    >
+      <span
+        class="block-list-marker"
+        aria-hidden="true"
+      >{{ list.kind === 'ordered' ? `${list.index}.` : '•' }}</span>
+      <!-- vue/no-v-html: 同标题分支，渲染器已转义，受控输出 -->
+      <!-- eslint-disable vue/no-v-html -->
+      <span
+        class="block-list-text"
+        v-html="prefixedContent"
+      />
+      <!-- eslint-enable vue/no-v-html -->
+    </div>
     <!-- vue/no-v-html: 渲染器对所有插值已做 HTML 转义（useContentRenderer.escapeHtmlEntities），受控输出 -->
     <!-- eslint-disable vue/no-v-html -->
     <span

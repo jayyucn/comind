@@ -385,6 +385,34 @@ $block-entry-corner-height: 12px;
   pointer-events: none;
 }
 
+// 列表项（`- ` 无序 / `1. ` 有序）：标记常显 + 正文挂起缩进。
+// 标记单独占一列（flex 两列），正文换行时对齐在标记右侧，而不是绕回标记底下 ——
+// 这也是列表和普通段落唯一读得出来的差别（普通块的入口胶囊只在 hover 时出现）。
+.block-list {
+  display: flex;
+  align-items: baseline;
+  gap: $space-2;
+}
+
+.block-list-marker {
+  flex: 0 0 auto;
+  min-width: 14px;
+  color: var(--text-tertiary);
+  // 等宽数字：`9.` → `10.` 时标记列不抖，正文起点不动
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+}
+
+// 有序列表的序号右对齐：`1.` 与 `10.` 的句点落在同一列
+.block-list.is-ordered .block-list-marker {
+  text-align: right;
+}
+
+.block-list-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 // 用 --block-active-bg 而非 --selection-bg：后者是 ::selection 的文本高亮（暗色 0.55），
 // 铺在这里会把 .block-content 的优先级底色与左侧色条一起盖掉
 .block.active>.block-row .block-text {

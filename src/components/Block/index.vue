@@ -23,14 +23,14 @@ import './handlers/table'
 
 import type { EditorView } from '@codemirror/view'
 import type { Editor } from '@tiptap/core'
-import { ChevronDown, GripVertical, Heading1, Heading2, Heading3, Type } from 'lucide-vue-next'
+import { ChevronDown, GripVertical, Heading1, Heading2, Heading3, List, ListOrdered, Type } from 'lucide-vue-next'
 import { computed, defineComponent, inject, nextTick, onBeforeUnmount, onMounted, ref, toRef, watch } from 'vue'
 
 import { useBlockEntryMenuExtra } from '../../composables/useBlockEntryMenuExtra'
 import { useBlockEntryMenuOwner } from '../../composables/useBlockEntryMenuOwner'
 import { useBlockRegistry } from '../../composables/useBlockRegistry'
 import { useBlockRelationshipCleanup } from '../../composables/useBlockRelationshipCleanup'
-import { parseHeading } from '../../composables/useContentRenderer'
+import { paragraphPrefixOf,type ParagraphStyle, parseParagraphStyle } from '../../composables/useContentRenderer'
 import type { CrossBlockSelection } from '../../composables/useCrossBlockSelection'
 import { useNavigateToPage } from '../../composables/useNavigateToPage'
 import { recordSelection } from '../../composables/useUndoHistory'
@@ -133,53 +133,52 @@ const isSelected = computed(() => {
 })
 const handler = computed(() => getHandler(block.value.type))
 
-/** 标题级别 → 入口字形：文本块用 `#`/`##`/`###` 前缀表达标题（同 BulletRender 的 parseHeading） */
-const HEADING_ENTRY_ICONS = { 1: Heading1, 2: Heading2, 3: Heading3 } as const
-
 /** 文本块判定：入口菜单顶部的「文本样式」行只对文本块出现 */
 const isTextBlock = computed(() => block.value.type === 'bullet')
 
 /**
- * 正文标题级别的**原值**（0 = 不是标题；4–6 也照实返回）。
- * 判据是 `parseHeading` —— 与 BulletRender 渲染 `h1`–`h3`、入口字形同一份规则，
- * 标题级别只活在前缀里，`format` 里没有它。
+ * 本块的段落样式（普通文本 / H1–H3 / 无序 / 有序）。
+ *
+ * 判据只有一处：`parseParagraphStyle` —— 与 BulletRender 渲染、拆分续行同一份规则。
+ * 这些样式全部活在正文前缀里，`format` 里没有它们。
+ * 非文本块一律按 `text` 处理（菜单行不出现，字形落各类型自己的 `entryIcon`）。
  */
-const headingLevel = computed(() => {
-  if (!isTextBlock.value) return 0
-  return parseHeading(block.value.content ?? '')?.level ?? 0
+const paragraph = computed(() => {
+  if (!isTextBlock.value) return { style: 'text' as const, prefixLength: 0, title: '', listIndex: null }
+  return parseParagraphStyle(block.value.content ?? '')
 })
 
-/**
- * 「文本样式」行的高亮位：只认 0–3；h4–h6 给 -1，四格都不点亮。
- * 把无声明态硬塞进某一格，会让用户点 H1 之前读到的当前态是错的。
- */
-const textStyleLevel = computed(() => (headingLevel.value <= 3 ? headingLevel.value : -1))
-
-/** 入口字形用的级别：0 与 -1（无声明态）都落回文本字形 */
-const entryHeadingLevel = computed(() => Math.max(textStyleLevel.value, 0))
+/** 段落样式 → 入口字形：胶囊是「这是什么块」的唯一出口，几级标题 / 是不是列表都该读得出来 */
+const STYLE_ENTRY_ICONS = {
+  h1: Heading1,
+  h2: Heading2,
+  h3: Heading3,
+  ul: List,
+  ol: ListOrdered,
+} as const
 
 /**
  * 入口类型图标（所有块类型都有）：没注册 `entryIcon` 的类型按文本块处理，落 `Type` 字形。
- * 文本块带 `#`/`##`/`###` 前缀时换成对应 H 字形 —— 胶囊是「这是什么块」的唯一出口，
- * 是不是标题、几级标题在这一格上应当读得出来。
  * 点击开本块菜单，与右侧握把同在一个胶囊里，按下即拖拽（handled by Sortable handle）。
  */
 const entryIcon = computed(() => {
-  const level = entryHeadingLevel.value
-  if (level === 1 || level === 2 || level === 3) return HEADING_ENTRY_ICONS[level]
+  const style = paragraph.value.style
+  if (style && style !== 'text') return STYLE_ENTRY_ICONS[style]
   return handler.value?.entryIcon ?? Type
 })
 
 /**
- * 字形尺寸：lucide 的 `Heading1/2/3` 字形在 24 网格里的实际占位比 `Type` 小一圈，
- * 同尺寸摆进胶囊会显小 —— 标题字形单独抬 2px 补齐视觉重量（盒子同为 14 的握把不动）。
+ * 字形尺寸：lucide 的 `Heading1/2/3`、`List` 字形在 24 网格里的实际占位比 `Type` 小一圈，
+ * 同尺寸摆进胶囊会显小 —— 这些字形单独抬 2px 补齐视觉重量（盒子同为 14 的握把不动）。
  */
-const entryIconSize = computed(() => (entryHeadingLevel.value ? 16 : 14))
+const entryIconSize = computed(() => (paragraph.value.style && paragraph.value.style !== 'text' ? 16 : 14))
 /** 入口相对块顶的下偏移：让图标压在本类型首行（表头行等）上 */
 const entryTop = computed(() => handler.value?.entryTop)
 
 /**
- * 入口菜单「文本样式」行：把本块在 普通文本 / H1 / H2 / H3 之间切换。
+ * 入口菜单「文本样式」行：把本块在 普通文本 / H1 / H2 / H3 / 有序 / 无序 之间切换。
+ *
+ * 六种样式都是正文前缀（`paragraphPrefixOf` 单源），切换 = 整体换掉前缀，正文一个字不动。
  *
  * 两条路，按「本块此刻是否正在编辑」分：
  *
@@ -187,23 +186,24 @@ const entryTop = computed(() => handler.value?.entryTop)
  *   编辑器 300ms 后的下一次防抖保存会把内存里的旧正文写回去，刚加上的前缀随即被抹掉。
  *   走编辑器事务则复用它自己的保存链路（`@save` → `handleSave`），撤销也只记一步。
  * - **渲染态**：本块没有编辑器实例，直接写 store。行内格式按前缀长度差平移 ——
- *   `updateBlockContent` 在正文变化又没给 marks 时会清空它们，切一次标题丢一片粗体
+ *   `updateBlockContent` 在正文变化又没给 marks 时会清空它们，切一次样式丢一片粗体
  *   是不能接受的副作用。
  *
  * 重复点同一格是无操作：不产生事务，也就不占掉一步撤销。
+ * 切到有序列表固定从 `1. ` 起（序号落在正文里，见 ADR 之后的手工维护约定）。
  */
-async function setTextStyle(level: 0 | 1 | 2 | 3) {
+async function setParagraphStyle(style: ParagraphStyle) {
   if (!isTextBlock.value) return
-  const prefix = level === 0 ? '' : '#'.repeat(level) + ' '
+  const prefix = paragraphPrefixOf(style)
 
   const editor = editorRef.value
   if (editor) {
     // 活动态以编辑器正文为准：编辑态是 decode 后的文本，与 store 里的编码正文长度不同
     const live = editor.getText()
-    const parsedLive = parseHeading(live)
-    if ((parsedLive?.level ?? 0) === level) return
-    const oldPrefixLength = parsedLive ? live.length - parsedLive.title.length : 0
-    const next = prefix + (parsedLive ? parsedLive.title : live)
+    // allowEmptyTitle：内容还是 `# `（标题没打字）时也要认成 H1，否则会拼成 `## # `
+    const liveParagraph = parseParagraphStyle(live, { allowEmptyTitle: true })
+    if (liveParagraph.style === style) return
+    const next = prefix + liveParagraph.title
     const delta = next.length - live.length
 
     const instance = editor.getEditor()
@@ -211,21 +211,23 @@ async function setTextStyle(level: 0 | 1 | 2 | 3) {
     // 光标随前缀一起平移，并压在文档合法区间内（末位之后不可插）
     const cursor = Math.min(Math.max(1, prevPos + delta), next.length + 1)
     const chain = instance.chain()
-    if (oldPrefixLength > 0 && !prefix) {
-      chain.deleteRange({ from: 1, to: 1 + oldPrefixLength })
+    if (liveParagraph.prefixLength > 0 && !prefix) {
+      chain.deleteRange({ from: 1, to: 1 + liveParagraph.prefixLength })
     } else if (prefix) {
       // 一个事务里「换掉旧前缀」：分两步删+插会给撤销栈留半截中间态
-      chain.insertContentAt({ from: 1, to: 1 + oldPrefixLength }, prefix)
+      chain.insertContentAt({ from: 1, to: 1 + liveParagraph.prefixLength }, prefix)
     }
     chain.setTextSelection(cursor).run()
     return
   }
 
   const current = block.value.content ?? ''
-  const parsed = parseHeading(current)
-  const next = prefix + (parsed ? parsed.title : current)
-  if (next === current) return
-  const delta = prefix.length - (parsed ? current.length - parsed.title.length : 0)
+  const currentParagraph = parseParagraphStyle(current, { allowEmptyTitle: true })
+  // 同样式直接返回：有序列表的前缀带序号（`3. `），只比 `next === current` 会把
+  // 「点自己那一格」判成变更、把序号重置回 1
+  if (currentParagraph.style === style) return
+  const next = prefix + currentParagraph.title
+  const delta = prefix.length - currentParagraph.prefixLength
   const marks = readInlineMarks(block.value.format, current.length)
   const shifted = delta === 0
     ? marks
@@ -234,8 +236,8 @@ async function setTextStyle(level: 0 | 1 | 2 | 3) {
 }
 
 /** 菜单点击出口：模板里不直接 await（与 `run()` 同款，异步失败静默） */
-function onSelectTextStyle(level: 0 | 1 | 2 | 3) {
-  void setTextStyle(level)
+function onSelectTextStyle(style: ParagraphStyle) {
+  void setParagraphStyle(style)
 }
 
 const decodedContent = computed(() => {
@@ -1115,12 +1117,12 @@ watch(isActive, (active) => {
         @pointerleave="onEntryMenuPointerLeave"
         @mousedown.prevent
       >
-        <!-- 文本样式行（普通文本 / H1 / H2 / H3）：只对文本块出现，排在菜单最上面
+        <!-- 文本样式行（普通文本 / H1–H3 / 有序 / 无序）：只对文本块出现，排在菜单最上面
              —— 「这是什么块」之后紧跟着就是「换成哪种文本」，顺序与用户的问题一致。
              文本块没有类型专属项，所以下面这条分隔线由本处补上（通用段此时 no-divider-top）。 -->
         <BlockMenuTextStyle
           v-if="isTextBlock"
-          :level="textStyleLevel"
+          :style="paragraph.style"
           @select="onSelectTextStyle"
         />
         <span

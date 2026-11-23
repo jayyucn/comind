@@ -43,12 +43,143 @@ export interface HeadingParseResult {
   title: string
 }
 
-export function parseHeading(text: string): HeadingParseResult | null {
-  const match = text.match(/^(#{1,6})\s+(.+)$/)
+/**
+ * 标题前缀解析。
+ *
+ * @param options.allowEmptyTitle 允许「只有 `# ` 还没有标题文本」也算标题。只有编辑态
+ *   预览需要它 —— 敲下 `# ` 就该立刻变大（不必等第一个字），而渲染态若也放宽，会留下
+ *   一个空的 `<h1>` 行。默认 false，与历史行为一致。
+ */
+export function parseHeading(
+  text: string,
+  options: { allowEmptyTitle?: boolean } = {},
+): HeadingParseResult | null {
+  const match = options.allowEmptyTitle
+    ? text.match(/^(#{1,6})\s+(.*)$/)
+    : text.match(/^(#{1,6})\s+(.+)$/)
   if (match) {
     return { level: match[1].length, title: match[2] }
   }
   return null
+}
+
+/** 列表种类：无序（`- `）/ 有序（`1. `） */
+export type ListKind = 'unordered' | 'ordered'
+
+export interface ListParseResult {
+  kind: ListKind
+  /** 有序列表的序号；无序为 null */
+  index: number | null
+  /** 去掉标记后的正文（可能为空串 —— 空列表项仍然算列表项，标记要留住） */
+  title: string
+}
+
+/**
+ * 列表标记的语法（与 `parseHeading` 同一层：都是正文前缀，不是块类型）。
+ *
+ * - 无序只认 `- `。不认 `* ` / `+ `：`* ` 与行内斜体/乘号的含义冲突，收益远小于歧义。
+ * - 有序认 1–9 位数字 + `.` + 空格。`1.5 米` 这种小数不会命中（`.` 后没有空格）。
+ * - **空正文也算列表项**（`- ` 单独存在仍画标记）。这点与标题相反 —— `# ` 没有标题文本
+ *   就不成立，而列表项可以先是空的、再往里打字。
+ */
+export function parseList(text: string): ListParseResult | null {
+  const ordered = text.match(/^(\d{1,9})\.\s(.*)$/)
+  if (ordered) {
+    return { kind: 'ordered', index: Number(ordered[1]), title: ordered[2] }
+  }
+  const unordered = text.match(/^-\s(.*)$/)
+  if (unordered) {
+    return { kind: 'unordered', index: null, title: unordered[1] }
+  }
+  return null
+}
+
+/**
+ * 「段落样式」= 正文前缀所表达的行样式（普通文本 / H1–H3 / 无序 / 有序）。
+ *
+ * 这六种在本库里**不是块类型**，全是 bullet 块正文的前缀（标题沿 `parseHeading`，
+ * 列表沿 `parseList`）。菜单的高亮、入口字形、渲染态的标记、拆分时的续行，全部从这里
+ * 取同一份判定 —— 五处各写一遍正则正是这类前缀语法最容易漂移的地方。
+ */
+export type ParagraphStyle = 'text' | 'h1' | 'h2' | 'h3' | 'ul' | 'ol'
+
+export interface ParagraphStyleInfo {
+  /** 可被「文本样式」行点亮的样式；`####` 这类未纳入四格的级别为 null（谁也点不亮） */
+  style: ParagraphStyle | null
+  /** 标题级别 1–6（非标题为 null）；编辑态标记要按级别出 `H1`…`H6` */
+  level: number | null
+  /** 前缀在 content 里的长度（0 = 无前缀），渲染态据此把 segments/marks 平移到正文坐标系 */
+  prefixLength: number
+  /** 去掉前缀后的正文 */
+  title: string
+  /** 有序列表序号（其余为 null），续行时 +1 */
+  listIndex: number | null
+}
+
+/**
+ * @param options.allowEmptyTitle 同 `parseHeading`：编辑态预览要认「`# ` 还没打字」。
+ *   触发样式切换（`setParagraphStyle`）时也应放宽 —— 否则对一个内容为 `# ` 的块点 H2，
+ *   会把 `# ` 当成正文拼成 `## # `。
+ */
+export function parseParagraphStyle(
+  content: string,
+  options: { allowEmptyTitle?: boolean } = {},
+): ParagraphStyleInfo {
+  const heading = parseHeading(content, options)
+  if (heading) {
+    const style = heading.level <= 3 ? (`h${heading.level}` as ParagraphStyle) : null
+    return {
+      style,
+      level: heading.level,
+      prefixLength: content.length - heading.title.length,
+      title: heading.title,
+      listIndex: null,
+    }
+  }
+  const list = parseList(content)
+  if (list) {
+    return {
+      style: list.kind === 'ordered' ? 'ol' : 'ul',
+      level: null,
+      prefixLength: content.length - list.title.length,
+      title: list.title,
+      listIndex: list.index,
+    }
+  }
+  return { style: 'text', level: null, prefixLength: 0, title: content, listIndex: null }
+}
+
+/** 样式 → 正文前缀。切样式就是整体换掉前缀，正文一个字不动 */
+export function paragraphPrefixOf(style: ParagraphStyle, listIndex = 1): string {
+  switch (style) {
+    case 'h1': return '# '
+    case 'h2': return '## '
+    case 'h3': return '### '
+    case 'ul': return '- '
+    case 'ol': return `${listIndex}. `
+    default: return ''
+  }
+}
+
+/**
+ * 把「整段 content 坐标系」的 segments 平移到「去掉前缀后的正文」坐标系。
+ *
+ * 标题与列表在渲染态都要丢掉前缀（`# `、`- `、`1. `），但 segments 是 Rust 按**完整
+ * content** 算出来的。不平移就按错的偏移切字 —— 一个含 `#tag` 的标题会渲染出串位的正文。
+ * 前缀自身所在的段整个丢弃（那部分已经不在渲染内容里）。
+ */
+export function shiftSegments(
+  segments: import('../wasm/types').RenderSegment[],
+  prefixLength: number,
+): import('../wasm/types').RenderSegment[] {
+  if (prefixLength <= 0) return segments
+  const shifted: import('../wasm/types').RenderSegment[] = []
+  for (const seg of segments) {
+    const end = seg.end - prefixLength
+    if (end <= 0) continue
+    shifted.push({ ...seg, start: Math.max(0, seg.start - prefixLength), end })
+  }
+  return shifted
 }
 
 /**

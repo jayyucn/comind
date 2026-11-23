@@ -16,10 +16,10 @@ import type { DateRefClickPayload } from '../extensions/DateRefExtension'
 import { DateRefExtension } from '../extensions/DateRefExtension'
 import { DateRefTriggerExtension } from '../extensions/DateRefTriggerExtension'
 import EnterAsBlockExtension from '../extensions/EnterAsBlockExtension'
-import { HeadingPreviewExtension } from '../extensions/HeadingPreviewExtension'
 import { InlineBackgroundColor, InlineTextColor } from '../extensions/InlineColorMarks'
 import { InlineTagExtension } from '../extensions/InlineTagExtension'
 import { closeTagMenuByEditor, findTagAtCursor, InlineTagTriggerExtension, notifyTagMenuSelect } from '../extensions/InlineTagTriggerExtension'
+import { ParagraphStylePreviewExtension } from '../extensions/ParagraphStylePreviewExtension'
 import { RelationshipTriggerExtension } from '../extensions/RelationshipTriggerExtension'
 import { SlashCommandExtension } from '../extensions/SlashCommandExtension'
 import { WikiLinkExtension } from '../extensions/WikiLinkExtension'
@@ -169,6 +169,10 @@ const editor = shallowRef(useEditor({
   extensions: [
     StarterKit.configure({
       heading: false, codeBlock: false, blockquote: false, horizontalRule: false,
+      // 列表节点同样禁用：本库的列表是**正文前缀**（`- ` / `1. `，见 parseList），不是
+      // ProseMirror 的 list 节点。留着内置 input rule 会在敲下 `- ` 的瞬间把标记吃成
+      // 一个 list 节点，随后 `textToHtml` 往返又把标记抹掉 —— 表现为「- 敲了没反应」。
+      bulletList: false, orderedList: false, listItem: false,
       // 内置撤销历史禁用（ADR-0046 D2：统一栈接管 Ctrl+Z）—— 与 BlockList 的键盘接管、
       // CodeMirrorEditor 去 history() 必须同票落地，否则两个栈互抢（D7 拒绝分阶段）
       undoRedo: false,
@@ -183,7 +187,8 @@ const editor = shallowRef(useEditor({
     InlineTagTriggerExtension,
     RelationshipTriggerExtension,
     BracketPairExtension,
-    HeadingPreviewExtension,
+    // 编辑态段落样式预览：前缀（`# ` / `- ` / `1. `）藏起来换标记 + 标题放大
+    ParagraphStylePreviewExtension,
     InlineTextColor,
     InlineBackgroundColor,
     DateRefExtension,
@@ -792,6 +797,36 @@ defineExpose({
   padding: 0 4px;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+/* 编辑态正文前缀（`# ` / `- ` / `1. `）：字符藏起来；列表再摆一个 widget 标记代替
+   （标题不出标记，渲染态的标题也没有标记列）。
+   标记与渲染态 `.block-list-marker` 同宽（14px）同色（--text-tertiary）同间距（--space-2）
+   —— 两态正文起点落在同一列，进出编辑时文字不会左右跳。
+
+   藏法必须是「零字号」而**不是** `display: none`：后者让这几个字不参与渲染，光标也就
+   站不进去，Chrome 的原生退格会从「可见行首」一次删掉整段前缀（实测 `- 列表` 退格后
+   直接变成 `列表`，且 Home 永远到不了行首）。字号 0 保留文字位置与逐字符删除语义，
+   只把宽度吃成 0。 */
+.editor-wrapper :deep(.pm-prefix-hidden) {
+  font-size: 0;
+  opacity: 0;
+}
+
+.editor-wrapper :deep(.pm-prefix-marker) {
+  display: inline-block;
+  min-width: 14px;
+  margin-right: var(--space-2);
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  user-select: none;
+  pointer-events: none;
+}
+
+/* 有序列表序号右对齐：`1.` 与 `10.` 的句点落在同一列（同渲染态） */
+.editor-wrapper :deep(.pm-prefix-marker-ordered) {
+  text-align: right;
 }
 
 .editor-wrapper :deep(.heading-preview) {

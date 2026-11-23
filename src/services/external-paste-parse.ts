@@ -114,7 +114,7 @@ function mapElement(el: Element): BlockClipPayload[] {
   // 列表：li → bullet，嵌套列表进 children（D5）
   if (LIST_TAGS.has(tag)) return mapList(el)
 
-  // 标题：`#`×N + 空格 前缀（与 HeadingPreviewExtension 正则对齐）
+  // 标题：`#`×N + 空格 前缀（与 parseHeading / ParagraphStylePreviewExtension 同一套语法）
   const heading = /^H([1-6])$/.exec(tag)
   if (heading) {
     const text = collapseWs(el.textContent ?? '')

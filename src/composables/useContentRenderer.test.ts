@@ -1,5 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { useContentRenderer, parseHeading } from './useContentRenderer'
+import {
+  parseHeading,
+  parseList,
+  parseParagraphStyle,
+  paragraphPrefixOf,
+  shiftSegments,
+  useContentRenderer,
+} from './useContentRenderer'
 import { segmentVisibleText } from '../services/render-text'
 import type { RenderSegment } from '../wasm/types'
 import { useRelationshipTypes } from './useRelationshipTypes'
@@ -842,5 +849,109 @@ describe('结构化 tag 段（Rust render_segments 提供 segments 时）', () =
     ]
     const html = renderContentToHtml({ content: '#项目', segments, blockId: 'b1' })
     expect(html).toContain('color:var(--tag-color-2)')
+  })
+})
+
+describe('parseList — 列表标记解析', () => {
+  it('无序：`- ` 起头', () => {
+    expect(parseList('- 条目')).toEqual({ kind: 'unordered', index: null, title: '条目' })
+  })
+
+  it('有序：`1. ` 起头，序号取出', () => {
+    expect(parseList('12. 条目')).toEqual({ kind: 'ordered', index: 12, title: '条目' })
+  })
+
+  it('空正文也算列表项（标记要留住）', () => {
+    expect(parseList('- ')).toEqual({ kind: 'unordered', index: null, title: '' })
+    expect(parseList('3. ')).toEqual({ kind: 'ordered', index: 3, title: '' })
+  })
+
+  it('不带空格的破折号不是列表（`-5 度`）', () => {
+    expect(parseList('-5 度')).toBeNull()
+  })
+
+  it('小数不是有序列表（`1.5 米`）', () => {
+    expect(parseList('1.5 米')).toBeNull()
+  })
+
+  it('`* ` / `+ ` 不认（`* ` 与行内斜体、乘号歧义太大）', () => {
+    expect(parseList('* 强调')).toBeNull()
+    expect(parseList('+ 加号')).toBeNull()
+  })
+})
+
+describe('parseParagraphStyle — 段落样式单源', () => {
+  it('普通文本 → text，无前缀', () => {
+    expect(parseParagraphStyle('随便写点')).toEqual({
+      style: 'text', level: null, prefixLength: 0, title: '随便写点', listIndex: null,
+    })
+  })
+
+  it('标题 → hN，前缀长含 `#` 与空格', () => {
+    expect(parseParagraphStyle('## 标题')).toEqual({
+      style: 'h2', level: 2, prefixLength: 3, title: '标题', listIndex: null,
+    })
+  })
+
+  it('h4–h6 → style null 但前缀长度照给（切换时要把旧前缀整段换掉）', () => {
+    // level 照给（编辑态标记要出 `H4`），style 落 null（样式行四格都不点亮）
+    expect(parseParagraphStyle('#### 四级')).toEqual({
+      style: null, level: 4, prefixLength: 5, title: '四级', listIndex: null,
+    })
+  })
+
+  it('无序 / 有序列表', () => {
+    expect(parseParagraphStyle('- 项')).toMatchObject({ style: 'ul', prefixLength: 2, title: '项' })
+    expect(parseParagraphStyle('7. 项')).toMatchObject({ style: 'ol', prefixLength: 3, title: '项', listIndex: 7 })
+  })
+
+  it('标题优先于列表：`# - x` 是标题，标题里写什么都算正文', () => {
+    expect(parseParagraphStyle('# - x')).toMatchObject({ style: 'h1', title: '- x' })
+  })
+
+  it('allowEmptyTitle：`# ` 也算 H1（编辑态预览要敲下空格就生效），默认不认', () => {
+    expect(parseParagraphStyle('# ').style).toBe('text')
+    expect(parseParagraphStyle('# ', { allowEmptyTitle: true })).toMatchObject({
+      style: 'h1', level: 1, prefixLength: 2, title: '',
+    })
+  })
+})
+
+describe('paragraphPrefixOf — 样式 → 前缀', () => {
+  it.each([
+    ['text', ''],
+    ['h1', '# '],
+    ['h2', '## '],
+    ['h3', '### '],
+    ['ul', '- '],
+    ['ol', '1. '],
+  ] as const)('%s → %j', (style, prefix) => {
+    expect(paragraphPrefixOf(style)).toBe(prefix)
+  })
+
+  it('有序列表可指定起始序号', () => {
+    expect(paragraphPrefixOf('ol', 4)).toBe('4. ')
+  })
+})
+
+describe('shiftSegments — 去前缀后的坐标系平移', () => {
+  it('整体左移，前缀自身的段被丢弃', () => {
+    const segments: RenderSegment[] = [
+      { type: 'text', start: 0, end: 2, text: '# ' },
+      { type: 'tag', start: 2, end: 6, title: 'tag', tag_id: '', is_system: false, color: '' },
+    ]
+    const shifted = shiftSegments(segments, 2)
+    expect(shifted).toHaveLength(1)
+    expect(shifted[0]).toMatchObject({ type: 'tag', start: 0, end: 4 })
+  })
+
+  it('跨前缀的段被裁到前缀之后', () => {
+    const segments: RenderSegment[] = [{ type: 'text', start: 0, end: 10, text: '1. 一段正文' }]
+    expect(shiftSegments(segments, 3)[0]).toMatchObject({ start: 0, end: 7 })
+  })
+
+  it('prefixLength 为 0 时原样返回（同一份引用，不做无谓拷贝）', () => {
+    const segments: RenderSegment[] = [{ type: 'text', start: 0, end: 3, text: 'abc' }]
+    expect(shiftSegments(segments, 0)).toBe(segments)
   })
 })

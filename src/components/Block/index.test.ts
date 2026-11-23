@@ -1263,6 +1263,8 @@ describe('入口胶囊字形：文本块标题级别', () => {
     ['# 一级标题', 'lucide-heading-1'],
     ['## 二级标题', 'lucide-heading-2'],
     ['### 三级标题', 'lucide-heading-3'],
+    ['- 无序项', 'lucide-list'],
+    ['1. 有序项', 'lucide-list-ordered'],
     ['普通文本', 'lucide-type'],
   ])('内容「%s」→ 胶囊字形 %s', async (content, iconClass) => {
     const wrapper = mountContent(content)
@@ -1272,7 +1274,7 @@ describe('入口胶囊字形：文本块标题级别', () => {
   })
 })
 
-describe('入口菜单：文本样式行（普通文本 / H1 / H2 / H3）', () => {
+describe('入口菜单：文本样式行（普通文本 / H1–H3 / 有序 / 无序）', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
@@ -1303,10 +1305,10 @@ describe('入口菜单：文本样式行（普通文本 / H1 / H2 / H3）', () =
     return Array.from(document.body.querySelectorAll<HTMLElement>('[data-text-style]'))
   }
 
-  it('文本块菜单顶部是 4 格样式行，当前级别高亮', async () => {
+  it('文本块菜单顶部是 6 格样式行，当前样式高亮', async () => {
     const wrapper = await openMenu('## 二级标题')
     const buttons = styleButtons()
-    expect(buttons.map((b) => b.dataset.textStyle)).toEqual(['0', '1', '2', '3'])
+    expect(buttons.map((b) => b.dataset.textStyle)).toEqual(['text', 'h1', 'h2', 'h3', 'ol', 'ul'])
     expect(buttons[2].classList.contains('is-active')).toBe(true)
     expect(buttons[0].classList.contains('is-active')).toBe(false)
     wrapper.unmount()
@@ -1318,12 +1320,47 @@ describe('入口菜单：文本样式行（普通文本 / H1 / H2 / H3）', () =
     wrapper.unmount()
   })
 
+  it('有序列表项点亮「有序列表」格', async () => {
+    const wrapper = await openMenu('3. 第三项')
+    const active = styleButtons().filter((b) => b.classList.contains('is-active'))
+    expect(active.map((b) => b.dataset.textStyle)).toEqual(['ol'])
+    wrapper.unmount()
+  })
+
   it('点 H1：正文补上 `# ` 前缀', async () => {
     const blockStore = useBlockStore()
     const wrapper = await openMenu('标题')
     styleButtons()[1].click()
     await flushPromises()
     expect(blockStore.blocks[0].content).toBe('# 标题')
+    wrapper.unmount()
+  })
+
+  it('点「无序列表」：正文换成 `- ` 前缀', async () => {
+    const blockStore = useBlockStore()
+    const wrapper = await openMenu('条目')
+    styleButtons()[5].click()
+    await flushPromises()
+    expect(blockStore.blocks[0].content).toBe('- 条目')
+    wrapper.unmount()
+  })
+
+  it('点「有序列表」：从 `1. ` 起编号', async () => {
+    const blockStore = useBlockStore()
+    const wrapper = await openMenu('### 标题')
+    styleButtons()[4].click()
+    await flushPromises()
+    // 标题前缀整体换掉，不叠加
+    expect(blockStore.blocks[0].content).toBe('1. 标题')
+    wrapper.unmount()
+  })
+
+  it('列表项切回普通文本：去掉标记', async () => {
+    const blockStore = useBlockStore()
+    const wrapper = await openMenu('- 条目')
+    styleButtons()[0].click()
+    await flushPromises()
+    expect(blockStore.blocks[0].content).toBe('条目')
     wrapper.unmount()
   })
 
@@ -1355,6 +1392,25 @@ describe('入口菜单：文本样式行（普通文本 / H1 / H2 / H3）', () =
     styleButtons()[2].click()
     await flushPromises()
     expect(blockStore.blocks[0].content).toBe('## 标题')
+    wrapper.unmount()
+  })
+
+  it('内容只有 `# `（标题还没打字）时点 H2：整段换前缀，不拼成 `## # `', async () => {
+    const blockStore = useBlockStore()
+    const wrapper = await openMenu('# ')
+    styleButtons()[2].click()
+    await flushPromises()
+    expect(blockStore.blocks[0].content).toBe('## ')
+    wrapper.unmount()
+  })
+
+  it('点已是「有序列表」的格不重置序号', async () => {
+    const blockStore = useBlockStore()
+    const wrapper = await openMenu('3. 第三项')
+    styleButtons()[4].click()
+    await flushPromises()
+    // 只比 `next === current` 会把「点自己那一格」判成变更、把 3. 打回 1.
+    expect(blockStore.blocks[0].content).toBe('3. 第三项')
     wrapper.unmount()
   })
 

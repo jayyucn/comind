@@ -271,3 +271,71 @@ describe('标签改色 → 渲染态 chip 即时换色', () => {
     expect(wrapper.html()).not.toContain('color:var(--tag-color-1)')
   })
 })
+
+/**
+ * 列表项渲染（`- ` / `1. `）：标记常显 + 正文去前缀。
+ * 与标题同一层语法 —— 都是正文前缀，不是块类型。
+ */
+describe('BulletRender 列表项', () => {
+  function mountWithContent(content: string, segments?: Array<{ type: 'text'; start: number; end: number }>) {
+    const store = useBlockStore()
+    const block = store.blocks[0]
+    if (segments && block) block.renderSegments = segments
+    return mount(BulletRender, { props: { content, blockId: block?.id ?? '' } })
+  }
+
+  function seed(content: string) {
+    const store = useBlockStore()
+    store.blocks = [
+      { id: 'b1', pageId: 'p1', parentId: null, pos: 0, content, format: {}, type: 'bullet', createdAt: 0, updatedAt: 0 },
+    ]
+  }
+
+  test('无序列表：画常显 `•` 标记，正文不含 `- `', async () => {
+    seed('- 条目一')
+    const wrapper = mountWithContent('- 条目一')
+    await flushPromises()
+    const marker = wrapper.find('.block-list-marker')
+    expect(marker.exists()).toBe(true)
+    expect(marker.text()).toBe('•')
+    expect(wrapper.find('.block-list-text').text()).toBe('条目一')
+    expect(wrapper.find('.block-list').classes()).toContain('is-unordered')
+    wrapper.unmount()
+  })
+
+  test('有序列表：标记用正文里的序号（`7. ` → `7.`）', async () => {
+    seed('7. 第七项')
+    const wrapper = mountWithContent('7. 第七项')
+    await flushPromises()
+    expect(wrapper.find('.block-list-marker').text()).toBe('7.')
+    expect(wrapper.find('.block-list').classes()).toContain('is-ordered')
+    wrapper.unmount()
+  })
+
+  test('空列表项：只画标记，正文为空', async () => {
+    seed('- ')
+    const wrapper = mountWithContent('- ')
+    await flushPromises()
+    expect(wrapper.find('.block-list-marker').text()).toBe('•')
+    expect(wrapper.find('.block-list-text').text()).toBe('')
+    wrapper.unmount()
+  })
+
+  test('segments 按前缀长度平移：含 #tag 的列表项不串字', async () => {
+    seed('- 看 #项目')
+    // Rust 按完整 content（`- 看 #项目`，UTF-16 长 7）切段：前缀 2 + 正文 5
+    const wrapper = mountWithContent('- 看 #项目', [{ type: 'text', start: 2, end: 7 }])
+    await flushPromises()
+    expect(wrapper.find('.block-list-text').text()).toBe('看 #项目')
+    wrapper.unmount()
+  })
+
+  test('普通文本不进入列表分支', async () => {
+    seed('普通文本')
+    const wrapper = mountWithContent('普通文本')
+    await flushPromises()
+    expect(wrapper.find('.block-list').exists()).toBe(false)
+    expect(wrapper.text()).toContain('普通文本')
+    wrapper.unmount()
+  })
+})

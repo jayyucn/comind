@@ -1,7 +1,8 @@
 import type { ComputedRef, Ref } from 'vue'
-import { computed, inject, nextTick } from 'vue'
+import { computed, getCurrentScope, inject, nextTick, onScopeDispose } from 'vue'
 
 import type { useBlockRelationshipCleanup } from '../../../composables/useBlockRelationshipCleanup'
+import { parseParagraphStyle } from '../../../composables/useContentRenderer'
 import type { CrossBlockSelection } from '../../../composables/useCrossBlockSelection'
 import {
   computeDatePickerPosition,
@@ -21,11 +22,84 @@ import { useTagsStore } from '../../../stores/tags'
 import type { BlockTypeEditorExposed } from '../../../types/block-type'
 import { DATE_REF_AT_REGEX, type DateRefKind, normalizeRecurrence, type RecurrenceRule, serializeDateRef } from '../../../utils/date-ref'
 import type { InlineMarkRange } from '../../../utils/inline-marks'
-import { mapInlineMarkOffsets } from '../../../utils/inline-marks'
+import { mapInlineMarkOffsets, readInlineMarks } from '../../../utils/inline-marks'
 import {
   encodeRelationshipContentWithMeta,
   takeRelationshipSnapshot,
 } from '../../../utils/relationship-content'
+
+/**
+ * Tab / Shift+Tab 的方向。
+ */
+type IndentDirection = 'indent' | 'outdent'
+
+/**
+ * 缩进请求队列 —— **模块级**（跨组件实例共享），这是关键。
+ *
+ * 缩进要把块换到新父节点下 ⇒ Block 组件重挂载 ⇒ composable 也重建。若把队列放在实例内，
+ * 旧实例带着队列一起销毁，新实例另起一轮：既不知道「上一轮还没跑完」，也接不到已经
+ * 排进去的按键。放模块级后，重挂载期间旧闭包仍在把队列排空，新实例只负责往里 push。
+ */
+const indentQueues = new Map<string, IndentDirection[]>()
+/** 正在把某个块的队列排空的灯（同一块同时只允许一条缩进流水线） */
+const indentRunning = new Set<string>()
+/**
+ * blockId → 「把停放着的队列重新跑起来」的启动器。
+ *
+ * 捕获器可能把按键塞进**已经排空的**队列（最后一格缩进完、焦点还没落回编辑器的
+ * 那一两帧），此时没有任何流水线在等它 ⇒ 需要有人重新起一轮。启动器由组件实例登记
+ * （按实例身份注销，与 `useBlockEntryMenuExtra` 同一套），块重挂载后新实例重新登记。
+ */
+const indentDrainStarters = new Map<string, () => void>()
+
+/**
+ * 缩进窗口期（编辑器被卸下 → 重新挂上，约 30–50ms）的 Tab 捕获器。
+ *
+ * 这段窗口里没有任何元素接收 PM 快捷键，Tab 落到 body 上就没了 —— 连按 3 次的第 2、3 次
+ * 就是这么丢的。只在有块正在缩进时挂上，命中非输入控件才收：编辑器已回来时 target 是
+ * `.tiptap[contenteditable]`，交给 PM 自己处理，不抢。
+ */
+let indentTabCapture: ((e: KeyboardEvent) => void) | null = null
+let indentTabDetachTimer: ReturnType<typeof setTimeout> | null = null
+/** 缩进窗口期归属的块：drain 开始设、宽限期结束清（捕获器靠它判断「这键该归谁」） */
+let indentOwner: string | null = null
+
+function attachIndentTabCapture(owner: string): void {
+  indentOwner = owner
+  if (indentTabDetachTimer !== null) {
+    clearTimeout(indentTabDetachTimer)
+    indentTabDetachTimer = null
+  }
+  if (indentTabCapture) return
+  indentTabCapture = (e: KeyboardEvent) => {
+    if (e.key !== 'Tab' || e.defaultPrevented) return
+    const target = e.target as HTMLElement | null
+    if (target?.closest('input, textarea, select, [contenteditable="true"]')) return
+    const blockId = indentOwner
+    if (!blockId) return
+    e.preventDefault()
+    const queue = indentQueues.get(blockId) ?? []
+    if (!indentQueues.has(blockId)) indentQueues.set(blockId, queue)
+    queue.push(e.shiftKey ? 'outdent' : 'indent')
+    if (!indentRunning.has(blockId)) indentDrainStarters.get(blockId)?.()
+  }
+  document.addEventListener('keydown', indentTabCapture, true)
+}
+
+/**
+ * 队列排空后不要立刻摘监听：`activateBlock` 只是把编辑器挂上去，焦点要等下一个
+ * nextTick + 一帧才落回编辑器。这个空档（~1–2 帧）里的 Tab 仍会落到 body，留着监听才不会丢。
+ */
+function scheduleIndentTabCaptureDetach(): void {
+  if (!indentTabCapture || indentTabDetachTimer !== null) return
+  indentTabDetachTimer = setTimeout(() => {
+    indentTabDetachTimer = null
+    if (indentRunning.size > 0) return
+    indentOwner = null
+    if (indentTabCapture) document.removeEventListener('keydown', indentTabCapture, true)
+    indentTabCapture = null
+  }, 200)
+}
 
 /**
  * useBlockEditorLifecycle — Block 编辑器生命周期 composable
@@ -205,6 +279,42 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
   let splitInFlight = false
   let pendingSplitCount = 0
 
+  /**
+   * 列表续行的前缀：
+   * - 非列表项 → `null`（不干预：普通段落 / 标题按原逻辑拆分，标题不续行是既定行为）
+   * - 空列表项（`- ` 后面没有正文）→ `''`：退出列表，源块去掉标记、新块不带标记
+   * - 有正文的列表项 → 下一个标记（有序 +1）
+   */
+  function listContinuationPrefix(content: string): string | null {
+    const paragraph = parseParagraphStyle(content)
+    if (paragraph.style !== 'ul' && paragraph.style !== 'ol') return null
+    if (paragraph.title.trim() === '') return ''
+    return paragraph.style === 'ul' ? '- ' : `${(paragraph.listIndex ?? 1) + 1}. `
+  }
+
+  /** 连按 Enter 的续号：`2. ` → `3. `；无序标记原样返回 */
+  function nextListPrefix(prefix: string): string {
+    const ordered = prefix.match(/^(\d+)\.\s$/)
+    return ordered ? `${Number(ordered[1]) + 1}. ` : prefix
+  }
+
+  /**
+   * 给刚拆出来的块补上列表标记（在激活之前调用 —— 激活后再改 store，编辑器里还是旧正文）。
+   * 行内格式随前缀右移：不传 marks 会被 `updateBlockContent` 清掉（正文变了又没给 marks
+   * 时的既定行为），拆出来的半截粗体会无声消失。
+   */
+  async function prefixNewListItem(targetId: string, prefix: string): Promise<void> {
+    const created = blockStore.getBlock(targetId)
+    if (!created) return
+    const marks = readInlineMarks(created.format, created.content.length)
+    const shifted = marks.map((mark) => ({
+      ...mark,
+      start: mark.start + prefix.length,
+      end: mark.end + prefix.length,
+    }))
+    await blockStore.updateBlockContent(targetId, prefix + created.content, { inlineMarks: shifted })
+  }
+
   function handleSplit(cursorPosArg: number): Promise<void> {
     if (splitInFlight) {
       pendingSplitCount++
@@ -257,6 +367,8 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
       editorStore.deactivateBlock()
       // 子树根块：强制新块成为根的子块，避免 Enter 在页面级建兄弟而逃出可见子树（ADR-0039）
       const isSubtreeRoot = blockModalRootId?.value === blockId.value
+      // 列表续行：必须在**拆分之前**取源正文（拆完只剩前半截，序号应以原项为准）
+      const continuation = listContinuationPrefix(blockStore.getBlock(blockId.value)?.content ?? '')
       const newBlock = await blockStore.insertBlockAtCursor(
         blockId.value,
         effectivePos,
@@ -265,15 +377,34 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
         isSubtreeRoot ? { forceParentId: blockId.value } : undefined
       )
       if (newBlock) {
-        editorStore.activateBlock(newBlock.id, 1)
-        // 消化 in-flight 期间累积的连按 Enter：在新激活空块行尾逐一补建，光标停最后一个（串行、不漏）
+        // 空列表项 + Enter = 退出列表（Notion 口径）：源块去掉标记，新块也不带标记
+        if (continuation === '') {
+          await blockStore.updateBlockContent(blockId.value, '')
+        }
+        let anchorPos = 1
+        if (continuation) {
+          await prefixNewListItem(newBlock.id, continuation)
+          anchorPos = continuation.length + 1
+        }
+        editorStore.activateBlock(newBlock.id, anchorPos)
+        // 消化 in-flight 期间累积的连按 Enter：在新激活块行尾逐一补建，光标停最后一个（串行、不漏）
         let anchorId = newBlock.id
+        let nextPrefix = continuation ? nextListPrefix(continuation) : null
         while (pendingSplitCount > 0) {
           pendingSplitCount--
-          const extra = await blockStore.insertBlockAtCursor(anchorId, 1, false)
+          // 行尾（而不是 1）：带 `- ` 前缀的块里 pos=1 是「行首」，会走到「上方插入」分支，
+          // 连按 Enter 建出来的块就反了序
+          const extra = await blockStore.insertBlockAtCursor(anchorId, anchorPos, false)
           if (!extra) break
+          if (nextPrefix) {
+            await prefixNewListItem(extra.id, nextPrefix)
+            anchorPos = nextPrefix.length + 1
+          } else {
+            anchorPos = 1
+          }
           anchorId = extra.id
-          editorStore.activateBlock(extra.id, 1)
+          editorStore.activateBlock(extra.id, anchorPos)
+          nextPrefix = nextPrefix ? nextListPrefix(nextPrefix) : null
         }
       }
     } finally {
@@ -311,19 +442,90 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
     }
   }
 
-  const handleIndent = withContentSync(async () => {
-    editorStore.deactivateBlock()
-    await blockStore.indent(blockId.value)
-    editorStore.activateBlock(blockId.value)
-  })
+  /**
+   * Tab / Shift+Tab（缩进 / 反缩进）。三件事，都是为了「按下去就有反应」：
+   *
+   * 1. **不 await 落库**（与跨块方向键同一条热路径规则）：默认 `withContentSync` 会
+   *    `flushSave`（`save_block_tree` + 通知 payload 同步 + 动态 import，长页面上百毫秒），
+   *    一次按键就把这段压在缩进前面。只保留必要的那一次等待（`awaitSegmentsIfStale`）：
+   *    内容刚改过、renderSegments 已被置空时才落库，否则失活瞬间渲染态退回纯文本。
+   *    缩进自身的位置改写走 `_scheduleSave` 防抖后台落库，不占热路径。
+   *
+   * 2. **带光标位重激活**：块换了父节点 ⇒ Block 组件重挂载 ⇒ 编辑器重建，不回填光标位
+   *    就会落到行尾（`focusActiveEditor` 的 `cursorPos` 缺省分支是 `focus('end')`）。
+   *    用户按 Tab 是为了「把这块挪进去」，不是为了把插入点甩到行尾。
+   *
+   * 3. **重入排队**（`indentQueues`，模块级）：
+   *    缩进窗口里编辑器不在 DOM 里，落在这几十毫秒里的 Tab 既不是编辑器快捷键
+   *    （PM 收不到），也不在块选区里（BlockList 的 Tab 分支只管无编辑态块）⇒ 直接丢掉。
+   *    实测极速连按 4 次只有 3 次进到缩进流水线，落进窗口的那一颗无声消失。
+   *    队列 + 窗口期的 document 捕获监听把按键收下来，等编辑器回来再逐个补上
+   *    （与 Enter 的 `splitInFlight`/`pendingSplitCount` 同一套语义）。
+   */
+  function requestIndent(direction: IndentDirection): void {
+    const id = blockId.value
+    const queue = indentQueues.get(id) ?? []
+    if (!indentQueues.has(id)) indentQueues.set(id, queue)
+    queue.push(direction)
+    if (!indentRunning.has(id)) void drainIndents()
+  }
 
-  const handleOutdent = withContentSync(async () => {
-    // 子树根块不可 outdent：outdent 会使其成为页面级兄弟，逃出弹窗可见子树（ADR-0039）
-    if (blockModalRootId?.value === blockId.value) return
-    editorStore.deactivateBlock()
-    await blockStore.outdent(blockId.value)
-    editorStore.activateBlock(blockId.value)
-  })
+  /** 当前编辑器里的光标位（ProseMirror position）；读不到返回 undefined（沿用旧行为） */
+  function currentCaretPos(): number | undefined {
+    const selection = editorRef.value?.getEditor()?.state?.selection
+    return selection ? selection.from : undefined
+  }
+
+  async function drainIndents(): Promise<void> {
+    const id = blockId.value
+    indentRunning.add(id)
+    attachIndentTabCapture(id)
+    // 光标只记一次：缩进不改正文，后面补的每一格都落在同一个插入点
+    const caret = currentCaretPos()
+    try {
+      // 先把打字留下的未落库正文同步进 store（打字走 300ms 防抖）；只写内存不落库
+      await syncBlockContent(false)
+      const queue = indentQueues.get(id) ?? []
+      while (queue.length > 0) {
+        const direction = queue.shift() as IndentDirection
+        // 子树根块不可 outdent：outdent 会使其成为页面级兄弟，逃出弹窗可见子树（ADR-0039）
+        if (direction === 'outdent' && blockModalRootId?.value === id) continue
+        await awaitSegmentsIfStale()
+        editorStore.deactivateBlock()
+        if (direction === 'indent') await blockStore.indent(id)
+        else await blockStore.outdent(id)
+        editorStore.activateBlock(id, caret)
+      }
+    } finally {
+      indentQueues.delete(id)
+      indentRunning.delete(id)
+      scheduleIndentTabCaptureDetach()
+    }
+  }
+
+  const handleIndent = () => requestIndent('indent')
+
+  const handleOutdent = () => requestIndent('outdent')
+
+  /**
+   * 登记「把停放着的队列重新跑起来」的启动器。
+   *
+   * 捕获器可能把 Tab 塞进**已经排空**的队列（最后一格缩进完、焦点还没落回编辑器的那一两帧），
+   * 这时没有任何流水线在等它。按实例身份登记/注销：块缩进时组件重挂载，新实例登记，
+   * 旧实例的注销靠身份比对让位（否则会把新实例的登记删掉）。
+   */
+  const restartDrain = () => {
+    if (!indentRunning.has(blockId.value)) void drainIndents()
+  }
+  indentDrainStarters.set(blockId.value, restartDrain)
+  // 单测里这个 composable 不在组件 setup 中调用（没有 effect scope），注册前先判空
+  if (getCurrentScope()) {
+    onScopeDispose(() => {
+      if (indentDrainStarters.get(blockId.value) === restartDrain) {
+        indentDrainStarters.delete(blockId.value)
+      }
+    })
+  }
 
   /**
    * 跨块方向键：落点只依赖块的文档序，与 segments 无关 ⇒ 不阻塞落库（否则每次按方向键

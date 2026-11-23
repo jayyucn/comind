@@ -1,44 +1,43 @@
 <script setup lang="ts">
-import { Heading1, Heading2, Heading3, Type } from 'lucide-vue-next'
+import { Heading1, Heading2, Heading3, List, ListOrdered, Type } from 'lucide-vue-next'
 import type { Component } from 'vue'
 
+import type { ParagraphStyle } from '../../../composables/useContentRenderer'
+
 /**
- * 块入口菜单顶部的**文本样式行**（普通文本 / H1 / H2 / H3），水平排一行。
+ * 块入口菜单顶部的**文本样式行**（普通文本 / H1 / H2 / H3 / 有序 / 无序），水平排一行。
  *
- * 只对文本块出现：这四格在本库里不是"块类型"，而是正文开头的 `#` 前缀
- * （`parseHeading` 是唯一判据，与 BulletRender 渲染标题、胶囊字形同源）。
+ * 只对文本块出现：这六格在本库里不是"块类型"，而是正文开头的样式前缀
+ * （`parseParagraphStyle` 是唯一判据，与 BulletRender 渲染、胶囊字形同源）。
  *
  * 组件只管表现：当前在哪一格、点了哪一格由外壳算好传进来 —— 与 `BlockMenuItem`
- * 同一条约定（表现层不碰 store，因此在 common/ 之外也不依赖任何 store）。
- *
- * 有序/无序列表这类"样式"刻意不在列：本库正文没有对应表达法（无 list 块类型、
- * 无列表语法解析），点了没有落点的按钮就是假控件。要加先有语义，再有按钮。
+ * 同一条约定（表现层不碰 store）。
  */
 defineProps<{
-  /**
-   * 当前样式：0 = 普通文本，1/2/3 = 标题级别，-1 = 谁也不点亮的「无声明态」
-   * （如 `####` 这类尚未纳入这四格的级别）。
-   */
-  level: number
+  /** 当前样式；`null` = 六格都不点亮（`####` 这类尚未纳入的级别） */
+  style: ParagraphStyle | null
 }>()
 
-const emit = defineEmits<{ select: [level: 0 | 1 | 2 | 3] }>()
+const emit = defineEmits<{ select: [style: ParagraphStyle] }>()
 
 interface TextStyleItem {
-  level: 0 | 1 | 2 | 3
+  style: ParagraphStyle
   icon: Component
   label: string
 }
 
 /**
- * 顺序固定为 文本 → H1 → H2 → H3：标题级别升序，用户的心智模型是"逐级加重"，
- * 不是"按字母排"。
+ * 顺序：文本 → H1 → H2 → H3 → 有序 → 无序。
+ * 前半是"逐级加重的文本"，后半是"换成列表" —— 两类语义不同，靠顺序自然分组；
+ * 不再插分隔线（一行里插线会把 6 格切成两段，反而更难扫）。
  */
 const ITEMS: TextStyleItem[] = [
-  { level: 0, icon: Type, label: '普通文本' },
-  { level: 1, icon: Heading1, label: '一级标题' },
-  { level: 2, icon: Heading2, label: '二级标题' },
-  { level: 3, icon: Heading3, label: '三级标题' },
+  { style: 'text', icon: Type, label: '普通文本' },
+  { style: 'h1', icon: Heading1, label: '一级标题' },
+  { style: 'h2', icon: Heading2, label: '二级标题' },
+  { style: 'h3', icon: Heading3, label: '三级标题' },
+  { style: 'ol', icon: ListOrdered, label: '有序列表' },
+  { style: 'ul', icon: List, label: '无序列表' },
 ]
 </script>
 
@@ -50,21 +49,21 @@ const ITEMS: TextStyleItem[] = [
   >
     <button
       v-for="item in ITEMS"
-      :key="item.level"
+      :key="item.style"
       type="button"
       class="menu-style-btn"
-      :class="{ 'is-active': item.level === level }"
+      :class="{ 'is-active': item.style === style }"
       :title="item.label"
       :aria-label="item.label"
-      :aria-pressed="item.level === level"
-      :data-text-style="item.level"
-      @click="emit('select', item.level)"
+      :aria-pressed="item.style === style"
+      :data-text-style="item.style"
+      @click="emit('select', item.style)"
     >
-      <!-- 字形尺寸补偿：lucide 的 Heading 字形在 24 网格里占位比 Type 小一圈，
+      <!-- 字形尺寸补偿：lucide 的 Heading/List 字形在 24 网格里占位比 Type 小一圈，
            同尺寸摆一起会显小（与入口胶囊的 14/16 同一套补偿）。 -->
       <component
         :is="item.icon"
-        :size="item.level === 0 ? 15 : 16"
+        :size="item.style === 'text' ? 15 : 16"
       />
     </button>
   </div>
@@ -82,7 +81,8 @@ const ITEMS: TextStyleItem[] = [
   flex: 1;
   align-items: center;
   justify-content: center;
-  min-width: 28px;
+  // 6 格挤在 148px 的菜单内容宽里：22px 是「不再缩、也不溢出」的临界值
+  min-width: 22px;
   height: 26px;
   padding: 0;
   border: 0;
