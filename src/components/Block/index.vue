@@ -42,6 +42,7 @@ import type { TreeNode } from '../../types/block'
 import type { BlockSetupContext, BlockTypeEditorExposed, BlockTypeHooks } from '../../types/block-type'
 import { type BlockAlign,blockAlignOf } from '../../utils/block-align'
 import {
+  CALLOUT_TONE_ICONS,
   CALLOUT_TONE_LABELS,
   CALLOUT_TONES,
   calloutFormatPatch,
@@ -188,9 +189,12 @@ const STYLE_ENTRY_ICONS = {
 
 /**
  * 入口类型图标（所有块类型都有）：没注册 `entryIcon` 的类型按文本块处理，落 `Type` 字形。
+ * 高亮块例外：胶囊显示**当前语义图标**（与块内图标同一份 `CALLOUT_TONE_ICONS`）——
+ * 胶囊是「这是什么块」的唯一出口，高亮块在折叠/扫视时语义可读就靠它。
  * 点击开本块菜单，与右侧握把同在一个胶囊里，按下即拖拽（handled by Sortable handle）。
  */
 const entryIcon = computed(() => {
+  if (calloutTone.value) return CALLOUT_TONE_ICONS[calloutTone.value]
   const style = paragraph.value.style
   if (style && style !== 'text') return STYLE_ENTRY_ICONS[style]
   return handler.value?.entryIcon ?? Type
@@ -199,8 +203,12 @@ const entryIcon = computed(() => {
 /**
  * 字形尺寸：lucide 的 `Heading1/2/3`、`List` 字形在 24 网格里的实际占位比 `Type` 小一圈，
  * 同尺寸摆进胶囊会显小 —— 这些字形单独抬 2px 补齐视觉重量（盒子同为 14 的握把不动）。
+ * 四语义字形取中间值 15（比 `Type` 醒目、比标题字收敛，与块内语义图标同尺寸）。
  */
-const entryIconSize = computed(() => (paragraph.value.style && paragraph.value.style !== 'text' ? 16 : 14))
+const entryIconSize = computed(() => {
+  if (calloutTone.value) return 15
+  return paragraph.value.style && paragraph.value.style !== 'text' ? 16 : 14
+})
 /** 入口相对块顶的下偏移：让图标压在本类型首行（表头行等）上 */
 const entryTop = computed(() => handler.value?.entryTop)
 

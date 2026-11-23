@@ -104,9 +104,9 @@ Rust：`storage/entity/block.rs`（两条读路径归一 + 缺省值）、`types
 
 | 文件 | 动作 |
 |---|---|
-| `src/utils/callout.ts` | 新增：枚举、文案、`calloutToneOf`、`calloutFormatPatch` |
+| `src/utils/callout.ts` | 新增：枚举、文案、`calloutToneOf`、`calloutFormatPatch`、`CALLOUT_TONE_ICONS` 字形单源 |
 | `src/components/Block/components/CalloutToneIcon.vue` | 新增：四语义固定字形 |
-| `src/components/Block/index.vue` | 壳 class、语义图标、切换浮层、互斥、`hasInlineBg`、标题兜底 |
+| `src/components/Block/index.vue` | 壳 class、语义图标、切换浮层、互斥、`hasInlineBg`、标题兜底、入口胶囊改读语义字形 |
 | `src/components/Block/components/BlockMenuTextStyle.vue` | 七格两行网格（4+3：文本/H1/H2/H3 ‖ 有序/无序/高亮），「高亮」是普通一格（`data-text-style="callout"`），`calloutTone` prop 决定点亮 |
 | `src/composables/useContentRenderer.ts` | `parseParagraphStyle` 的 `format` 双读兜底 |
 | `src/components/Block/handlers/bullet/BulletRender.vue` | 把 `blockFormat` 喂给样式判定 |
