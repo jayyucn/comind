@@ -1,13 +1,15 @@
-import { TASK_PRIORITY_ICONS, TASK_STATUS_ICONS } from '../components/Icons'
 import type { Editor } from '@tiptap/vue-3'
-import type { Command, CommandProps } from '../types/command'
+
+import { TASK_PRIORITY_ICONS, TASK_STATUS_ICONS } from '../components/Icons'
+import { createTableData } from '../services/table-model'
+import { TemplateRenderer } from '../services/template-renderer'
 import { useBlockStore } from '../stores/blocks'
 import { useEditorStore } from '../stores/editor'
 import { usePageStore } from '../stores/pages'
-import { useTemplateRegistry } from './useTemplateRegistry'
-import { TemplateRenderer } from '../services/template-renderer'
-import { openImageFileDialog } from '../utils/imagePicker'
+import type { Command, CommandProps } from '../types/command'
 import { assetStorage } from '../utils/asset'
+import { openImageFileDialog } from '../utils/imagePicker'
+import { useTemplateRegistry } from './useTemplateRegistry'
 
 /**
  * 格式化日期为 YYYY-MM-DD
@@ -116,19 +118,41 @@ function insertHeadingAtLineStart(editor: Editor, level: number) {
 
 /**
  * 插入代码块
+ *
+ * 切类型前必须以**编辑器当前正文**显式落库：打字走 `Editor.vue` 的 300ms 防抖保存，
+ * 切换到 code 会立刻卸载那个 TipTap 编辑器（`onBeforeUnmount` → `cancelDebouncedSave`），
+ * 刚被 `deleteRange` 删掉 `/code` 的正文随之丢弃，store 里仍是命令原文 ——
+ * 代码块（`CodeMirrorEditor`）以 `props.content` 初始化，就会把 `/code` 吃进代码块。
  */
-function insertCodeBlock({ editor, range, blockId }: CommandProps) {
+async function insertCodeBlock({ editor, range, blockId }: CommandProps) {
   // 删除斜杠命令文本
   editor.chain()
     .deleteRange(range)
     .focus()
     .run()
-  
-  // 切换到 code block 类型
+
+  if (!blockId) return
+
   const blockStore = useBlockStore()
-  if (blockId) {
-    blockStore.updateBlockType(blockId, 'code')
+  const live = editor.getText()
+  if (blockStore.getBlock(blockId)?.content !== live) {
+    await blockStore.updateBlockContent(blockId, live)
   }
+
+  // 切换到 code block 类型
+  await blockStore.updateBlockType(blockId, 'code')
+}
+
+/**
+ * 插入行内代码（markdown 单反引号语义）
+ *
+ * 走 TipTap 的 `code` mark（StarterKit 内置，自带 `` `x` `` 输入规则）：正文里不落反引号字面，
+ * 与加粗/斜体共用 `format.inlineMarks` 这一套单一真源，渲染态由 `wrapInlineHtml` 输出 `<code>`。
+ * 命令文本已由 `executeCommand` 删除并把光标放回 `/` 原位，这里只把 mark 套到光标处：
+ * 空选区 ⇒ stored mark（接着输入的字直接是代码），有选区 ⇒ 整段转代码。
+ */
+function insertInlineCode({ editor }: CommandProps) {
+  editor.chain().setCode().focus().run()
 }
 
 /**
@@ -185,6 +209,104 @@ async function insertImage({ editor, range, blockId }: CommandProps) {
 }
 
 /**
+ * 插入表格块（P0）
+ *
+ * - 空内容且无子块：就地转换当前块为 table（斜杠文本已由菜单清除）
+ * - 其余情况：保留文本与子块，在完整子树之后插入兄弟表格块
+ * - 根块（页面根 / BlockModal 根）不能有兄弟：新表作为其子块
+ */
+async function insertTable({ editor, blockId }: CommandProps) {
+  if (!blockId) return
+
+  const blockStore = useBlockStore()
+  const editorStore = useEditorStore()
+  const anchor = blockStore.getBlock(blockId)
+  if (!anchor) return
+
+  const text = editor.getText().trim()
+  const hasChildren = blockStore.getChildren(blockId).length > 0
+  const tableFormat = { table: createTableData() }
+
+  if (text === '' && !hasChildren) {
+    await blockStore.updateBlockContent(blockId, '')
+    await blockStore.updateBlockType(blockId, 'table')
+    await blockStore.updateBlockFormat(blockId, tableFormat)
+    editorStore.activateBlock(blockId)
+    return
+  }
+
+  const isRoot = anchor.parentId === null || anchor.id === editorStore.blockModalBlockId
+  if (isRoot) {
+    await blockStore.createBlock({
+      pageId: anchor.pageId,
+      parentId: anchor.id,
+      content: '',
+      type: 'table',
+      format: tableFormat,
+    })
+    return
+  }
+
+  const created = await blockStore.insertAtPosition(
+    anchor.pageId,
+    anchor.parentId,
+    '',
+    anchor,
+    [],
+    false,
+    tableFormat,
+  )
+  await blockStore.updateBlockType(created.id, 'table')
+}
+
+/**
+ * 插入查询块（块内嵌查询页外壳，数据源为全量块，每块独立命名空间）
+ *
+ * - 空内容且无子块：就地转换当前块为 query（斜杠文本已由菜单清除）
+ * - 其余情况：保留文本与子块，在完整子树之后插入兄弟查询块
+ * - 根块（页面根 / BlockModal 根）不能有兄弟：新块作为其子块
+ */
+async function insertQuery({ editor, blockId }: CommandProps) {
+  if (!blockId) return
+
+  const blockStore = useBlockStore()
+  const editorStore = useEditorStore()
+  const anchor = blockStore.getBlock(blockId)
+  if (!anchor) return
+
+  const text = editor.getText().trim()
+  const hasChildren = blockStore.getChildren(blockId).length > 0
+
+  if (text === '' && !hasChildren) {
+    await blockStore.updateBlockContent(blockId, '')
+    await blockStore.updateBlockType(blockId, 'query')
+    editorStore.activateBlock(blockId)
+    return
+  }
+
+  const isRoot = anchor.parentId === null || anchor.id === editorStore.blockModalBlockId
+  if (isRoot) {
+    await blockStore.createBlock({
+      pageId: anchor.pageId,
+      parentId: anchor.id,
+      content: '',
+      type: 'query',
+    })
+    return
+  }
+
+  const created = await blockStore.insertAtPosition(
+    anchor.pageId,
+    anchor.parentId,
+    '',
+    anchor,
+    [],
+    false,
+  )
+  await blockStore.updateBlockType(created.id, 'query')
+}
+
+/**
  * MVP 命令列表（18 个）
  */
 export const commands: Command[] = [
@@ -235,8 +357,8 @@ export const commands: Command[] = [
     group: '任务',
     icon: TASK_STATUS_ICONS.Todo,
     action: () => {},
-    propertyKey: 'status',
-    propertyValue: 'Todo',
+    fieldKey: 'status',
+    fieldValue: 'Todo',
     immediate: true
   },
   {
@@ -246,8 +368,8 @@ export const commands: Command[] = [
     group: '任务',
     icon: TASK_STATUS_ICONS.Doing,
     action: () => {},
-    propertyKey: 'status',
-    propertyValue: 'Doing',
+    fieldKey: 'status',
+    fieldValue: 'Doing',
     immediate: true
   },
   {
@@ -257,8 +379,8 @@ export const commands: Command[] = [
     group: '任务',
     icon: TASK_STATUS_ICONS.Done,
     action: () => {},
-    propertyKey: 'status',
-    propertyValue: 'Done',
+    fieldKey: 'status',
+    fieldValue: 'Done',
     immediate: true
   },
 
@@ -270,41 +392,41 @@ export const commands: Command[] = [
     group: '属性',
     icon: TASK_PRIORITY_ICONS.Urgent,
     action: () => {},
-    propertyKey: 'priority',
-    propertyValue: 'Urgent',
+    fieldKey: 'priority',
+    fieldValue: 'Urgent',
     immediate: true
   },
   {
     id: TASK_PRIORITY_ICONS.High,
     name: 'High',
-    alias: ['紧急不重要', 'high'],
+    alias: ['不重要但紧急', 'high'],
     group: '属性',
     icon: TASK_PRIORITY_ICONS.High,
     action: () => {},
-    propertyKey: 'priority',
-    propertyValue: 'High',
+    fieldKey: 'priority',
+    fieldValue: 'High',
     immediate: true
   },
   {
     id: TASK_PRIORITY_ICONS.Medium,
     name: 'Medium',
-    alias: ['重要不紧急', 'medium'],
+    alias: ['重要但不紧急', 'medium'],
     group: '属性',
     icon: TASK_PRIORITY_ICONS.Medium,
     action: () => {},
-    propertyKey: 'priority',
-    propertyValue: 'Medium',
+    fieldKey: 'priority',
+    fieldValue: 'Medium',
     immediate: true
   },
   {
     id: TASK_PRIORITY_ICONS.Low,
     name: 'Low',
-    alias: ['不重要不紧急', 'low'],
+    alias: ['不重要且不紧急', 'low'],
     group: '属性',
     icon: TASK_PRIORITY_ICONS.Low,
     action: () => {},
-    propertyKey: 'priority',
-    propertyValue: 'Low',
+    fieldKey: 'priority',
+    fieldValue: 'Low',
     immediate: true
   },
   // 属性编辑（打开编辑器）
@@ -315,7 +437,7 @@ export const commands: Command[] = [
     group: '属性',
     icon: '📋',
     action: () => {},
-    propertyKey: 'status',
+    fieldKey: 'status',
     openEditor: true
   },
   {
@@ -325,7 +447,7 @@ export const commands: Command[] = [
     group: '属性',
     icon: '🔴',
     action: () => {},
-    propertyKey: 'priority',
+    fieldKey: 'priority',
     openEditor: true
   },
   // 清除优先级（删除 priority 属性，由 SlashCommandMenu.vue 处理）
@@ -336,8 +458,8 @@ export const commands: Command[] = [
     group: '属性',
     icon: '🚫',
     action: () => {},
-    propertyKey: 'priority',
-    clearProperty: true
+    fieldKey: 'priority',
+    clearFieldValue: true
   },
   // deadline 和 scheduled 已移至"日期时间"分组，作为 dateRef 插入命令
   // 不再作为属性命令（属性面板仍可设置 deadline/scheduled 属性）
@@ -348,7 +470,7 @@ export const commands: Command[] = [
     group: '属性',
     icon: '📁',
     action: () => {},
-    propertyKey: 'project',
+    fieldKey: 'project',
     openEditor: true,
     acceptArgument: true
   },
@@ -359,7 +481,7 @@ export const commands: Command[] = [
     group: '属性',
     icon: '🌐',
     action: () => {},
-    propertyKey: 'area',
+    fieldKey: 'area',
     openEditor: true,
     acceptArgument: true
   },
@@ -389,14 +511,8 @@ export const commands: Command[] = [
     icon: '🖍️',
     action: insertFormat('^^')
   },
-  {
-    id: 'code',
-    name: 'Code',
-    alias: ['代码'],
-    group: '文本格式',
-    icon: '💻',
-    action: insertCodeBlock
-  },
+  // 代码块在前：键入 `/code` 时两者同为 name 前缀命中（score 相同），数组顺序即展示顺序，
+  // 保持「/code 回车 = 代码块」的既有肌肉记忆；行内代码（`Code`）排其后按 ↓ 选。
   {
     id: 'code-block',
     name: 'Code block',
@@ -404,6 +520,15 @@ export const commands: Command[] = [
     group: '文本格式',
     icon: '📄',
     action: insertCodeBlock
+  },
+  // `/code` — 行内代码（单反引号语义，GitHub 渲染效果）
+  {
+    id: 'code',
+    name: 'Code',
+    alias: ['代码', '行内代码', 'inline-code'],
+    group: '文本格式',
+    icon: '💻',
+    action: insertInlineCode
   },
   {
     id: 'h1',
@@ -475,6 +600,22 @@ export const commands: Command[] = [
     convertBlockType: 'image'
   },
   {
+    id: 'table',
+    name: 'Table',
+    alias: ['table', '表格', 'tbl'],
+    group: '文本格式',
+    icon: '▦',
+    action: insertTable
+  },
+  {
+    id: 'query',
+    name: 'Query',
+    alias: ['query', '查询', '查询块', 'qb'],
+    group: '文本格式',
+    icon: '🔍',
+    action: insertQuery
+  },
+  {
     id: 'embed',
     name: 'Embed',
     alias: ['嵌入', '引用'],
@@ -516,7 +657,7 @@ export const commands: Command[] = [
     }
   },
   {
-    id: 'property',
+    id: 'field_value',
     name: 'Add property',
     alias: ['属性', 'prop'],
     group: '属性',

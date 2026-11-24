@@ -3,10 +3,10 @@ mod tests {
     use crate::{
         services::{
             render_segment_service::build_segments_for_block,
-            BlockService, LinkService, PageService, RelationshipTypeService,
+            BlockService, LinkService, PageService, RelationshipTypeService, TagService,
         },
         storage::sqlite::SQLiteAdapter,
-        types::{RenderSegment},
+        types::{RenderSegment, TagUpdateOptions},
     };
     use std::error::Error;
 
@@ -20,8 +20,8 @@ mod tests {
             &mut adapter, &src_page.id, None,
             // content with embedded link pattern [[Target]]
             "hello [[Target Page|alias]] world ((relates))[[Target Page]] tail @2026-08-15",
-            "{}", "bullet", None,
-        )?;
+            "{}", "text", None,
+        true)?;
 
         // ── Setup: target page ──
         let target_page = PageService::create(&mut adapter, "", "Target Page", None, None, None, None, None)?;
@@ -47,7 +47,7 @@ mod tests {
         let segments = build_segments_for_block(&mut adapter, &block)?;
 
         // ── Assert: segments should be non-empty ──
-        assert!(!segments.is_empty(), "bullet block should produce segments");
+        assert!(!segments.is_empty(), "text block should produce segments");
 
         // ── Assert: segment coverage (should cover the full content range) ──
         let content_len = block.content.len();
@@ -97,19 +97,19 @@ mod tests {
         assert_eq!(link.0, "Target Page");
         assert_eq!(link.1, "alias");
 
-        // ── Edge case: non-bullet block returns empty ──
+        // ── Edge case: non-text block returns empty ──
         let code_block = BlockService::create(
             &mut adapter, &src_page.id, None,
             "print('hello')", "{}", "code", None,
-        )?;
+        true)?;
         let empty = build_segments_for_block(&mut adapter, &code_block)?;
         assert!(empty.is_empty(), "code block should return empty segments");
 
-        // ── Edge case: bullet block with no links → text-only segment ──
+        // ── Edge case: text block with no links → text-only segment ──
         let plain_block = BlockService::create(
             &mut adapter, &src_page.id, None,
-            "just some plain text", "{}", "bullet", None,
-        )?;
+            "just some plain text", "{}", "text", None,
+        true)?;
         let plain_segs = build_segments_for_block(&mut adapter, &plain_block)?;
         assert_eq!(plain_segs.len(), 1);
         assert!(matches!(plain_segs[0], RenderSegment::Text { .. }));
@@ -117,6 +117,52 @@ mod tests {
             assert_eq!(*start, 0);
             assert_eq!(*end, plain_block.content.len());
         }
+
+        Ok(())
+    }
+
+    /// 关系括号与 `[[ ]]` 之间允许空白、允许中文括号。
+    /// wiki 补全会给 `[[x]]` 补左空格（inline-unit-pad），编辑态可能写中文括号 ——
+    /// 修复前 `search_content` 字面拼 `((type))[[target]]`，差一个空格即定位失败 ⇒ `((type))` 裸显。
+    #[test]
+    fn test_typed_link_with_space_and_cjk_parens() -> Result<(), Box<dyn Error>> {
+        let mut adapter = SQLiteAdapter::open_in_memory()?;
+        let src_page = PageService::create(&mut adapter, "", "Src", None, None, None, None, None)?;
+
+        RelationshipTypeService::create(
+            &mut adapter, None, "relates", None,
+            "相关", "被相关", "#3B82F6", 0, "medium", 0,
+        )?;
+        let target = PageService::create(&mut adapter, "", "Target", None, None, None, None, None)?;
+
+        // ① 英文括号 + 空格（wiki 补全产生的形态）
+        let b1 = BlockService::create(
+            &mut adapter, &src_page.id, None,
+            "((relates)) [[Target]]", "{}", "text", None,
+        true)?;
+        LinkService::create(&mut adapter, &b1.id, &target.id, "Target", Some("relates"))?;
+        let segs1 = build_segments_for_block(&mut adapter, &b1)?;
+        let (s1, e1) = segs1.iter().find_map(|s| match s {
+            RenderSegment::TypedLink { start, end, relationship_type, .. } => {
+                assert_eq!(relationship_type.as_str(), "relates");
+                Some((*start, *end))
+            }
+            _ => None,
+        }).expect("带空格的关系语法应产出 TypedLink 段");
+        assert_eq!(s1, 0, "TypedLink 应从关系括号起（不含前导文本）");
+        assert_eq!(e1, "((relates)) [[Target]]".len(), "TypedLink 应覆盖含空格的整段");
+
+        // ② 中文括号 + 空格（编辑态可能写入的形态）
+        let b2 = BlockService::create(
+            &mut adapter, &src_page.id, None,
+            "（（relates）） [[Target]]", "{}", "text", None,
+        true)?;
+        LinkService::create(&mut adapter, &b2.id, &target.id, "Target", Some("relates"))?;
+        let segs2 = build_segments_for_block(&mut adapter, &b2)?;
+        assert!(
+            segs2.iter().any(|s| matches!(s, RenderSegment::TypedLink { .. })),
+            "中文括号关系语法也应产出 TypedLink 段"
+        );
 
         Ok(())
     }
@@ -135,8 +181,8 @@ mod tests {
         let block = BlockService::create(
             &mut adapter, &page.id, None,
             "这是测试内容 @2026-08-09 📅",
-            "{}", "bullet", None,
-        )?;
+            "{}", "text", None,
+        true)?;
 
         let segments = build_segments_for_block(&mut adapter, &block)?;
 
@@ -191,7 +237,7 @@ mod tests {
             &mut adapter, &page.id, None,
             "((relates))[[Target]] @2026-08-15",
             "{}", "property", None,
-        )?;
+        true)?;
 
         LinkService::create(
             &mut adapter, &block.id, &target.id, "Target",
@@ -217,8 +263,8 @@ mod tests {
         let block = BlockService::create(
             &mut adapter, &page.id, None,
             "任务 @2026-08-15T14:00 ⏰|weekly|15",
-            "{}", "bullet", None,
-        )?;
+            "{}", "text", None,
+        true)?;
 
         let segments = build_segments_for_block(&mut adapter, &block)?;
 
@@ -237,49 +283,102 @@ mod tests {
         Ok(())
     }
 
-    /// Regression: dateRef 后紧跟空格 + 文本时，空格是语法分隔符，
-    /// 不应包含在后续 Text 段中。
+    /// dateRef 之后的空白是分隔符：不进入后续 Text 段，而是由 DateRef 段自己吸收，
+    /// 保证 segments 是 content 的**严格划分**（无空洞）。
+    /// 空洞会让该字符不被渲染，并让前端「可见长度累计 → encoded 偏移」的换算从该点起右移。
     /// 内容 "@2026-08-09 ⏰ 2026"（18 chars）:
     ///   @(0)2(1)0(2)2(3)6(4)-(5)0(6)8(7)-(8)0(9)9(10) (11)⏰(12) (13)2(14)0(15)2(16)6(17)
-    ///   预期: DateRef=[0,13)，Text=[14,18)（跳过 emoji 后空格 char[13]）
+    ///   预期: DateRef=[0,14)（含尾随空格 char[13]），Text=[14,18)
     #[test]
-    fn test_date_ref_trailing_space_is_skipped_from_text() -> Result<(), Box<dyn Error>> {
+    fn test_date_ref_absorbs_trailing_space() -> Result<(), Box<dyn Error>> {
         let mut adapter = SQLiteAdapter::open_in_memory()?;
         let page = PageService::create(&mut adapter, "", "Test", None, None, None, None, None)?;
 
         let block = BlockService::create(
             &mut adapter, &page.id, None,
             "@2026-08-09 ⏰ 2026",
-            "{}", "bullet", None,
-        )?;
+            "{}", "text", None,
+        true)?;
 
         let segments = build_segments_for_block(&mut adapter, &block)?;
 
         assert_eq!(segments.len(), 2, "should have DateRef + Text segments");
 
-        // 第一部分：DateRef 覆盖 "@2026-08-09 ⏰"（不含 emoji 后空格）
+        // 第一部分：DateRef 覆盖 "@2026-08-09 ⏰ "（吞掉 emoji 后的空格）
         if let RenderSegment::DateRef { start, end, kind, .. } = &segments[0] {
             assert_eq!(*start, 0, "DateRef should start at char 0");
-            assert_eq!(*end, 13, "DateRef should end at char 13 (after ⏰, before space)");
+            assert_eq!(*end, 14, "DateRef should absorb the trailing space (end at char 14)");
             assert_eq!(kind, "deadline");
         } else {
             panic!("first segment should be DateRef");
         }
 
-        // 第二部分：Text 从 char 14 开始（跳过 emoji 后空格 char[13]），到末尾 char 18
+        // 第二部分：Text 从 char 14 开始（首个非空白），到末尾 char 18
         if let RenderSegment::Text { start, end } = &segments[1] {
-            assert_eq!(*start, 14, "Text should start at char 14 (after trailing space)");
+            assert_eq!(*start, 14, "Text should start at char 14 (first non-whitespace)");
             assert_eq!(*end, 18, "Text should end at char 18 (content length)");
         } else {
             panic!("second segment should be Text");
         }
 
-        // 验证切片内容
+        // 验证切片内容（两段拼接必须还原 content）
         let chars: Vec<char> = block.content.chars().collect();
-        let date_ref_slice: String = chars[0..13].iter().collect();
+        let date_ref_slice: String = chars[0..14].iter().collect();
         let text_slice: String = chars[14..18].iter().collect();
-        assert_eq!(date_ref_slice, "@2026-08-09 ⏰");
+        assert_eq!(date_ref_slice, "@2026-08-09 ⏰ ");
         assert_eq!(text_slice, "2026");
+        assert_eq!(format!("{}{}", date_ref_slice, text_slice), block.content);
+
+        Ok(())
+    }
+
+    /// Regression（用户报告：文本中间回车，切点右偏 1 字）：
+    /// 带 emoji 的 dateRef 曾让 segments 在 `date_ref.end` 与下一段 `start` 之间留 1 字符空洞
+    /// （`A @2026-10-15📅 BCDEF` 中 emoji 后的那个空格）。前端按「可见长度累计」换算 encoded
+    /// 偏移时，空洞之后的偏移全部右移 1 ⇒ 中部分拆切点右偏 1 字（读态也丢那个空格）。
+    ///
+    /// 此用例与 `build_segments` 的 `anchors` 构造直接对应：emoji 分支只吞到 emoji 为止
+    /// （不像无 emoji 分支会吞掉尾随空格），故空洞只在 emoji 变体出现。
+    #[test]
+    fn test_no_hole_after_emoji_date_ref() -> Result<(), Box<dyn Error>> {
+        let mut adapter = SQLiteAdapter::open_in_memory()?;
+        let page = PageService::create(&mut adapter, "", "Test", None, None, None, None, None)?;
+
+        let content = "A @2026-10-15📅 BCDEF";
+        let block = BlockService::create(
+            &mut adapter, &page.id, None,
+            content,
+            "{}", "text", None,
+        true)?;
+
+        let segments = build_segments_for_block(&mut adapter, &block)?;
+
+        let span = |s: &RenderSegment| match s {
+            RenderSegment::Text { start, end }
+            | RenderSegment::Link { start, end, .. }
+            | RenderSegment::TypedLink { start, end, .. }
+            | RenderSegment::ExternalLink { start, end, .. }
+            | RenderSegment::Tag { start, end, .. }
+            | RenderSegment::DateRef { start, end, .. } => (*start, *end),
+        };
+
+        // 无空洞、无重叠、无缝覆盖 0..content 的 UTF-16 长度
+        let utf16_len = content.encode_utf16().count();
+        let mut cursor = 0usize;
+        for seg in &segments {
+            let (start, end) = span(seg);
+            assert_eq!(
+                start, cursor,
+                "segment start must equal previous end (hole/overlap at utf16 offset {})", cursor
+            );
+            cursor = end;
+        }
+        assert_eq!(cursor, utf16_len, "segments must cover the whole content");
+
+        assert!(
+            segments.iter().any(|s| matches!(s, RenderSegment::DateRef { .. })),
+            "should have a DateRef segment"
+        );
 
         Ok(())
     }
@@ -293,8 +392,8 @@ mod tests {
         let block = BlockService::create(
             &mut adapter, &page.id, None,
             "截止日期 @2099-12-31 ⏰",
-            "{}", "bullet", None,
-        )?;
+            "{}", "text", None,
+        true)?;
 
         let segments = build_segments_for_block(&mut adapter, &block)?;
         let date_ref = segments.iter().find_map(|s| match s {
@@ -316,8 +415,8 @@ mod tests {
         let block = BlockService::create(
             &mut adapter, &page.id, None,
             "过期任务 @2000-01-01 ⏰",
-            "{}", "bullet", None,
-        )?;
+            "{}", "text", None,
+        true)?;
 
         let segments = build_segments_for_block(&mut adapter, &block)?;
         let date_ref = segments.iter().find_map(|s| match s {
@@ -339,8 +438,8 @@ mod tests {
         let block = BlockService::create(
             &mut adapter, &page.id, None,
             "过去的日程 @2000-01-01 📅",
-            "{}", "bullet", None,
-        )?;
+            "{}", "text", None,
+        true)?;
 
         let segments = build_segments_for_block(&mut adapter, &block)?;
         let date_ref = segments.iter().find_map(|s| match s {
@@ -362,8 +461,8 @@ mod tests {
         let block = BlockService::create(
             &mut adapter, &page.id, None,
             "这里有个 [[不存在的页面]] 链接",
-            "{}", "bullet", None,
-        )?;
+            "{}", "text", None,
+        true)?;
 
         // Create a link to a non-existent page ID
         LinkService::create(
@@ -390,8 +489,8 @@ mod tests {
         let block = BlockService::create(
             &mut adapter, &page.id, None,
             "",
-            "{}", "bullet", None,
-        )?;
+            "{}", "text", None,
+        true)?;
 
         let segments = build_segments_for_block(&mut adapter, &block)?;
         assert!(segments.is_empty(), "empty content should produce empty segments");
@@ -409,8 +508,8 @@ mod tests {
         let block = BlockService::create(
             &mut adapter, &page.id, None,
             content,
-            "{}", "bullet", None,
-        )?;
+            "{}", "text", None,
+        true)?;
 
         LinkService::create(
             &mut adapter, &block.id, &target.id, "T", None,
@@ -436,8 +535,8 @@ mod tests {
         Ok(())
     }
 
-    /// Edge: dateRef 后跟多个空格时，所有空格都应被跳过，Text 从首个非空白开始。
-    /// "@2026-08-09 ⏰   2026" → DateRef=[0,13)，Text=[16,20)（跳过 3 个空格）
+    /// Edge: dateRef 后跟多个空格时，空格全部并入 DateRef 段（不进入 Text），Text 从首个非空白开始。
+    /// "@2026-08-09 ⏰   2026" → DateRef=[0,16)，Text=[16,20)（3 个空格并入 DateRef，无空洞）
     #[test]
     fn test_date_ref_multiple_trailing_spaces_skipped() -> Result<(), Box<dyn Error>> {
         let mut adapter = SQLiteAdapter::open_in_memory()?;
@@ -446,15 +545,15 @@ mod tests {
         let block = BlockService::create(
             &mut adapter, &page.id, None,
             "@2026-08-09 ⏰   2026",
-            "{}", "bullet", None,
-        )?;
+            "{}", "text", None,
+        true)?;
 
         let segments = build_segments_for_block(&mut adapter, &block)?;
 
         assert_eq!(segments.len(), 2, "should have DateRef + Text segments");
         if let RenderSegment::DateRef { start, end, .. } = &segments[0] {
             assert_eq!(*start, 0);
-            assert_eq!(*end, 13, "DateRef ends after ⏰ (char 13)");
+            assert_eq!(*end, 16, "DateRef absorbs the 3 trailing spaces (end at char 16)");
         } else {
             panic!("first segment should be DateRef");
         }
@@ -468,8 +567,8 @@ mod tests {
         Ok(())
     }
 
-    /// Edge: dateRef 后跟链接时，跳过空格后 Link 段紧随其后，无空洞。
-    /// "@2026-08-09 ⏰ [[T]]" → DateRef=[0,13)，Link=[15,20)
+    /// Edge: dateRef 后跟链接时，空格并入 DateRef，Link 段紧随其后，无空洞。
+    /// "@2026-08-09 ⏰ [[T]]" → DateRef=[0,14)，Link=[14,19)
     #[test]
     fn test_date_ref_then_link_no_gap() -> Result<(), Box<dyn Error>> {
         let mut adapter = SQLiteAdapter::open_in_memory()?;
@@ -479,8 +578,8 @@ mod tests {
         let block = BlockService::create(
             &mut adapter, &page.id, None,
             "@2026-08-09 ⏰ [[T]]",
-            "{}", "bullet", None,
-        )?;
+            "{}", "text", None,
+        true)?;
 
         LinkService::create(
             &mut adapter, &block.id, &target.id, "T", None,
@@ -491,17 +590,118 @@ mod tests {
         assert_eq!(segments.len(), 2, "should have DateRef + Link segments");
         if let RenderSegment::DateRef { start, end, .. } = &segments[0] {
             assert_eq!(*start, 0);
-            assert_eq!(*end, 13);
+            assert_eq!(*end, 14, "DateRef absorbs the trailing space (end at char 14)");
         } else {
             panic!("first segment should be DateRef");
         }
         if let RenderSegment::Link { start, end, .. } = &segments[1] {
-            assert_eq!(*start, 14, "Link starts at [[ (char 14), after skipped space (char 13)");
+            assert_eq!(*start, 14, "Link starts at [[ (char 14), right after DateRef end");
             assert_eq!(*end, 19, "Link ends at content end (char 19)");
         } else {
             panic!("second segment should be Link");
         }
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_tag_segment_rendering() -> Result<(), Box<dyn Error>> {
+        let mut adapter = SQLiteAdapter::open_in_memory()?;
+
+        let page = PageService::create(&mut adapter, "", "TagPage", None, None, None, None, None)?;
+
+        // content 同时含用户 tag 与系统 tag：联动在 create 即派生
+        let block = BlockService::create(
+            &mut adapter, &page.id, None,
+            "note #rust and #任务 end",
+            "{}", "text", None,
+        true)?;
+
+        // 联动派生：block.tags 应含 2 个 id（自动建 rust + 命中系统任务）
+        assert_eq!(block.tags.len(), 2, "create should derive tags from content");
+
+        let segments = build_segments_for_block(&mut adapter, &block)?;
+        let tag_segs: Vec<&crate::types::RenderSegment> = segments.iter()
+            .filter(|s| matches!(s, RenderSegment::Tag { .. }))
+            .collect();
+        assert_eq!(tag_segs.len(), 2, "should have 2 tag segments, got {:?}", segments);
+
+        // 系统标记：#任务 → is_system = true；#rust → false
+        let mut saw_system = false;
+        let mut saw_user = false;
+        for seg in &tag_segs {
+            if let RenderSegment::Tag { title, tag_id, is_system, color, start, end } = seg {
+                if title == "任务" {
+                    assert!(*is_system);
+                    assert_eq!(tag_id, "sys-tag-system-task");
+                    // 系统 tag 由 seed 配置带色（ADR-0050 D11：存 token 名 `--tag-color-N`，非 hex）
+                    assert_eq!(color, "--tag-color-4", "system tag color comes from seed config");
+                    saw_system = true;
+                } else {
+                    assert_eq!(title, "rust");
+                    assert!(!(*is_system));
+                    assert!(!tag_id.is_empty());
+                    // 用户 tag 未设色 → 空串（前端据此落回 CSS 默认色；ADR-0050 D11）
+                    assert_eq!(color, "", "user tag without color should serialize as empty string");
+                    saw_user = true;
+                }
+                // chip 覆盖 `#title` 全段（含 # 号）
+                assert!(end > start);
+            }
+        }
+        assert!(saw_system && saw_user);
+
+        // 覆盖完整性：segments 无缝覆盖整段 content（UTF-16）
+        let mut covered = 0usize;
+        for seg in &segments {
+            let (s0, e0) = match seg {
+                RenderSegment::Text { start, end } => (*start, *end),
+                RenderSegment::Tag { start, end, .. } => (*start, *end),
+                _ => continue,
+            };
+            assert_eq!(s0, covered, "gap before {}", s0);
+            covered = e0;
+        }
+        assert_eq!(covered, block.content.chars().map(|c| c.len_utf16()).sum::<usize>());
+        Ok(())
+    }
+
+    /// 标签色随段下发（ADR-0050 D11）：chip 要自证身份就得拿到调色板 token 名，而渲染器
+    /// 是纯函数（拿不到 store）⇒ 必须由后端在同一趟 tag 查找里带上。
+    #[test]
+    fn test_tag_segment_carries_palette_color() -> Result<(), Box<dyn Error>> {
+        let mut adapter = SQLiteAdapter::open_in_memory()?;
+        let page = PageService::create(&mut adapter, "", "ColorPage", None, None, None, None, None)?;
+        let block = BlockService::create(
+            &mut adapter, &page.id, None,
+            "a #colored and b #plain end",
+            "{}", "text", None,
+        true)?;
+
+        // 只给其中一个上色 —— 另一个留空以验证「无色」不会被误填成默认色
+        let colored = TagService::get_by_title(&mut adapter, "colored")?
+            .ok_or("`colored` should be auto-created by content linkage")?;
+        TagService::update(&mut adapter, &colored.id, TagUpdateOptions {
+            color: Some("--tag-color-3"),
+            ..Default::default()
+        })?;
+
+        let segments = build_segments_for_block(&mut adapter, &block)?;
+        let mut seen: Vec<(String, String)> = segments.iter()
+            .filter_map(|s| match s {
+                RenderSegment::Tag { title, color, .. } => Some((title.clone(), color.clone())),
+                _ => None,
+            })
+            .collect();
+        seen.sort();
+
+        assert_eq!(
+            seen,
+            vec![
+                ("colored".to_string(), "--tag-color-3".to_string()),
+                ("plain".to_string(), String::new()),
+            ]
+        );
         Ok(())
     }
 }

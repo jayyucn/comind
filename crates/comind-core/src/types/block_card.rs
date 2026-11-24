@@ -21,6 +21,9 @@ pub struct BlockCard {
     pub content_preview: String,              // 去掉 {{schedule:…}}/{{deadline:…}} 标记后的摘要
     pub properties: HashMap<String, Value>,   // 完整属性映射
     pub date_refs: Vec<DateRefLite>,
+    /// content 派生的 tag id 缓存（ADR-0049/0050：tag 聚合页过滤与 TaskHub 按 tags 过滤共用）
+    #[serde(default)]
+    pub tags: Vec<String>,
     pub updated_at: i64,
     pub created_at: i64,
 }

@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { Check, Clock, Trash2 } from 'lucide-vue-next'
 import { onMounted, ref } from 'vue'
+
 import { useNavigateToPage } from '../composables/useNavigateToPage'
 import { useNotificationStore } from '../stores/notification'
 import type { Notification } from '../wasm/types'
-import Icon from './Icons/Icon.vue'
 import BasePopover from './common/BasePopover.vue'
+import Icon from './Icons/Icon.vue'
 
 const notificationStore = useNotificationStore()
 const navigateToPage = useNavigateToPage()
@@ -272,28 +273,28 @@ onMounted(() => {
   cursor: pointer;
   border-radius: var(--radius-xs);
   padding: 0;
-  transition: background 0.12s;
+  transition: background var(--dur-fast) var(--ease-out);
 }
 
-.notification-bell-btn:hover {
-  transform: scale(1.1);
-}
 
 .notification-badge {
   position: absolute;
   top: 0;
-  right: 0px;
-  width: var(--space-3);
-  height: var(--space-3);
+  right: 0;
+  min-width: var(--space-4);
+  height: var(--space-4);
   padding: 0 4px;
-  background: var(--accent);
+  background: var(--tag-color-2);
   color: white;
   font-size: var(--text-xs);
   font-weight: var(--font-semibold);
+  line-height: 1;
   border-radius: var(--radius-sm);
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  white-space: nowrap;
+  box-sizing: border-box;
 }
 
 .notification-dropdown {
@@ -338,7 +339,7 @@ onMounted(() => {
     font-size: var(--text-xs);
     border-radius: 4px;
     cursor: pointer;
-    transition: opacity 0.12s;
+    transition: opacity var(--dur-fast) var(--ease-out);
   }
 }
 
@@ -382,7 +383,7 @@ onMounted(() => {
   gap: 10px;
   padding: 10px 16px;
   cursor: pointer;
-  transition: background 0.12s;
+  transition: background var(--dur-fast) var(--ease-out);
 }
 
 .notification-item:hover {
@@ -432,7 +433,7 @@ onMounted(() => {
   align-items: center;
   gap: 4px;
   opacity: 0;
-  transition: opacity 0.12s;
+  transition: opacity var(--dur-fast) var(--ease-out);
 }
 
 .notification-item:hover .notification-actions {
@@ -451,7 +452,7 @@ onMounted(() => {
   cursor: pointer;
   border-radius: 4px;
   padding: 0;
-  transition: all 0.12s;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
 }
 
 .action-btn:hover {
@@ -503,7 +504,7 @@ onMounted(() => {
   text-align: left;
   cursor: pointer;
   border-radius: 4px;
-  transition: background 0.12s;
+  transition: background var(--dur-fast) var(--ease-out);
 }
 
 .snooze-option:hover {

@@ -11,28 +11,47 @@
  * - `{ kind: 'block', ids, phase: 'committed' }`     块选区已固化（对外视图 anchorIds）
  * - `{ kind: 'text', range }`                        跨块文本选区（对外视图 textRange）
  *
- * 手势临时量（dragStartBlockId / isDragging / trackingFromProperty / textDrag*）不参与
+ * 手势临时量（dragStartBlockId / isDragging / trackingFromFieldValue / textDrag*）不参与
  * 选区互斥，单独保存；isDragging 由外部消费者（BlockList）在 mousemove 中设置。
  */
 import { computed, ref } from 'vue'
-import { useBlockStore } from '../stores/blocks'
-import { usePropertyStore } from '../stores/property'
-import { useBlockRelationshipCleanup } from './useBlockRelationshipCleanup'
-import { sortByDocumentOrderIds } from '../utils/block-helpers'
-import type { Block } from '../types/block'
-import type { Property, PropertyType } from '../types/property'
 
 import { COMIND_BLOCK_MIME, serializeBlocks, writeClipboardPayload } from '../services/block-clipboard'
+import { useBlockStore } from '../stores/blocks'
+import { useFieldValueStore } from '../stores/fieldValue'
+import type { Block } from '../types/block'
+import type { FieldValue } from '../types/field-value'
+import { sortByDocumentOrderIds } from '../utils/block-helpers'
+import { decodeFieldValueData } from '../utils/field-value-codec'
+import { useBlockRelationshipCleanup } from './useBlockRelationshipCleanup'
 // 内部剪贴板格式 MIME 单一来源（ADR-0025 D5）；此处仅转发供既有导入方使用
 export { COMIND_BLOCK_MIME }
-import { textRangeToText } from '../services/text-range'
+import { atomicUnitSpans } from '../services/selection-geometry'
+import type { CellRange, CellRef } from '../services/table-cell-range'
+import {
+  cellRangeHasContent,
+  cellRangeToTsv,
+  clearCellRange,
+  isWithinTable,
+  normalizeCellRange,
+} from '../services/table-cell-range'
+import { readTableData } from '../services/table-model'
 import type { BlockOffset, TextRange } from '../services/text-range'
+import { snapTextRangeToUnits, textRangeToText } from '../services/text-range'
 
-/** 选区状态（判别联合）：块选区与文本选区互斥由此结构保证 */
+/** 格选区：表格内两个格坐标张成的矩形（行列都含端点） */
+export interface CellSelection {
+  blockId: string
+  anchor: CellRef
+  head: CellRef
+}
+
+/** 选区状态（判别联合）：块选区、文本选区与格选区三者互斥，由结构保证 */
 type SelectionState =
   | { kind: 'none' }
   | { kind: 'block'; ids: Set<string>; phase: 'tracking' | 'committed' }
   | { kind: 'text'; range: TextRange }
+  | { kind: 'cells'; sel: CellSelection }
 
 /**
  * 块 id 视图：只读部分保持 Set 习惯（size / has / 迭代），写方法只留消费方实际用到的
@@ -57,8 +76,8 @@ export function useCrossBlockSelection() {
 
   const dragStartBlockId = ref<string | null>(null)
   const isDragging = ref(false)
-  /** 本次追踪是否起始于属性区（ADR-0035 D6）：属性区起点仅做块选区、不激活编辑器 */
-  const trackingFromProperty = ref(false)
+  /** 本次追踪是否起始于字段区（ADR-0035 D6）：字段区起点仅做块选区、不激活编辑器 */
+  const trackingFromFieldValue = ref(false)
   /** 文本选区拖拽状态（ADR-0035 D1）：内容区起点 */
   const textDragAnchor = ref<BlockOffset | null>(null)
   /** 文本拖拽起始屏幕坐标（用于与单击区分的最小位移阈值） */
@@ -102,6 +121,11 @@ export function useCrossBlockSelection() {
     const s = state.value
     return s.kind === 'text' ? s.range : null
   })
+  /** 格选区（只读视图）：表格内拖拽出格时由 TableBlock 写入 */
+  const cellSelection = computed<CellSelection | null>(() => {
+    const s = state.value
+    return s.kind === 'cells' ? s.sel : null
+  })
 
   function clearSelection() {
     transition({ kind: 'none' })
@@ -110,17 +134,17 @@ export function useCrossBlockSelection() {
   function clearTracking() {
     dragStartBlockId.value = null
     isDragging.value = false
-    trackingFromProperty.value = false
+    trackingFromFieldValue.value = false
     // 仅中断「拖拽中」的块选区；已固化选区与文本选区不受清追踪影响
     const s = state.value
     if (s.kind === 'block' && s.phase === 'tracking') transition({ kind: 'none' })
   }
 
-  function startTracking(blockId: string, fromProperty = false) {
+  function startTracking(blockId: string, fromFieldValue = false) {
     // 块选区手势开始：清掉已固化选区与文本选区（此刻尚未产生选区，故归一为「无选区」）
     transition({ kind: 'block', ids: new Set(), phase: 'tracking' })
     dragStartBlockId.value = blockId
-    trackingFromProperty.value = fromProperty
+    trackingFromFieldValue.value = fromFieldValue
   }
 
   function computeRange(targetBlockId: string, pageId: string): Set<string> {
@@ -185,7 +209,7 @@ export function useCrossBlockSelection() {
     transition({ kind: 'block', ids: new Set(idsOf('tracking')), phase: 'committed' })
     isDragging.value = false
     dragStartBlockId.value = null
-    trackingFromProperty.value = false
+    trackingFromFieldValue.value = false
   }
 
   function toggleBlock(blockId: string, pageId: string) {
@@ -220,7 +244,7 @@ export function useCrossBlockSelection() {
   }
 
   /**
-   * Ctrl+A 全选页面所有 Block（含后代子树），固化到块选区。
+   * Ctrl+Shift+A 全选页面所有 Block（含后代子树），固化到块选区。
    * excludeRootId：页面根 Block 不参与渲染/选区（与 buildTree 一致）。
    */
   function selectAll(pageId: string, excludeRootId: string | null = null) {
@@ -255,6 +279,17 @@ export function useCrossBlockSelection() {
 
   // ── 文本选区（ADR-0035 D1/D3）──
 
+  /**
+   * 文本选区端点吸附出内联原子单元（`#tag` chip / `@date` / `[[wiki]]`）。
+   *
+   * 唯一的选区**制造**入口（拖拽 + shift 延伸都经 `updateTextDrag`）都过这里，
+   * 故下游三个消费方——高亮、复制、删除——拿到的永远是「单元整体入选」的选区。
+   * 删除侧另有兜底调用（`deleteTextSelection`），防止将来出现绕过本处的制造路径。
+   */
+  function snapTextRange(range: TextRange): TextRange {
+    return snapTextRangeToUnits(blockStore.blocks, range, atomicUnitSpans)
+  }
+
   /** 内容区 mousedown 开始文本拖拽：记录锚点，清旧选区（文本+块） */
   function startTextTracking(anchor: BlockOffset, startPoint: { x: number; y: number }) {
     // 拖拽尚未产生选区：整体替换为「无选区」即清掉块选区与旧文本选区（互斥）
@@ -268,7 +303,9 @@ export function useCrossBlockSelection() {
   function updateTextDrag(head: BlockOffset) {
     if (!textDragAnchor.value) return
     isTextDragging.value = true
-    transition({ kind: 'text', range: { anchor: textDragAnchor.value, head } })
+    // 端点落在 chip 内部 → 外扩成整 chip（原子语义）。否则删除会按字符偏移切出
+    // 半截 chip（`#任`）——渲染态拖拽时编辑器已卸载，PM 侧闸门拦不到这条路径。
+    transition({ kind: 'text', range: snapTextRange({ anchor: textDragAnchor.value, head }) })
   }
 
   /**
@@ -320,12 +357,17 @@ export function useCrossBlockSelection() {
   /** 复制文本选区：内容切片拼接（委托纯模块 textRangeToText） */
   async function copyTextToClipboard(pageId: string) {
     if (!textRange.value) return
-    const text = textRangeToText(blockStore.getBlocksByPage(pageId), textRange.value)
+    const text = textRangeToText(blockStore.getBlocksByPage(pageId), snapTextRange(textRange.value))
     if (!text) return
+    await writePlainText(text)
+  }
+
+  /** 纯文本落剪贴板：navigator.clipboard 优先，失败降级 execCommand（Tauri/无权限环境） */
+  async function writePlainText(text: string) {
     try {
       await navigator.clipboard.writeText(text)
+      return
     } catch {
-      // 降级：execCommand 兜底
       const textarea = document.createElement('textarea')
       textarea.value = text
       textarea.style.position = 'fixed'
@@ -335,6 +377,70 @@ export function useCrossBlockSelection() {
       document.execCommand('copy')
       document.body.removeChild(textarea)
     }
+  }
+
+  // ── 格选区（表格）────────────────────────────────────────────────
+  // 表格的字符偏移跨格没有语义，因此表格内拖拽不走文本选区：
+  // 光标留在起点格内 = 该格内的原生文本选择；光标出格 = 整格矩形选区。
+  // 这里只持有「哪几格被选中」，几何与手势归 TableBlock（只有它知道格坐标）。
+
+  /** 写入格选区（手势在 TableBlock，本函数是唯一写入口） */
+  function setCellSelection(sel: CellSelection) {
+    transition({ kind: 'cells', sel })
+  }
+
+  function clearCellSelection() {
+    if (state.value.kind === 'cells') transition({ kind: 'none' })
+  }
+
+  /** 取格选区对应的归一化矩形；块缺失或坐标越界时返回 null（DOM 缓存的陈旧坐标） */
+  function resolveCellRange(pageId: string): { blockId: string; range: CellRange; rows: string[][] } | null {
+    const sel = cellSelection.value
+    if (!sel) return null
+    const block = blockStore.getBlock(sel.blockId)
+    if (!block || block.pageId !== pageId) return null
+    const data = readTableData(block.format)
+    const range = normalizeCellRange(sel.anchor, sel.head)
+    if (!isWithinTable(data, range)) return null
+    return { blockId: block.id, range, rows: data.rows }
+  }
+
+  /** 复制格选区为 TSV（Excel / 表格软件可直接粘贴） */
+  async function copyCellSelectionToClipboard(pageId: string) {
+    const sel = cellSelection.value
+    if (!sel) return
+    const block = blockStore.getBlock(sel.blockId)
+    if (!block || block.pageId !== pageId) return
+    const data = readTableData(block.format)
+    const range = normalizeCellRange(sel.anchor, sel.head)
+    if (!isWithinTable(data, range)) return
+    const tsv = cellRangeToTsv(data, range)
+    if (!tsv) return
+    await writePlainText(tsv)
+  }
+
+  /**
+   * 清空格选区内容（表结构不变）。
+   *
+   * 与文本/块删除同一口径：先判「有没有可删的」，全空时不写库——避免制造一条
+   * 无内容变更的保存（会刷新 updatedAt 并触发落库）。
+   */
+  async function deleteCellSelection(pageId: string): Promise<boolean> {
+    const target = resolveCellRange(pageId)
+    if (!target) {
+      clearCellSelection()
+      return false
+    }
+    const block = blockStore.getBlock(target.blockId)
+    if (!block) return false
+    const data = readTableData(block.format)
+    if (!cellRangeHasContent(data, target.range)) {
+      clearCellSelection()
+      return false
+    }
+    await blockStore.updateBlockFormat(block.id, { table: clearCellRange(data, target.range) })
+    clearCellSelection()
+    return true
   }
 
   /**
@@ -352,7 +458,8 @@ export function useCrossBlockSelection() {
     const range = textRange.value
     if (!range) return null
     const blocksBeforeDelete = [...blockStore.blocks]
-    const plan = blockStore.planTextRangeDeletion(pageId, range)
+    // 兜底吸附：即使选区由将来的新路径绕过 updateTextDrag 制造，删除也不会切出半截 chip。
+    const plan = blockStore.planTextRangeDeletion(pageId, snapTextRange(range))
     if (!plan) return null
     await relationshipCleanup.cleanupAfterDelete(pageId, plan.middleBlockIds, blocksBeforeDelete, {
       removedBlockIds: plan.mergedAwayBlockId ? [plan.mergedAwayBlockId] : undefined,
@@ -369,12 +476,20 @@ export function useCrossBlockSelection() {
    *
    * 选区侧只负责「块选区 → 文档序顶层根」；载荷序列化（完整子树 + properties 随行）
    * 与落盘（自定义 MIME + text/plain 兜底降级链）委托 block-clipboard 模块。
+   *
+   * `op` 由调用方按按键传：`Ctrl+C` → `'copy'`，`Ctrl+X` → `'cut'`（D4b：剪切才可搬移）。
+   * 两个出口写的是同一份载荷，唯一的差别就是这个意图标记 —— 少了它，「复制后源块被删」
+   * 会被粘贴侧误判成剪切而把原文搬走。
    */
-  async function copyToClipboard() {
-    const payload = serializeBlocks(resolveClipRoots(), {
-      resolveChildren: block => blockStore.getChildren(block.id),
-      resolveProperties: blockPropsRecord,
-    })
+  async function copyToClipboard(op: 'cut' | 'copy' = 'copy') {
+    const payload = serializeBlocks(
+      resolveClipRoots(),
+      {
+        resolveChildren: block => blockStore.getChildren(block.id),
+        resolveProperties: blockPropsRecord,
+      },
+      op,
+    )
     await writeClipboardPayload(payload)
   }
 
@@ -398,31 +513,20 @@ export function useCrossBlockSelection() {
       .filter((b): b is Block => !!b && !isUnderAnchor(b))
   }
 
-  /** 属性随行（D11）：propertyStore 实时缓存优先，回退页面载入时的 on-block 快照 */
+  /** 字段值随行（D11）：fieldValueStore 实时缓存优先，回退页面载入时的 on-block 快照 */
   function blockPropsRecord(block: Block): Record<string, { value: string; type: string }> | null {
-    const propertyStore = usePropertyStore()
-    let props: Property[] = propertyStore.getBlockProperties(block.id)
+    const fieldValueStore = useFieldValueStore()
+    let props: FieldValue[] = fieldValueStore.getBlockFieldValues(block.id)
     if (props.length === 0 && block.properties && block.properties.length > 0) {
-      props = block.properties.map(p => ({
-        id: p.id,
-        blockId: p.block_id,
-        key: p.key,
-        value: p.value,
-        type: p.type as PropertyType,
-        sortOrder: p.sort_order,
-        isHidden: p.is_hidden === 1,
-        isDeleted: p.is_deleted === 1,
-        schemaVersion: p.schema_version,
-        createdAt: p.created_at,
-        updatedAt: p.updated_at,
-      }))
+      props = block.properties
     }
     if (props.length === 0) return null
     const record: Record<string, { value: string; type: string }> = {}
     for (const p of props) {
+      const value = decodeFieldValueData(p.value_json, p.value_type)
       record[p.key] = {
-        value: typeof p.value === 'string' ? p.value : JSON.stringify(p.value),
-        type: p.type,
+        value: typeof value === 'string' ? value : JSON.stringify(value),
+        type: p.value_type,
       }
     }
     return record
@@ -455,7 +559,7 @@ export function useCrossBlockSelection() {
   return {
     dragStartBlockId,
     isDragging,
-    trackingFromProperty,
+    trackingFromFieldValue,
     selectedIds,
     anchorIds,
     textDragAnchor,
@@ -480,7 +584,12 @@ export function useCrossBlockSelection() {
     clearTextTracking,
     clearTextSelection,
     copyTextToClipboard,
-    deleteTextSelection
+    deleteTextSelection,
+    cellSelection,
+    setCellSelection,
+    clearCellSelection,
+    copyCellSelectionToClipboard,
+    deleteCellSelection
   }
 }
 

@@ -20,23 +20,23 @@ import Text from '@tiptap/extension-text'
 // ── 共享可变状态（供 handleConfirm 读写 editor / block store / client） ──────
 const hoisted = vi.hoisted(() => {
   const propsByBlock = new Map<string, any[]>()
-  const getProperties = vi.fn((blockId: string) =>
+  const getFieldValues = vi.fn((blockId: string) =>
     Promise.resolve(propsByBlock.get(blockId) ?? [])
   )
-  const setProperty = vi.fn((blockId: string, key: string, valueStr: string, type: string) => {
+  const setFieldValue = vi.fn((blockId: string, key: string, valueStr: string, type: string) => {
     const id = `${blockId}:${key}`
     const prop = {
       id,
       block_id: blockId,
+      field_definition_id: `fd-${key}`,
       key,
-      value: valueStr,
-      type,
-      sort_order: 0,
-      is_hidden: 0,
-      is_deleted: 0,
-      schema_version: 0,
+      value_json: valueStr,
+      value_type: type,
+      seq: 0,
       created_at: Date.now(),
       updated_at: Date.now(),
+      version: 0,
+      deleted_at: null,
     }
     const arr = propsByBlock.get(blockId) ?? []
     const idx = arr.findIndex((p) => p.key === key)
@@ -45,9 +45,18 @@ const hoisted = vi.hoisted(() => {
     propsByBlock.set(blockId, arr)
     return Promise.resolve(prop)
   })
-  const deleteProperty = vi.fn(() => Promise.resolve())
-  const client = { getProperties, setProperty, deleteProperty }
-  return { propsByBlock, client, getProperties, setProperty, deleteProperty }
+  const deleteFieldValue = vi.fn(() => Promise.resolve())
+  const client = {
+    getFieldValues,
+    setFieldValue,
+    deleteFieldValue,
+    // ensureTodo → ensureTaskTagMounted → tagsStore.ensureLoaded 需要的三个拉取；
+    // 返回空树 → systemTaskTagId() 为空 → 走 degraded 直写，聚焦 pad 行为本身
+    getTagTree: vi.fn(() => Promise.resolve([])),
+    getFieldDefinitions: vi.fn(() => Promise.resolve([])),
+    getDeletedPresetFieldDefinitions: vi.fn(() => Promise.resolve([])),
+  }
+  return { propsByBlock, client, getFieldValues, setFieldValue, deleteFieldValue }
 })
 
 const editorState: any = {
@@ -67,6 +76,10 @@ const blockState: any = {
     const b = blockState.blocks.find((x: any) => x.id === blockId)
     if (b) b.content = content
   }),
+  // ensureTaskTagMounted 探测系统任务 tag：返回空 → degraded 直写，不挂载 #任务
+  systemTaskTagId: vi.fn(() => null),
+  getBlock: vi.fn(() => undefined),
+  flushSave: vi.fn(() => Promise.resolve()),
 }
 
 vi.mock('../wasm/client', () => ({
@@ -156,7 +169,7 @@ const NEW_SCHEDULE = { kind: 'schedule' as const, iso: '2026-07-20', recurrence:
 describe('handleConfirm — content 模式两侧补空格', () => {
   it('行中替换（两侧已有空格）：不重复补', async () => {
     const panel = useDateTimePickerPanel()
-    blockState.blocks = [{ id: 'b1', content: '任务 @2026-07-15 ⏰ 完成', type: 'bullet' }]
+    blockState.blocks = [{ id: 'b1', content: '任务 @2026-07-15 ⏰ 完成', type: 'text' }]
     const { from, to } = contentRange('任务 @2026-07-15 ⏰ 完成', '@2026-07-15 ⏰')
     editorState.dateRefEditor = {
       visible: true, blockId: 'b1', from, to, source: 'content',
@@ -168,7 +181,7 @@ describe('handleConfirm — content 模式两侧补空格', () => {
 
   it('行尾编辑（原无尾随空格）：左侧已有空格不动 + 补尾随空格', async () => {
     const panel = useDateTimePickerPanel()
-    blockState.blocks = [{ id: 'b1', content: 'only @2026-07-15 📅', type: 'bullet' }]
+    blockState.blocks = [{ id: 'b1', content: 'only @2026-07-15 📅', type: 'text' }]
     const { from, to } = contentRange('only @2026-07-15 📅', '@2026-07-15 📅')
     editorState.dateRefEditor = {
       visible: true, blockId: 'b1', from, to, source: 'content',
@@ -180,7 +193,7 @@ describe('handleConfirm — content 模式两侧补空格', () => {
 
   it('文字后插入（行尾）：前后都补', async () => {
     const panel = useDateTimePickerPanel()
-    blockState.blocks = [{ id: 'b1', content: '买牛奶', type: 'bullet' }]
+    blockState.blocks = [{ id: 'b1', content: '买牛奶', type: 'text' }]
     editorState.dateRefEditor = {
       visible: true, blockId: 'b1', from: 3, to: 3, source: 'content',
       kind: 'schedule', iso: '2026-07-20', recurrence: 'none', position: { x: 0, y: 0 },
@@ -191,7 +204,7 @@ describe('handleConfirm — content 模式两侧补空格', () => {
 
   it('块首插入（无左邻）：仅补右', async () => {
     const panel = useDateTimePickerPanel()
-    blockState.blocks = [{ id: 'b1', content: 'x', type: 'bullet' }]
+    blockState.blocks = [{ id: 'b1', content: 'x', type: 'text' }]
     editorState.dateRefEditor = {
       visible: true, blockId: 'b1', from: 0, to: 0, source: 'content',
       kind: 'schedule', iso: '2026-07-20', recurrence: 'none', position: { x: 0, y: 0 },
@@ -202,7 +215,7 @@ describe('handleConfirm — content 模式两侧补空格', () => {
 
   it('换行后行首编辑（左邻为 \\n）：补左空格，防单行渲染粘连', async () => {
     const panel = useDateTimePickerPanel()
-    blockState.blocks = [{ id: 'b1', content: '交报告\n@2026-07-15 📅', type: 'bullet' }]
+    blockState.blocks = [{ id: 'b1', content: '交报告\n@2026-07-15 📅', type: 'text' }]
     const { from, to } = contentRange('交报告\n@2026-07-15 📅', '@2026-07-15 📅')
     editorState.dateRefEditor = {
       visible: true, blockId: 'b1', from, to, source: 'content',

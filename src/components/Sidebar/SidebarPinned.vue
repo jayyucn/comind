@@ -1,0 +1,152 @@
+<script setup lang="ts">
+import { ChevronDown,ChevronUp } from 'lucide-vue-next'
+import { ref } from 'vue'
+import { useRoute,useRouter } from 'vue-router'
+
+import { usePinned } from '../../composables/usePinned'
+import { useEditorStore } from '../../stores/editor'
+import { usePageStore } from '../../stores/pages'
+import PageItem from './PageItem.vue'
+import PageItemMenu from './PageItemMenu.vue'
+
+const router = useRouter()
+const route = useRoute()
+const pageStore = usePageStore()
+const { pinnedPages, isExpanded, toggleExpand } = usePinned()
+
+const renamingPageId = ref<string | null>(null)
+
+function handleNavigate(pageId: string) {
+  if (renamingPageId.value === pageId) return
+  const page = pageStore.getPage(pageId)
+  if (page?.type === 'ideas') {
+    router.push(`/ideas/${page.title}`)
+  } else {
+    router.push(`/page/${pageId}`)
+  }
+}
+
+function handleStartRename(pageId: string) {
+  const page = pageStore.getPage(pageId)
+  if (page?.type === 'ideas') return
+  renamingPageId.value = pageId
+}
+
+function handleRename(pageId: string, newTitle: string) {
+  renamingPageId.value = null
+  // 页名约束（建链准入）：改出来的名字若不能写进 [[ ]]，store 会拒绝并给出替换建议，
+  // 这里只负责把它说出来 —— 静默失败会让用户以为改名成功了。
+  void pageStore.renamePage(pageId, newTitle).then((result) => {
+    if (result?.invalid) useEditorStore().showToast(result.invalid, 'error')
+  })
+}
+
+function handleCancelRename() {
+  renamingPageId.value = null
+}
+</script>
+
+<template>
+  <div class="pinned-section">
+    <div
+      class="section-header"
+      @click="toggleExpand"
+    >
+      <span class="section-title">置顶</span>
+      <span class="expand-icon">
+        <ChevronUp
+          v-if="isExpanded"
+          :size="12"
+          :stroke-width="2"
+        />
+        <ChevronDown
+          v-else
+          :size="12"
+          :stroke-width="2"
+        />
+      </span>
+    </div>
+
+    <div
+      v-show="isExpanded"
+      class="section-content"
+    >
+      <PageItem
+        v-for="page in pinnedPages"
+        :key="page.id"
+        :page="page"
+        :active="(route.name === 'page' || route.name === 'ideas-page') && pageStore.currentPageId === page.id"
+        :is-renaming="renamingPageId === page.id"
+        @click="handleNavigate(page.id)"
+        @rename="(newTitle) => handleRename(page.id, newTitle)"
+        @cancel-rename="handleCancelRename"
+      >
+        <template #suffix>
+          <PageItemMenu
+            :page="page"
+            @rename="handleStartRename(page.id)"
+          />
+        </template>
+      </PageItem>
+
+      <div
+        v-if="pinnedPages.length === 0"
+        class="empty-text"
+      >
+        暂无置顶页面
+      </div>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+/* 置顶区块位于导航区下方、最近之上：随内容取高，条目过多时自身收缩并内部滚动，
+   不挤占下方「最近」列表（后者 flex-shrink: 0）。 */
+.pinned-section {
+  flex: 0 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 0;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  cursor: pointer;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.section-header:hover .section-title {
+  color: var(--text-secondary);
+}
+
+.section-title {
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  color: var(--text-tertiary);
+  line-height: var(--leading-snug);
+  transition: color var(--dur-fast) var(--ease-out);
+}
+
+.expand-icon {
+  display: flex;
+  align-items: center;
+  color: var(--text-tertiary);
+}
+
+.section-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 4px;
+}
+
+.empty-text {
+  padding: 6px 10px;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+</style>

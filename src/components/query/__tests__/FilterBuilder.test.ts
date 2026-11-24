@@ -17,7 +17,7 @@ interface Task {
 function makeRegistry(): Registry {
   const reg = createRegistry()
   const fields: FieldDescriptor<Task>[] = [
-    { key: 'title', label: '标题', type: 'text', get: (i) => i.title },
+    { key: 'title', label: '标题', type: 'string', get: (i) => i.title },
     { key: 'count', label: '数量', type: 'number', get: (i) => i.count },
     { key: 'score', label: '分值', type: 'number', get: (i) => i.count },
     { key: 'due', label: '截止', type: 'date', get: (i) => i.due, dateBucket: 'day' },

@@ -67,6 +67,28 @@ describe('useEditorStore', () => {
     })
   })
 
+  describe('pendingSelectionRange 状态（撤销/重做恢复选区）', () => {
+    test('初始为 null', () => {
+      expect(useEditorStore().pendingSelectionRange).toBeNull()
+    })
+
+    test('set / consume 往返，消费后清空', () => {
+      const store = useEditorStore()
+      store.setSelectionRange({ from: 4, to: 5 })
+      expect(store.pendingSelectionRange).toEqual({ from: 4, to: 5 })
+      expect(store.consumeSelectionRange()).toEqual({ from: 4, to: 5 })
+      expect(store.pendingSelectionRange).toBeNull()
+      expect(store.consumeSelectionRange()).toBeNull()
+    })
+
+    test('setSelectionRange(null) 清空（撤销前无选区的一次落空不能被上次残留污染）', () => {
+      const store = useEditorStore()
+      store.setSelectionRange({ from: 2, to: 3 })
+      store.setSelectionRange(null)
+      expect(store.consumeSelectionRange()).toBeNull()
+    })
+  })
+
   describe('activeEditor 状态', () => {
     test('初始 activeEditor 为 null', () => {
       const store = useEditorStore()
@@ -124,16 +146,16 @@ describe('useEditorStore', () => {
     })
   })
 
-  describe('属性编辑器', () => {
-    test('初始 propertyEditor 为 null', () => {
+  describe('字段值编辑器', () => {
+    test('初始 fieldValueEditor 为 null', () => {
       const store = useEditorStore()
-      expect(store.propertyEditor).toBeNull()
+      expect(store.fieldValueEditor).toBeNull()
     })
 
-    test('showPropertyEditor 显示属性编辑器', () => {
+    test('showFieldValueEditor 显示字段值编辑器', () => {
       const store = useEditorStore()
-      store.showPropertyEditor('block-1', 'priority')
-      expect(store.propertyEditor).toEqual({
+      store.showFieldValueEditor('block-1', 'priority')
+      expect(store.fieldValueEditor).toEqual({
         visible: true,
         blockId: 'block-1',
         initialKey: 'priority',
@@ -141,10 +163,10 @@ describe('useEditorStore', () => {
       })
     })
 
-    test('showPropertyEditor 无初始 key', () => {
+    test('showFieldValueEditor 无初始 key', () => {
       const store = useEditorStore()
-      store.showPropertyEditor('block-1')
-      expect(store.propertyEditor).toEqual({
+      store.showFieldValueEditor('block-1')
+      expect(store.fieldValueEditor).toEqual({
         visible: true,
         blockId: 'block-1',
         initialKey: null,
@@ -152,17 +174,17 @@ describe('useEditorStore', () => {
       })
     })
 
-    test('showPropertyEditor 记录浮层锚点', () => {
+    test('showFieldValueEditor 记录浮层锚点', () => {
       const store = useEditorStore()
-      store.showPropertyEditor('block-1', 'tags', { x: 120, y: 48 })
-      expect(store.propertyEditor?.position).toEqual({ x: 120, y: 48 })
+      store.showFieldValueEditor('block-1', 'tags', { x: 120, y: 48 })
+      expect(store.fieldValueEditor?.position).toEqual({ x: 120, y: 48 })
     })
 
-    test('hidePropertyEditor 隐藏属性编辑器', () => {
+    test('hideFieldValueEditor 隐藏字段值编辑器', () => {
       const store = useEditorStore()
-      store.showPropertyEditor('block-1')
-      store.hidePropertyEditor()
-      expect(store.propertyEditor?.visible).toBe(false)
+      store.showFieldValueEditor('block-1')
+      store.hideFieldValueEditor()
+      expect(store.fieldValueEditor?.visible).toBe(false)
     })
   })
 
@@ -230,17 +252,17 @@ describe('useEditorStore', () => {
     })
   })
 
-  describe('快捷属性编辑器', () => {
-    test('初始 quickPropertyEditor 为 null', () => {
+  describe('快捷字段值编辑器', () => {
+    test('初始 quickFieldValueEditor 为 null', () => {
       const store = useEditorStore()
-      expect(store.quickPropertyEditor).toBeNull()
+      expect(store.quickFieldValueEditor).toBeNull()
     })
 
-    test('showQuickPropertyEditor 显示快捷属性编辑器', () => {
+    test('showQuickFieldValueEditor 显示快捷字段值编辑器', () => {
       const store = useEditorStore()
       const position = { x: 150, y: 250 }
-      store.showQuickPropertyEditor('block-1', 'tags', position)
-      expect(store.quickPropertyEditor).toEqual({
+      store.showQuickFieldValueEditor('block-1', 'tags', position)
+      expect(store.quickFieldValueEditor).toEqual({
         visible: true,
         blockId: 'block-1',
         key: 'tags',
@@ -248,10 +270,10 @@ describe('useEditorStore', () => {
       })
     })
 
-    test('showQuickPropertyEditor 无位置参数', () => {
+    test('showQuickFieldValueEditor 无位置参数', () => {
       const store = useEditorStore()
-      store.showQuickPropertyEditor('block-1', 'status')
-      expect(store.quickPropertyEditor).toEqual({
+      store.showQuickFieldValueEditor('block-1', 'status')
+      expect(store.quickFieldValueEditor).toEqual({
         visible: true,
         blockId: 'block-1',
         key: 'status',
@@ -259,11 +281,11 @@ describe('useEditorStore', () => {
       })
     })
 
-    test('hideQuickPropertyEditor 隐藏快捷属性编辑器', () => {
+    test('hideQuickFieldValueEditor 隐藏快捷字段值编辑器', () => {
       const store = useEditorStore()
-      store.showQuickPropertyEditor('block-1', 'tags')
-      store.hideQuickPropertyEditor()
-      expect(store.quickPropertyEditor?.visible).toBe(false)
+      store.showQuickFieldValueEditor('block-1', 'tags')
+      store.hideQuickFieldValueEditor()
+      expect(store.quickFieldValueEditor?.visible).toBe(false)
     })
   })
 

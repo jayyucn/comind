@@ -22,7 +22,7 @@ function childrenCountField(): FieldDescriptor<Row> {
   return { key: 'childrenCount', label: '子页面数', type: 'number', get: (r) => r.childrenCount }
 }
 function nameField(): FieldDescriptor<Row> {
-  return { key: 'name', label: '名称', type: 'text', get: (r) => r.name }
+  return { key: 'name', label: '名称', type: 'string', get: (r) => r.name }
 }
 function statusField(): FieldDescriptor<Row> {
   return {

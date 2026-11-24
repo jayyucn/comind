@@ -8,11 +8,11 @@ const UNSUPPORTED_TYPES = new Set(['query', 'embed', 'code', 'image'])
  * 将 Block 树（以 rootBlockId 为根）序列化为 TemplateBlock 树。
  *
  * 行为契约：
- * - bullet Block → { type: 'bullet', content }
- * - bullet Block + format.type='heading' → { type: 'heading', content, headingLevel }
+ * - text Block → { type: 'text', content }
+ * - text Block + format.type='heading' → { type: 'heading', content, headingLevel }
  * - property Block（content 含 `::`）→ { type: 'property', propertyKey, content }
- * - 不支持的类型（query/embed/code/image）→ 降级为 bullet，并 console.warn
- * - property 行 content 缺 `::` → 降级为 bullet
+ * - 不支持的类型（query/embed/code/image）→ 降级为 text，并 console.warn
+ * - property 行 content 缺 `::` → 降级为 text
  * - 孤儿 Block（parentId 指向不存在的 ID）→ 跳过
  */
 export function serializeBlockTree(blocks: Block[], rootBlockId: string): TemplateBlock[] {
@@ -34,7 +34,7 @@ export function serializeBlockTree(blocks: Block[], rootBlockId: string): Templa
   const serialize = (block: Block): TemplateBlock => {
     if (UNSUPPORTED_TYPES.has(block.type)) {
       console.warn(`[serializeBlockTree] Block type "${block.type}" not supported in templates, downgrading to bullet`)
-      return { type: 'bullet', content: block.content }
+      return { type: 'text', content: block.content }
     }
 
     if (block.format?.type === 'heading') {
@@ -51,7 +51,7 @@ export function serializeBlockTree(blocks: Block[], rootBlockId: string): Templa
     if (block.type === 'property') {
       const sepIdx = block.content.indexOf('::')
       if (sepIdx === -1) {
-        return { type: 'bullet', content: block.content }
+        return { type: 'text', content: block.content }
       }
       return {
         type: 'property',
@@ -60,16 +60,23 @@ export function serializeBlockTree(blocks: Block[], rootBlockId: string): Templa
       }
     }
 
-    return { type: 'bullet', content: block.content }
+    return { type: 'text', content: block.content }
   }
 
-  const build = (block: Block): TemplateBlock => {
+  const build = (block: Block): TemplateBlock | null => {
+    // 表格块不进入模板：跳过整棵表格节点（含其不存在的子块），并提示内容未被包含
+    if (block.type === 'table') {
+      console.warn('[serializeBlockTree] Table blocks are not supported in templates, skipping')
+      return null
+    }
+
     const tmpl = serialize(block)
 
     const children = childrenOf.get(block.id) ?? []
     const childTmpls: TemplateBlock[] = []
     for (const child of children) {
-      childTmpls.push(build(child))
+      const childTmpl = build(child)
+      if (childTmpl) childTmpls.push(childTmpl)
     }
     if (childTmpls.length > 0) {
       tmpl.children = childTmpls
@@ -96,8 +103,8 @@ export interface DeserializedBlock extends Block {
  * 将 TemplateBlock 树展开为 Block 树（DFS 顺序）。
  *
  * 行为契约：
- * - TemplateBlock.type='bullet' → Block.type='bullet'，content 保持
- * - TemplateBlock.type='heading' → Block.type='bullet'，format={type:'heading', level:headingLevel}
+ * - TemplateBlock.type='text' → Block.type='text'，content 保持
+ * - TemplateBlock.type='heading' → Block.type='text'，format={type:'heading', level:headingLevel}
  * - TemplateBlock.type='property' → Block.type='property'，content 序列化为 `key:: value`
  * - 返回数组保持 DFS 顺序（父在前，子在后）
  * - pos 按 DFS 顺序递增（basePos, basePos+gap, basePos+2*gap, ...）
@@ -120,7 +127,7 @@ export function deserializeBlockTree(
       pos,
       content: '',
       format: {} as Record<string, unknown>,
-      properties: [] as import('../wasm/types').Property[],
+      properties: [] as import('../types/field-value').FieldValue[],
       createdAt: now2,
       updatedAt: now2,
     }
@@ -128,7 +135,7 @@ export function deserializeBlockTree(
     if (tmpl.type === 'heading') {
       return {
         ...baseProps,
-        type: 'bullet',
+        type: 'text',
         content: tmpl.content,
         format: { type: 'heading', level: tmpl.headingLevel ?? 2 },
       }
@@ -145,7 +152,7 @@ export function deserializeBlockTree(
 
     return {
       ...baseProps,
-      type: 'bullet',
+      type: 'text',
       content: tmpl.content,
     }
   }

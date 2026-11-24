@@ -1,0 +1,363 @@
+import type { Node } from '@tiptap/pm/model'
+import type { EditorState, Transaction } from '@tiptap/pm/state'
+import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state'
+import { Mapping, ReplaceStep } from '@tiptap/pm/transform'
+import type { EditorView } from '@tiptap/pm/view'
+import { Decoration, DecorationSet } from '@tiptap/pm/view'
+
+/** 文档中的一个「键盘原子单元」区间 [from, to)（PM 坐标，含两端字符） */
+export interface InlineUnitRange {
+  from: number
+  to: number
+}
+
+export interface InlineUnitKeyboardOptions {
+  /** 插件 key（须与宿主扩展的装饰插件不同名，TipTap 会重写为 `<key>$`） */
+  key: string
+  /**
+   * 现场扫描 doc，返回所有原子单元区间。
+   *
+   * ⚠️ 必须每次调用重新扫描：decorations prop 动态构建的装饰集从不写回插件
+   * state，`getState()` 恒为空 —— DateRef 的整单元删除曾因此失效成死代码。
+   */
+  findRanges: (doc: Node) => InlineUnitRange[]
+  /**
+   * 返回 true 时本次按键整体放行（如补全菜单打开中：用户正在编辑单元本身，
+   * 逐字符删除/菜单导航优先，整删规则不抢）。
+   */
+  isBlocked?: () => boolean
+}
+
+/**
+ * inline 原子单元（date-ref / `#tag` / `[[wiki link]]`）的键盘语义共享原语。
+ *
+ * 口径（DateRefExtension 2026-09-09 起验证、30+ 单测钉住，现收编为唯一实现）：
+ * - **pad 语义**：单元两侧紧邻空格属于整体区间 [L, R)（L = from - 左pad，
+ *   R = to + 右pad）；装饰 span 仍只覆盖 [from, to)（视觉不含空格）。
+ * - **Backspace**：光标在右缘带 [to, R]（含站在右 pad 上）→ 整单元删除；
+ *   **Delete**：光标在左缘带 [L, from] → 整单元删除（镜像）。
+ *   右 pad 随单元删；左 pad 仅在删后同块右侧无内容（行尾）时连带删，
+ *   中间位置保留左 pad 作分隔。单元内部与其他位置保持逐字符删除。
+ * - **方向键**：→ 在左缘带 [L, from] 整体跨到 R；← 在右缘带 [to, R] 跨回 L。
+ *   仅拦截无修饰键的光标态；ctrl/meta/alt/shift 组合（整词/选区扩展）与
+ *   非空选区一律放行。Up/Down 不归此原语管（跨块列保持归 EnterAsBlock）。
+ * - **选择闸门（appendTransaction）**：纯选区事务（点击/拖拽/双击词选/Shift 与
+ *   Ctrl+方向键/程序化 setSelection）的端点不得落在单元内部 —— 光标钳到近端边界，
+ *   选区扩展的 head 吸附到行进方向远端边界（吸近端会让 shift+→ 卡死在左缘）。
+ *   改文档的事务中只钳「纯删除」（选区 Backspace/Delete/剪切）：删 pad 空格会让
+ *   贪婪单元（tag 正则吸字母数字）与后续文本黏连扩展，删除落点坠入扩展后的
+ *   单元内部。纯插入（打字/IME/粘贴，step.from === step.to）与替换（slice 非空：
+ *   IME 确认、选区打字替换）放行：单元「建造中」需要内部光标（tag 打字中
+ *   `#ab` 即匹配单元、`[[]]` 手工填充光标停在闭括号前）。
+ *   IME 组合中及确认事务落定前（compositionend 之后 PM 才派生确认事务）全放行。
+ * - **放行条件**：折叠光标态下 isBlocked() 为真（补全菜单打开中，正建造 tag）/ IME 组合中全放行；
+ *   **非空选区与单元重叠的整删**则无条件（无论菜单是否开着）——这是 2026-10 修复「菜单开着时拖选
+ *   部分 chip 删出半截（#任）」的治本点：菜单开着时选区快照可能不同步回 DOM、原生删除作用在部分
+ *   DOM 选区，故删除拦截必须读 PM 选区直接兜底整删，不能被 isBlocked 旁路。
+ */
+export function createInlineUnitKeyboardPlugin(options: InlineUnitKeyboardOptions): Plugin {
+  const { key, findRanges, isBlocked } = options
+
+  // IME 组合护栏：>0 表示组合中或确认事务尚未落定。compositionend 之后 PM 才
+  // 派生确认事务（替换组合范围），立即复位会钳掉建造光标；延迟到宏任务复位。
+  // epoch 比对防竞态：上一次 end 的延迟复位不得清掉新一次 start 的计数。
+  let composingEpoch = 0
+
+  return new Plugin({
+    key: new PluginKey(key),
+
+    props: {
+      handleDOMEvents: {
+        compositionstart: () => {
+          composingEpoch++
+          return false
+        },
+        compositionend: () => {
+          const epoch = composingEpoch
+          setTimeout(() => {
+            if (composingEpoch === epoch) composingEpoch = 0
+          }, 0)
+          return false
+        },
+        // 删除源拦截：beforeinput 覆盖浏览器所有删除路径（键盘 Delete/Backspace
+        // 经 beforeinput 路由、拖拽移动文本 deleteByDrag、剪切 deleteByCut 等），
+        // 而 handleKeyDown 只覆盖 keydown 路径。真实浏览器「拖拽选中 chip 部分文本
+        // 后删除」正是走 beforeinput —— 此前从未被拦截，故留下半截 chip。这一层读
+        // 实时选区（或折叠光标按删除方向取相邻字符），凡与 chip 重叠即把删除范围
+        // 拓宽为整 chip（原子语义），对任意拖拽端点/删除路由都兜得住。
+        beforeinput(view: EditorView, event: Event) {
+          const ie = event as InputEvent
+          const t = ie.inputType
+          if (!t || !t.startsWith('delete')) return false
+
+          const { state } = view
+          const sel = state.selection
+
+          // 非空选区（拖拽 / Shift 选中 chip 部分文本后删除）：与菜单态无关，一律
+          // 把删除范围拓宽为整 chip（原子语义）。菜单开着时（可能正建造 tag 但已显式
+          // 选中部分）选区快照未必同步回 DOM、原生删除更不可靠，这里直接读 PM 选区
+          // 兜底整删——这正是此前被 isBlocked 旁路、留下半截 chip（#任）的缺口。
+          if (!sel.empty && sel instanceof TextSelection) {
+            const overlap = findRanges(state.doc).filter(r => r.from < sel.to && sel.from < r.to)
+            if (overlap.length > 0) {
+              let delFrom = sel.from
+              let delTo = sel.to
+              for (const r of overlap) {
+                if (r.from < delFrom) delFrom = r.from
+                if (r.to > delTo) delTo = r.to
+              }
+              ie.preventDefault()
+              const tr = state.tr.delete(delFrom, delTo)
+              tr.setSelection(TextSelection.create(tr.doc, delFrom))
+              view.dispatch(tr)
+              return true
+            }
+            return false
+          }
+
+          // 折叠光标：菜单开着（正在建造 tag）→ 放行逐字符删除，不整删
+          if (isBlocked?.()) return false
+          // 折叠光标按删除方向取相邻字符区间（与 Backspace/Delete 语义一致）
+          const backward = t.includes('Backward')
+          const pos = sel.from
+          const from = backward ? pos - 1 : pos
+          const to = backward ? pos : pos + 1
+
+          const overlap = findRanges(state.doc).filter(r => r.from < to && from < r.to)
+          if (overlap.length === 0) return false
+
+          let delFrom = from
+          let delTo = to
+          for (const r of overlap) {
+            if (r.from < delFrom) delFrom = r.from
+            if (r.to > delTo) delTo = r.to
+          }
+          ie.preventDefault()
+          const tr = state.tr.delete(delFrom, delTo)
+          tr.setSelection(TextSelection.create(tr.doc, delFrom))
+          view.dispatch(tr)
+          return true
+        },
+      },
+
+      handleKeyDown(view: EditorView, event: KeyboardEvent) {
+        // IME 组合期间不拦截（候选词删除/确认走默认；tag 可为中文，必须防）
+        if (event.isComposing || event.keyCode === 229) return false
+
+        const { state } = view
+        const sel = state.selection
+
+        // 非空选区 + Backspace/Delete 且选区与 chip 重叠（拖拽 / shift 选中 chip
+        // 部分文本后删除）：直接在按键源头把删除范围拓宽为整 chip（原子语义），
+        // 与菜单态无关——菜单开着时此分支同样兜得住，填补此前被 isBlocked 旁路、
+        // 留下半截 chip（#任）的缺口。折叠光标建造态的逐字符删除不在此分支。
+        if (
+          !sel.empty &&
+          sel instanceof TextSelection &&
+          (event.key === 'Backspace' || event.key === 'Delete')
+        ) {
+          const overlap = findRanges(state.doc).filter(r => r.from < sel.to && sel.from < r.to)
+          if (overlap.length > 0) {
+            let delFrom = sel.from
+            let delTo = sel.to
+            for (const r of overlap) {
+              if (r.from < delFrom) delFrom = r.from
+              if (r.to > delTo) delTo = r.to
+            }
+            event.preventDefault()
+            const tr = state.tr.delete(delFrom, delTo)
+            tr.setSelection(TextSelection.create(tr.doc, delFrom))
+            view.dispatch(tr)
+            return true
+          }
+          // 选区不碰 chip → 交默认删除（逐字删选区，不整删）
+          return false
+        }
+
+        // 以下折叠光标分支：菜单开着（正在建造 tag）放行逐字符删除 / 导航，不整删
+        if (isBlocked?.()) return false
+        // 其它非空选区（方向键选区扩展等）不拦截，交给默认行为
+        if (!sel.empty) return false
+
+        const pos = sel.from
+
+        // 现场重建单元区间（与装饰同源扫描；不读插件 state，见 findRanges 注释）
+        const ranges = findRanges(state.doc)
+        if (ranges.length === 0) return false
+
+        const unitBounds = (from: number, to: number) => {
+          const size = state.doc.content.size
+          const leftPad = from > 0 && state.doc.textBetween(from - 1, from, '\n', ' ') === ' '
+          const rightPad = to < size && state.doc.textBetween(to, to + 1, '\n', ' ') === ' '
+          return { from, to, leftPad, rightPad, L: leftPad ? from - 1 : from, R: rightPad ? to + 1 : to }
+        }
+
+        const deleteUnit = (from: number, to: number) => {
+          const u = unitBounds(from, to)
+          const blockEnd = state.doc.resolve(u.R).end()
+          const rest = u.R < blockEnd ? state.doc.textBetween(u.R, blockEnd, '\n', ' ') : ''
+          const restHasContent = rest.trim().length > 0
+          const delFrom = restHasContent ? u.from : u.leftPad ? u.L : u.from
+          const delTo = restHasContent ? u.R : blockEnd
+          let tr = state.tr.delete(delFrom, delTo)
+          tr = tr.setSelection(TextSelection.create(tr.doc, delFrom))
+          view.dispatch(tr)
+        }
+
+        // Backspace 右缘带 = [to, R]（含站在右 pad 空格上）；Delete 左缘带 = [L, from]
+        if (event.key === 'Backspace' || event.key === 'Delete') {
+          const deletingLeft = event.key === 'Backspace'
+          for (const range of ranges) {
+            const u = unitBounds(range.from, range.to)
+            const inZone = deletingLeft
+              ? pos >= range.to && pos <= u.R
+              : pos >= u.L && pos <= range.from
+            if (!inZone) continue
+            event.preventDefault()
+            deleteUnit(range.from, range.to)
+            return true
+          }
+        }
+
+        // 方向键: 光标在整体区间左缘带 [L, from] 按 → 整体跨到 R（右 pad 后）；
+        // 在右缘带 [to, R] 按 ← 整体跨回 L（左 pad 前）——pad 空格随单元一起跨过，
+        // 光标不进入单元与 pad 之间。仅拦截无修饰键的光标态。
+        if (
+          (event.key === 'ArrowLeft' || event.key === 'ArrowRight') &&
+          !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey
+        ) {
+          for (const range of ranges) {
+            const u = unitBounds(range.from, range.to)
+            const inZone = event.key === 'ArrowLeft'
+              ? pos >= range.to && pos <= u.R
+              : pos >= u.L && pos <= range.from
+            if (!inZone) continue
+            event.preventDefault()
+            const target = event.key === 'ArrowLeft' ? u.L : u.R
+            view.dispatch(state.tr.setSelection(TextSelection.create(state.doc, target)))
+            return true
+          }
+        }
+
+        return false
+      },
+
+      // 块尾光标锚点：单元右缘恰为所在文本块内容末尾（无尾随字符）时，浏览器
+      // 的 contentEditable 会把块尾光标吸进最后一个 inline 元素（chip 内部，
+      // 视觉穿帮 —— 拖拽/shift+← 选中尾部 pad 空格删除后即触发）。
+      // 修复关键：widget 必须 side:-1（贴在 to 左侧），而非 side:1。
+      // selectionToDOM 对折叠光标调用 domFromPos(to, -1)（左偏），side:1 时
+      // 该锚点会回退进 chip 文本节点末尾（光标落在 chip 内部）；side:-1 时
+      // 锚点解析到 widget 之后（<p> 末位子节点之后），光标落在 chip 之外。
+      // 非块尾（有尾随字符）光标自然锚定在字符间，widget 不挂载，无需干预。
+      decorations(state: EditorState) {
+        const widgets: Decoration[] = []
+        for (const range of findRanges(state.doc)) {
+          const $to = state.doc.resolve(range.to)
+          if ($to.parentOffset === $to.parent.content.size) {
+            widgets.push(
+              Decoration.widget(
+                range.to,
+                () => {
+                  const anchor = document.createElement('span')
+                  anchor.textContent = '\u200b'
+                  return anchor
+                },
+                { side: -1, ignoreSelection: true },
+              ),
+            )
+          }
+        }
+        if (widgets.length === 0) return DecorationSet.empty
+        return DecorationSet.create(state.doc, widgets)
+      },
+    },
+
+    // 选择闸门（原子化）：chip 永远作为一个整体参与选区与删除。
+    // 两层：
+    // 1. 折叠光标：菜单关闭时绝不落入 chip 内部（钳到近端边界，见 nearest）；
+    //    菜单打开中放行（tag 建造中光标合法在单元文本内生长）。
+    // 2. 非空选区：与某 chip「部分重叠」（重叠但未整段包含）即外扩端点使其整段
+    //    落入选区；已整段包含的 chip 不收窄（大段选区跨 chip 不丢 chip 外文本）。
+    //    与菜单状态无关——「选中部分 chip」一律吸附成整 chip，随后任意删除
+    //    （拖拽/Backspace/Delete/剪切）自然整删。这是 2026-10 修复
+    //    「拖选部分 chip 删出半截」的治本路径：不再依赖各删除入口各自拦截，
+    //    而是让选区天然原子化；即便 tag 菜单开着（isBlocked）导致删除拦截被旁路，
+    //    原生删除作用在「整 chip 选区」上也不会留下半截。
+    // 纯插入（打字/IME/粘贴）放行：建造流需要内部光标，且光标落点由菜单态决定。
+    // ⚠️ appendTransaction 是 PluginSpec 顶层字段，放进 props 会被静默忽略。
+    appendTransaction(trs: readonly Transaction[], oldState: EditorState, newState: EditorState) {
+      // IME 组合中：建造中需要内部光标，全放行（含选区闸门，避免钳掉组合确认事务）
+      if (composingEpoch > 0) return null
+
+      // 删除事务层兜底（仅菜单关闭时）：任意删除若残余 chip 段，拓宽到整 chip
+      // （原子语义）。菜单打开中跳过——building 需要逐字符删除（删 "#ab" 的 "b"
+      // 不能整删 "#ab"）。此层兜住 beforeinput 被 isBlocked 放行后浏览器原生删除
+      // 触不到的残留半截 chip（理论上选区已整段吸附，此层为冗余保险）。
+      const mapping = new Mapping()
+      const delRangesOld: Array<{ from: number; to: number }> = []
+      for (const tr of trs) {
+        for (const step of tr.steps) {
+          if (step instanceof ReplaceStep && step.from < step.to && step.slice.size === 0) {
+            delRangesOld.push({ from: mapping.map(step.from, -1), to: mapping.map(step.to, 1) })
+          }
+          mapping.appendMap(step.getMap())
+        }
+      }
+      const hasDeletion = delRangesOld.length > 0
+      if (hasDeletion && !isBlocked?.()) {
+        const chipRanges = findRanges(oldState.doc).filter(r =>
+          delRangesOld.some(d => d.from < r.to && r.from < d.to),
+        )
+        if (chipRanges.length > 0) {
+          const chipNew = chipRanges
+            .map(r => ({ from: mapping.map(r.from, -1), to: mapping.map(r.to, 1) }))
+            .sort((a, b) => b.from - a.from) // 从右往左删，保持坐标有效
+          let tr = newState.tr
+          for (const r of chipNew) {
+            if (r.to > r.from) tr = tr.delete(r.from, r.to)
+          }
+          // 光标落最左 chip 之前（chip 之外），near 兜底到最近合法文本位
+          const caret = tr.mapping.map(Math.min(...chipRanges.map(r => r.from)), -1)
+          return tr.setSelection(TextSelection.near(tr.doc.resolve(caret)))
+        }
+      }
+
+      // 选区段：纯插入放行（建造流需要内部光标）；纯选区/删除落点钳制才跑
+      const docChanged = trs.some(tr => tr.docChanged)
+      if (docChanged && !hasDeletion) return null
+
+      const sel = newState.selection
+      if (!(sel instanceof TextSelection)) return null
+      const ranges = findRanges(newState.doc)
+      if (ranges.length === 0) return null
+
+      // 折叠光标：菜单关闭时不可落在 chip 内部，钳到近端边界
+      if (sel.empty) {
+        if (isBlocked?.()) return null
+        const hit = ranges.find(r => sel.from > r.from && sel.from < r.to)
+        if (!hit) return null
+        const nearest = sel.from - hit.from < hit.to - sel.from ? hit.from : hit.to
+        return newState.tr.setSelection(TextSelection.create(newState.doc, nearest))
+      }
+
+      // 非空选区：与 chip 部分重叠即外扩到整 chip（原子选区）。已整段包含则不收窄。
+      const overlap = (r: InlineUnitRange) => sel.from < r.to && r.from < sel.to
+      const fullyContains = (r: InlineUnitRange) => sel.from <= r.from && r.to <= sel.to
+      let from = sel.from
+      let to = sel.to
+      let changed = false
+      for (const r of ranges) {
+        if (overlap(r) && !fullyContains(r)) {
+          if (r.from < from) { from = r.from; changed = true }
+          if (r.to > to) { to = r.to; changed = true }
+        }
+      }
+      if (!changed) return null
+      const backward = sel.head < sel.anchor
+      return newState.tr.setSelection(
+        TextSelection.create(newState.doc, backward ? to : from, backward ? from : to),
+      )
+    },
+  })
+}

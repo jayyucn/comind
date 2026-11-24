@@ -1,6 +1,9 @@
-import { Extension } from '@tiptap/core'
 import type { Editor } from '@tiptap/core'
+import { Extension } from '@tiptap/core'
+
 import { hasModalOpen } from '../composables/useModalKeyboard'
+import { docToText } from '../utils/editor-text'
+import { inlineMarksToHtml } from '../utils/inline-marks'
 
 const EnterAsBlockExtension = Extension.create({
   name: 'enterAsBlock',
@@ -26,7 +29,9 @@ const EnterAsBlockExtension = Extension.create({
         if (hasModalOpen()) return false
 
         const { $from, from, to} = editor.state.selection
-        const content = editor.getText()
+        // 落库口径（含 hardBreak 的 `\n`）：用 getText 会把「只有硬换行」的块判成空块
+        // 而走删除分支，段内换行的块在行首退格就被整块删掉。
+        const content = docToText(editor.state.doc)
 
         if (content.length === 0 || ($from.parentOffset === 0 && from === to)) {
           // 先尝试删除 between 属性（无论内容是否为空）
@@ -195,16 +200,16 @@ const EnterAsBlockExtension = Extension.create({
 })
 
 function applyHeading(editor: Editor, level: number) {
-  const content = editor.getText()
+  // 落库口径（含 hardBreak 的 `\n`）；setContent 收到字符串时按 HTML 解析，
+  // 所以换行与 `<` 都要先过 inlineMarksToHtml（`\n` → `<br>` + 转义），否则一按 Mod-1 就丢换行。
+  const content = docToText(editor.state.doc)
   const headingPrefix = '#'.repeat(level) + ' '
 
   const headingMatch = content.match(/^#{1,6}\s+/)
-  if (headingMatch) {
-    const newContent = content.replace(/^#{1,6}\s+/, headingPrefix)
-    editor.chain().setContent(newContent).focus().run()
-  } else {
-    editor.chain().setContent(headingPrefix + content).focus().run()
-  }
+  const next = headingMatch
+    ? content.replace(/^#{1,6}\s+/, headingPrefix)
+    : headingPrefix + content
+  editor.chain().setContent(inlineMarksToHtml(next, [])).focus().run()
 }
 
 export default EnterAsBlockExtension

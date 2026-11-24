@@ -1,8 +1,8 @@
 import { useBlockStore } from '../stores/blocks'
 import { usePageStore } from '../stores/pages'
 import { getCoreClient } from '../wasm/client'
-import { applyRelationshipTypeToBlockContent } from './useRelationshipSync'
 import type { LinkDraft } from '../wasm/types'
+import { applyRelationshipTypeToBlockContent } from './useRelationshipSync'
 
 export interface OrphanedTarget {
   targetTitle: string
@@ -51,7 +51,31 @@ export interface CleanupContentPlan {
  * - 仅处理带 inverseRelationshipType 的 link（单向 ((depends-on)) 不参与）
  * - 同页其他 block 仍含 typed-link 到目标 → 跳过
  * - 跨页降级保留 [[link]] 本身，只移除 ((...)) 部分
+ * - **关系清理是删除的附带收益，不是前置条件**：链接提取器不可用时（如 Web/WASM
+ *   运行时未实现 `extract_links_from_content`）降级为「不清理」，删除照常执行。
  */
+
+let warnedExtractUnavailable = false
+
+/**
+ * 提取内容中的 link 草稿；提取器不可用时降级为空列表（= 本次不做关系清理）。
+ *
+ * 这里的降级不是容错洁癖：第 4 步 `deleteBlocks` 是本函数**唯一的实际删除动作**，
+ * 任何在它之前抛出的异常都会让删除整个失效。实测（Web/WASM）：异常冒出后
+ * `deleteTextSelection` / `deleteSelected` 双双中断，选区 Delete 后块与选区零变化。
+ */
+async function extractLinksSafe(content: string): Promise<LinkDraft[]> {
+  try {
+    return await getCoreClient()!.extractLinksFromContent(content)
+  } catch (err) {
+    if (!warnedExtractUnavailable) {
+      warnedExtractUnavailable = true
+      console.warn('[relationship-cleanup] 链接提取不可用，本轮删除跳过关系清理：', err)
+    }
+    return []
+  }
+}
+
 export function useBlockRelationshipCleanup() {
   const blockStore = useBlockStore()
   const pageStore = usePageStore()
@@ -93,7 +117,7 @@ export function useBlockRelationshipCleanup() {
     for (const id of deletedBlockIds) {
       const block = blocks.find(b => b.id === id)
       if (!block) continue
-      const links: LinkDraft[] = await getCoreClient()!.extractLinksFromContent(block.content)
+      const links: LinkDraft[] = await extractLinksSafe(block.content)
       for (const link of links) {
         if (link.is_external) continue
         if (link.relationship_type === null) continue
@@ -105,7 +129,7 @@ export function useBlockRelationshipCleanup() {
     if (plan?.vanishedFragments) {
       for (const fragment of plan.vanishedFragments) {
         if (!fragment.text) continue
-        const links: LinkDraft[] = await getCoreClient()!.extractLinksFromContent(fragment.text)
+        const links: LinkDraft[] = await extractLinksSafe(fragment.text)
         for (const link of links) {
           if (link.is_external) continue
           if (link.relationship_type === null) continue
@@ -129,7 +153,7 @@ export function useBlockRelationshipCleanup() {
           if (b.pageId !== pageId) continue
           if (excludedIds.has(b.id)) continue
           const content = plan?.contentAfter?.[b.id] ?? b.content
-          const links: LinkDraft[] = await getCoreClient()!.extractLinksFromContent(content)
+          const links: LinkDraft[] = await extractLinksSafe(content)
           if (links.some(l =>
             !l.is_external &&
             l.target_title === targetTitle &&

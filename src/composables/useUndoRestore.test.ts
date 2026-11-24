@@ -5,7 +5,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import type { Block } from '../types/block'
-import type { Property, PropertyType } from '../types/property'
+import type { FieldValue } from '../types/field-value'
+import type { FieldType } from '../types/field-definition'
 import type { HistoryEntry } from './useUndoHistory'
 
 const hoisted = vi.hoisted(() => {
@@ -14,8 +15,8 @@ const hoisted = vi.hoisted(() => {
     undeleteBlocks: vi.fn(() => Promise.resolve()),
     getBlocksByPage: vi.fn(() => Promise.resolve([])),
     getPageWithBlocks: vi.fn(() => Promise.resolve({ page: {}, blocks: [] })),
-    setProperty: vi.fn(() => Promise.resolve({})),
-    deleteProperty: vi.fn(() => Promise.resolve()),
+    setFieldValue: vi.fn(() => Promise.resolve({})),
+    deleteFieldValue: vi.fn(() => Promise.resolve()),
   }
   return { client }
 })
@@ -25,8 +26,8 @@ vi.mock('../wasm/client', () => ({
 }))
 
 import { useBlockStore } from '../stores/blocks'
-import { usePropertyStore } from '../stores/property'
-import { restoreEntry, redoAndRestore, undoAndRestore } from './useUndoRestore'
+import { useFieldValueStore } from '../stores/fieldValue'
+import { restoreEntry, redoAndRestore, undoAndRestore, runUndoOrRedo, linkCrossPageMove } from './useUndoRestore'
 import { documentState, ensureStack, canUndo, canRedo, commitNow, resetUndoHistory, _debugStats } from './useUndoHistory'
 
 function makeBlock(id: string, pageId: string, overrides: Partial<Block> = {}): Block {
@@ -44,33 +45,33 @@ function makeBlock(id: string, pageId: string, overrides: Partial<Block> = {}): 
   }
 }
 
-function makeProp(
+function makeFieldValue(
   id: string,
   blockId: string,
   key: string,
   value: unknown,
-  type: PropertyType = 'string',
-): Property {
+  type: FieldType = 'string',
+): FieldValue {
   return {
     id,
-    blockId,
+    block_id: blockId,
+    field_definition_id: `fd-${key}`,
     key,
-    value: value as Property['value'],
-    type,
-    sortOrder: 0,
-    isHidden: false,
-    isDeleted: false,
-    schemaVersion: 1,
-    createdAt: 0,
-    updatedAt: 0,
+    value_json: typeof value === 'string' ? value : JSON.stringify(value),
+    value_type: type,
+    seq: 0,
+    created_at: 0,
+    updated_at: 0,
+    version: 0,
+    deleted_at: null,
   }
 }
 
 function entry(
   blocks: Block[],
-  properties: Record<string, Property[]> = {},
+  fieldValues: Record<string, FieldValue[]> = {},
 ): HistoryEntry {
-  return { blocks, properties }
+  return { blocks, fieldValues }
 }
 
 beforeEach(() => {
@@ -84,8 +85,8 @@ describe('文字撤销', () => {
   it('当前 content=world，目标快照 content=hello → 生成 block update 并回写 store', async () => {
     const bs = useBlockStore()
     bs.blocks = [makeBlock('b1', 'p1', { content: 'world' })]
-    const ps = usePropertyStore()
-    ps.propertiesByBlock = new Map()
+    const ps = useFieldValueStore()
+    ps.fieldValuesByBlock = new Map()
 
     await restoreEntry('p1', entry([makeBlock('b1', 'p1', { content: 'hello' })]))
 
@@ -120,8 +121,8 @@ describe('结构操作撤销', () => {
       makeBlock('b1', 'p1', { parentId: null, pos: 0 }),
       makeBlock('b2', 'p1', { parentId: 'b1', pos: 1 }),
     ]
-    const ps = usePropertyStore()
-    ps.propertiesByBlock = new Map()
+    const ps = useFieldValueStore()
+    ps.fieldValuesByBlock = new Map()
 
     await restoreEntry(
       'p1',
@@ -143,11 +144,11 @@ describe('结构操作撤销', () => {
 })
 
 describe('删除撤销（含子树级联）', () => {
-  it('当前仅 A，目标含 A/B/C → undelete([B,C]) + B/C update + B 属性 set，store 恢复整棵子树', async () => {
+  it('当前仅 A，目标含 A/B/C → undelete([B,C]) + B/C update + B 字段值 set，store 恢复整棵子树', async () => {
     const bs = useBlockStore()
     bs.blocks = [makeBlock('A', 'p1', { parentId: null, pos: 0 })]
-    const ps = usePropertyStore()
-    ps.propertiesByBlock = new Map()
+    const ps = useFieldValueStore()
+    ps.fieldValuesByBlock = new Map()
 
     await restoreEntry(
       'p1',
@@ -157,7 +158,7 @@ describe('删除撤销（含子树级联）', () => {
           makeBlock('B', 'p1', { parentId: 'A', pos: 1, content: 'child' }),
           makeBlock('C', 'p1', { parentId: 'B', pos: 2, content: 'grandchild' }),
         ],
-        { B: [makeProp('pB', 'B', 'status', 'Todo', 'string')] },
+        { B: [makeFieldValue('pB', 'B', 'status', 'Todo', 'string')] },
       ),
     )
 
@@ -181,25 +182,25 @@ describe('删除撤销（含子树级联）', () => {
     const pageBlocks = bs.getBlocksByPage('p1')
     expect(pageBlocks.map((b) => b.id).sort()).toEqual(['A', 'B', 'C'])
     expect(pageBlocks.find((b) => b.id === 'B')!.parentId).toBe('A')
-    expect(ps.propertiesByBlock.get('B')?.[0]).toMatchObject({ key: 'status', value: 'Todo' })
+    expect(ps.fieldValuesByBlock.get('B')?.[0]).toMatchObject({ key: 'status', value_json: 'Todo' })
   })
 })
 
-describe('删除撤销：属性行必须随块一并复活（生产删除路径）', () => {
-  it('deleteBlocks 不清客户端属性缓存 → 块复活仍须强制 property set（否则 DB 属性行停在级联软删）', async () => {
+describe('删除撤销：字段值行必须随块一并复活（生产删除路径）', () => {
+  it('deleteBlocks 不清客户端字段值缓存 → 块复活仍须强制 property set（否则 DB 字段值行停在级联软删）', async () => {
     const bs = useBlockStore()
-    const ps = usePropertyStore()
+    const ps = useFieldValueStore()
     bs.blocks = [
       makeBlock('A', 'p1', { parentId: null, pos: 0 }),
       makeBlock('B', 'p1', { parentId: 'A', pos: 1, content: 'child' }),
     ]
-    ps.propertiesByBlock = new Map([['B', [makeProp('pB', 'B', 'project', 'CoMind')]]])
+    ps.fieldValuesByBlock = new Map([['B', [makeFieldValue('pB', 'B', 'project', 'CoMind')]]])
 
-    // 生产删除路径：store 移块，但**不清理 propertyStore** —— 与 Rust 侧
-    // delete_block_cascade → PropertyService::delete_by_block_id 的级联软删不对称。
-    // 于是恢复时「目标属性 == 客户端缓存」并不蕴含「DB 属性行仍 live」。
+    // 生产删除路径：store 移块，但**不清理 fieldValueStore** —— 与 Rust 侧
+    // delete_block_cascade → FieldValueService::delete_by_block_id 的级联软删不对称。
+    // 于是恢复时「目标字段值 == 客户端缓存」并不蕴含「DB 字段值行仍 live」。
     await bs.deleteBlocks(['B'])
-    expect(ps.propertiesByBlock.get('B')).toHaveLength(1)
+    expect(ps.fieldValuesByBlock.get('B')).toHaveLength(1)
 
     await restoreEntry(
       'p1',
@@ -208,7 +209,7 @@ describe('删除撤销：属性行必须随块一并复活（生产删除路径�
           makeBlock('A', 'p1', { parentId: null, pos: 0 }),
           makeBlock('B', 'p1', { parentId: 'A', pos: 1, content: 'child' }),
         ],
-        { B: [makeProp('pB', 'B', 'project', 'CoMind')] },
+        { B: [makeFieldValue('pB', 'B', 'project', 'CoMind')] },
       ),
     )
 
@@ -227,8 +228,8 @@ describe('精确复活不级联（Spec #6 回声抑制的结构性解法）', ()
   it('恢复 B1 时精确复活 B1，不连带复活不在快照中的软删子块 B2（无 stray、无补删）', async () => {
     const bs = useBlockStore()
     bs.blocks = [] // p1 当前无 live 块（B1、B2 均已软删）
-    const ps = usePropertyStore()
-    ps.propertiesByBlock = new Map()
+    const ps = useFieldValueStore()
+    ps.fieldValuesByBlock = new Map()
 
     // 目标快照只含 B1；B2 是此前独立软删的子块，不在目标中。
     // 精确集合复活只复活明确列出的 id（不级联），故 B2 不会被牵连复活，
@@ -252,8 +253,8 @@ describe('精确复活不级联（Spec #6 回声抑制的结构性解法）', ()
   it('无回声（undelete 未越界）→ 不追加任何 block delete', async () => {
     const bs = useBlockStore()
     bs.blocks = []
-    const ps = usePropertyStore()
-    ps.propertiesByBlock = new Map()
+    const ps = useFieldValueStore()
+    ps.fieldValuesByBlock = new Map()
 
     // undelete 后 live 块恰为目标快照，无 stray
     hoisted.client.getBlocksByPage.mockResolvedValueOnce([
@@ -275,7 +276,7 @@ describe('renderSegments 退化修复（Spec #5）', () => {
   it('恢复后重读 render_segments 写回 store（typed_link/date_ref 不再退化）', async () => {
     const bs = useBlockStore()
     bs.blocks = [makeBlock('B', 'p1', { content: 'hello' })]
-    usePropertyStore().propertiesByBlock = new Map()
+    useFieldValueStore().fieldValuesByBlock = new Map()
 
     const segs = [
       { type: 'text', start: 0, end: 6 },
@@ -304,7 +305,7 @@ describe('renderSegments 退化修复（Spec #5）', () => {
   it('getPageWithBlocks 空/无该页（WASM 兜底）→ 不写回，renderSegments 保持 undefined', async () => {
     const bs = useBlockStore()
     bs.blocks = [makeBlock('B', 'p1', { content: 'hello' })]
-    usePropertyStore().propertiesByBlock = new Map()
+    useFieldValueStore().fieldValuesByBlock = new Map()
 
     // 默认 mock 返回空 blocks（等价 WASM stub）
     await restoreEntry('p1', entry([makeBlock('B', 'p1', { content: 'hello [[world]]' })]))
@@ -315,7 +316,7 @@ describe('renderSegments 退化修复（Spec #5）', () => {
   it('写回必须原地 mutate 不换对象：恢复后渲染树引用与后续写入同源（撤销后打字失活即消失回归）', async () => {
     const bs = useBlockStore()
     bs.blocks = [makeBlock('B', 'p1', { content: 'old' })]
-    usePropertyStore().propertiesByBlock = new Map()
+    useFieldValueStore().fieldValuesByBlock = new Map()
 
     const segs = [{ type: 'text', start: 0, end: 3 }]
     // getPageWithBlocks 在乐观更新（数组身份替换 = 结构签名重建点）之后、写回之前被调用：
@@ -340,24 +341,24 @@ describe('renderSegments 退化修复（Spec #5）', () => {
   })
 })
 
-describe('属性撤销', () => {
+describe('字段值撤销', () => {
   it('status 值变更 → set；多余 priority → delete；块未变则无 block 操作', async () => {
     const bs = useBlockStore()
     bs.blocks = [makeBlock('x', 'p1')]
-    const ps = usePropertyStore()
-    ps.propertiesByBlock = new Map([
+    const ps = useFieldValueStore()
+    ps.fieldValuesByBlock = new Map([
       [
         'x',
         [
-          makeProp('pid1', 'x', 'status', 'Doing', 'string'),
-          makeProp('pid2', 'x', 'priority', 'High', 'string'),
+          makeFieldValue('pid1', 'x', 'status', 'Doing', 'string'),
+          makeFieldValue('pid2', 'x', 'priority', 'High', 'string'),
         ],
       ],
     ])
 
     await restoreEntry(
       'p1',
-      entry([makeBlock('x', 'p1')], { x: [makeProp('pid1', 'x', 'status', 'Todo', 'string')] }),
+      entry([makeBlock('x', 'p1')], { x: [makeFieldValue('pid1', 'x', 'status', 'Todo', 'string')] }),
     )
 
     const ops = hoisted.client.executeBatch.mock.calls[0][0] as Array<{
@@ -371,22 +372,22 @@ describe('属性撤销', () => {
     const delOp = ops.find((o) => o.entity === 'property' && o.action === 'delete')
     expect(delOp).toMatchObject({ params: { id: 'pid2' } })
 
-    const props = ps.propertiesByBlock.get('x')
+    const props = ps.fieldValuesByBlock.get('x')
     expect(props).toHaveLength(1)
-    expect(props![0]).toMatchObject({ key: 'status', value: 'Todo' })
+    expect(props![0]).toMatchObject({ key: 'status', value_json: 'Todo' })
   })
 })
 
 describe('新增块撤销（absent → 软删）', () => {
-  it('当前多出的块不在目标中 → block delete 并从 store / 属性表移除', async () => {
+  it('当前多出的块不在目标中 → block delete 并从 store / 字段值表移除', async () => {
     const bs = useBlockStore()
     bs.blocks = [
       makeBlock('A', 'p1', { parentId: null, pos: 0 }),
       makeBlock('extra', 'p1', { parentId: null, pos: 1, content: '后来新建的' }),
     ]
-    const ps = usePropertyStore()
-    ps.propertiesByBlock = new Map([
-      ['extra', [makeProp('pExtra', 'extra', 'status', 'Todo', 'string')]],
+    const ps = useFieldValueStore()
+    ps.fieldValuesByBlock = new Map([
+      ['extra', [makeFieldValue('pExtra', 'extra', 'status', 'Todo', 'string')]],
     ])
 
     await restoreEntry('p1', entry([makeBlock('A', 'p1', { parentId: null, pos: 0 })]))
@@ -398,7 +399,7 @@ describe('新增块撤销（absent → 软删）', () => {
     }>
     expect(ops).toEqual([{ entity: 'block', action: 'delete', params: { id: 'extra' } }])
     expect(bs.getBlocksByPage('p1').map((b) => b.id)).toEqual(['A'])
-    expect(ps.propertiesByBlock.has('extra')).toBe(false)
+    expect(ps.fieldValuesByBlock.has('extra')).toBe(false)
     expect(hoisted.client.undeleteBlocks).not.toHaveBeenCalled()
   })
 })
@@ -407,8 +408,8 @@ describe('落库失败回滚', () => {
   it('executeBatch 拒绝 → reactive 状态回滚到调用前并向上抛错', async () => {
     const bs = useBlockStore()
     bs.blocks = [makeBlock('b1', 'p1', { content: 'world' })]
-    const ps = usePropertyStore()
-    ps.propertiesByBlock = new Map()
+    const ps = useFieldValueStore()
+    ps.fieldValuesByBlock = new Map()
 
     hoisted.client.executeBatch.mockRejectedValueOnce(new Error('db down'))
 
@@ -434,8 +435,8 @@ describe('redo 净空（撤销→改动→redo 清空）', () => {
   it('undo 回到 s0（回声被抑制，栈保持 2 项、redo 仍可）；再改 s2 → redo 清空', async () => {
     const bs = useBlockStore()
     bs.blocks = [makeBlock('b1', 'p1', { content: 's0' })]
-    const ps = usePropertyStore()
-    ps.propertiesByBlock = new Map()
+    const ps = useFieldValueStore()
+    ps.fieldValuesByBlock = new Map()
 
     ensureStack('p1')
     bs.blocks[0].content = 's1'
@@ -471,7 +472,7 @@ describe('返回受影响块 id', () => {
   it('文字撤销 ⇒ 返回被还原的块', async () => {
     const bs = useBlockStore()
     bs.blocks = [makeBlock('b1', 'p1', { content: 'world' })]
-    usePropertyStore().propertiesByBlock = new Map()
+    useFieldValueStore().fieldValuesByBlock = new Map()
 
     const ids = await restoreEntry('p1', entry([makeBlock('b1', 'p1', { content: 'hello' })]))
 
@@ -481,7 +482,7 @@ describe('返回受影响块 id', () => {
   it('删除撤销（子树复活）⇒ 返回全部被复活的块', async () => {
     const bs = useBlockStore()
     bs.blocks = [makeBlock('A', 'p1', { parentId: null, pos: 0 })]
-    usePropertyStore().propertiesByBlock = new Map()
+    useFieldValueStore().fieldValuesByBlock = new Map()
 
     const ids = await restoreEntry(
       'p1',
@@ -501,22 +502,22 @@ describe('返回受影响块 id', () => {
       makeBlock('A', 'p1', { parentId: null, pos: 0 }),
       makeBlock('extra', 'p1', { parentId: null, pos: 1 }),
     ]
-    usePropertyStore().propertiesByBlock = new Map()
+    useFieldValueStore().fieldValuesByBlock = new Map()
 
     const ids = await restoreEntry('p1', entry([makeBlock('A', 'p1', { parentId: null, pos: 0 })]))
 
     expect(ids).toEqual(['extra'])
   })
 
-  it('仅属性变化 ⇒ 也要返回属性所属块（否则该次撤销没有落点）', async () => {
+  it('仅字段值变化 ⇒ 也要返回字段值所属块（否则该次撤销没有落点）', async () => {
     const bs = useBlockStore()
     bs.blocks = [makeBlock('x', 'p1')]
-    const ps = usePropertyStore()
-    ps.propertiesByBlock = new Map([['x', [makeProp('pid1', 'x', 'status', 'Doing')]]])
+    const ps = useFieldValueStore()
+    ps.fieldValuesByBlock = new Map([['x', [makeFieldValue('pid1', 'x', 'status', 'Doing')]]])
 
     const ids = await restoreEntry(
       'p1',
-      entry([makeBlock('x', 'p1')], { x: [makeProp('pid1', 'x', 'status', 'Todo')] }),
+      entry([makeBlock('x', 'p1')], { x: [makeFieldValue('pid1', 'x', 'status', 'Todo')] }),
     )
 
     expect(ids).toEqual(['x'])
@@ -525,7 +526,7 @@ describe('返回受影响块 id', () => {
   it('undoAndRestore / redoAndRestore 透传受影响块；无可撤/可重做时为 null', async () => {
     const bs = useBlockStore()
     bs.blocks = [makeBlock('b1', 'p1', { content: 'a' })]
-    usePropertyStore().propertiesByBlock = new Map()
+    useFieldValueStore().fieldValuesByBlock = new Map()
     ensureStack('p1')
 
     expect(await undoAndRestore('p1')).toBeNull() // 只有初始快照
@@ -556,7 +557,7 @@ describe('op 哨兵（#113）', () => {
   it('block update op 的 params 键集 ⊆ documentState 字段集（camel→snake）+ id', async () => {
     const bs = useBlockStore()
     bs.blocks = [makeBlock('b1', 'p1', { content: 'world' })]
-    usePropertyStore().propertiesByBlock = new Map()
+    useFieldValueStore().fieldValuesByBlock = new Map()
 
     await restoreEntry('p1', entry([makeBlock('b1', 'p1', { content: 'hello' })]))
 
@@ -577,5 +578,47 @@ describe('op 哨兵（#113）', () => {
         expect(envelopeParamKeys.has(key)).toBe(true)
       }
     }
+  })
+})
+
+/**
+ * 跨页搬移的一步撤销（ADR-0025 D4b）。
+ *
+ * 真机验收时暴露过一次：撤销只退了目标页那一半 —— 块被删进回收站，源页却没拿回来。
+ * 判据是「撤销后块回到源页」，光看目标页块消失会漏掉半边。
+ */
+describe('跨页搬移的一步撤销', () => {
+  it('撤销目标页时，块退回源页（而不是只从目标页消失）', async () => {
+    const bs = useBlockStore()
+    const p1 = 'page-src'
+    const p2 = 'page-dst'
+    const moved = makeBlock('bx', p1, { content: '被搬的块' })
+
+    // 两页都先建栈并封口：目标页没有更早那条快照时，撤销目标页本身就是 no-op（#122 守卫），
+    // 那样测的就不是「跨页连带」而是「有没有历史」了。栈不会自建（`commitNow` 对无栈页
+    // 静默跳过），故 `ensureStack` 不能省。
+    bs.blocks = [makeBlock('a1', p1), moved, makeBlock('z1', p2)]
+    ensureStack(p1)
+    ensureStack(p2)
+    commitNow(p1)
+    commitNow(p2)
+
+    // 剪切：块被乐观剔除（真实路径是 deleteBlocks）
+    bs.blocks = bs.blocks.filter((b) => b.id !== 'bx')
+    // 搬移：库里换页 + 内存换页
+    moved.pageId = p2
+    bs.blocks = [...bs.blocks, { ...moved }]
+
+    linkCrossPageMove(p1, p2)
+
+    const changed = await runUndoOrRedo(p2, 'undo')
+
+    // 目标页：块没了
+    expect(bs.getBlocksByPage(p2).some((b) => b.id === 'bx')).toBe(false)
+    // 源页：块**回来了**（这一步才是 D4b 的验收点）
+    const back = bs.getBlocksByPage(p1).find((b) => b.id === 'bx')
+    expect(back).toBeTruthy()
+    expect(back?.pageId).toBe(p1)
+    expect(changed).not.toBeNull()
   })
 })

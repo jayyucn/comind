@@ -18,11 +18,14 @@
 
 use crate::{
     services::{
-        BlockService, LinkService, PageService, PropertyService, RelationshipTypeService,
-        TemplateService,
+        BlockService, FieldDefinitionService, FieldValueService, LinkService, PageService,
+        RelationshipTypeService, TagService, TemplateService,
     },
     storage::{repository, StorageAdapter},
-    types::{Block, Link, Page, Property, RelationshipType, SyncTable, UserTemplate},
+    types::{
+        Block, FieldValue, FieldValueCreateOptions, Link, Page, RelationshipType, SyncTable,
+        TagCreateOptions, TagTreeEntry, TagUpdateOptions, UserTemplate,
+    },
 };
 use serde_json::{json, Value};
 use std::error::Error;
@@ -86,6 +89,7 @@ fn apply_one(storage: &mut dyn StorageAdapter, op: &Value) -> Result<OpEffect, B
                 &block.format,
                 &block.r#type,
                 Some(&block.id),
+                true,
             )?;
             // S8：BlockService::create 内部已同步 dateRef/link/property，
             // 此处只收集派生行 id 供 sync（与 Tauri 旧实现一致）。
@@ -93,8 +97,9 @@ fn apply_one(storage: &mut dyn StorageAdapter, op: &Value) -> Result<OpEffect, B
             for l in LinkService::get_by_source_block_id(storage, &created.id).unwrap_or_default() {
                 sync.push((SyncTable::Link, l.id));
             }
-            for p in PropertyService::get_by_block_id(storage, &created.id).unwrap_or_default() {
-                sync.push((SyncTable::Property, p.id));
+            for p in FieldValueService::get_by_block_id(storage, &created.id).unwrap_or_default() {
+                // ADR-0049：属性已切 FieldValue，id 是 FieldValue 行 id，登记不得再指 Property 表
+                sync.push((SyncTable::FieldValue, p.id));
             }
             for n in storage
                 .notifications()
@@ -110,8 +115,10 @@ fn apply_one(storage: &mut dyn StorageAdapter, op: &Value) -> Result<OpEffect, B
             })
         }
         ("block", "update") => {
+            // 显式 op 更新 = 提交动作，允许按 content 自动建/复活标签
+            // （编辑器打字路径走 save_block_tree，携带 create_missing_tags=false）。
             let block: Block = serde_json::from_value(params)?;
-            let updated = BlockService::update(
+            let mut updated = BlockService::update(
                 storage,
                 &block.id,
                 Some(&block.content),
@@ -119,13 +126,25 @@ fn apply_one(storage: &mut dyn StorageAdapter, op: &Value) -> Result<OpEffect, B
                 Some(&block.r#type),
                 block.parent_id.as_deref(),
                 Some(block.pos),
+                true,
             )?;
+            // 跨页搬移的撤销（ADR-0025 D4b）：`BlockService::update` 的形参根本不含页，
+            // 编辑器打字路径从不换页。但撤销把块退**回源页**时必须改 `page_id`，
+            // 否则「快照里在 A、库里还在 B」—— 块复活了却留在错误的页。
+            // 故此处按整行补写一次（`block_update` 本身是写 page_id 的）。
+            let mut touched_pages = vec![block.page_id.clone()];
+            if updated.page_id != block.page_id {
+                touched_pages.push(updated.page_id.clone());
+                updated.page_id = block.page_id.clone();
+                repository::BlockRepository::update(storage.blocks(), &updated)?;
+            }
             let mut sync = vec![(SyncTable::Block, updated.id.clone())];
             for l in LinkService::get_by_source_block_id(storage, &updated.id).unwrap_or_default() {
                 sync.push((SyncTable::Link, l.id));
             }
-            for p in PropertyService::get_by_block_id(storage, &updated.id).unwrap_or_default() {
-                sync.push((SyncTable::Property, p.id));
+            for p in FieldValueService::get_by_block_id(storage, &updated.id).unwrap_or_default() {
+                // ADR-0049：属性已切 FieldValue，id 是 FieldValue 行 id，登记不得再指 Property 表
+                sync.push((SyncTable::FieldValue, p.id));
             }
             for n in storage
                 .notifications()
@@ -137,7 +156,7 @@ fn apply_one(storage: &mut dyn StorageAdapter, op: &Value) -> Result<OpEffect, B
             Ok(OpEffect {
                 value: serde_json::to_value(&updated)?,
                 sync,
-                page_ids: vec![block.page_id],
+                page_ids: touched_pages,
             })
         }
         ("block", "delete") => {
@@ -155,12 +174,10 @@ fn apply_one(storage: &mut dyn StorageAdapter, op: &Value) -> Result<OpEffect, B
             {
                 sync.push((SyncTable::Link, l.id));
             }
-            for p in storage
-                .properties()
-                .get_by_block_id(&id)
-                .unwrap_or_default()
-            {
-                sync.push((SyncTable::Property, p.id));
+            // ADR-0049：属性软删的是 FieldValue 行（Property 表冻结），
+            // 必须在 BlockService::delete 之前经适配层收集存活行 id
+            for p in FieldValueService::get_by_block_id(storage, &id).unwrap_or_default() {
+                sync.push((SyncTable::FieldValue, p.id));
             }
             for n in storage
                 .notifications()
@@ -195,6 +212,41 @@ fn apply_one(storage: &mut dyn StorageAdapter, op: &Value) -> Result<OpEffect, B
                 value: json!({ "success": true, "revived": revived }),
                 sync: vec![(SyncTable::Block, id)],
                 page_ids: vec![page_id],
+            })
+        }
+        ("block", "set_tags") => {
+            // ADR-0049 D6：打标/摘标唯一写入口 —— 只改 Block.tags，不触碰内容派生。
+            let id = str_param(&params, "id").to_string();
+            let tags = str_array_param(&params, "tags");
+            // 新获得 tag 差集（旧 tags − 新 tags 的补集）；用于「打标自动填默认」（ADR-0050 D13）。
+            let old_tags = repository::BlockRepository::get_by_id(storage.blocks(), &id)
+                .map(|b| b.tags)
+                .unwrap_or_default();
+            let new_tag_ids: Vec<String> = tags
+                .iter()
+                .filter(|t| !old_tags.contains(t))
+                .cloned()
+                .collect();
+            let updated = BlockService::update_tags(storage, &id, tags)?;
+            // 打标自动填默认：仅对新获得 tag，不冲掉手写值（ADR-0050 D13）。
+            let created = TagService::apply_field_defaults_for_new_tags(
+                storage,
+                &updated.id,
+                &new_tag_ids,
+            )
+            .unwrap_or_else(|e| {
+                eprintln!(
+                    "[batch set_tags] apply_field_defaults failed for block {}: {}",
+                    updated.id, e
+                );
+                Vec::new()
+            });
+            let mut sync = vec![(SyncTable::Block, updated.id.clone())];
+            sync.extend(created.into_iter().map(|fid| (SyncTable::FieldValue, fid)));
+            Ok(OpEffect {
+                value: serde_json::to_value(&updated)?,
+                sync,
+                page_ids: vec![updated.page_id],
             })
         }
 
@@ -319,22 +371,15 @@ fn apply_one(storage: &mut dyn StorageAdapter, op: &Value) -> Result<OpEffect, B
         }
 
         // ---- property ----
-        ("property", "create") => {
-            let prop: Property = serde_json::from_value(params)?;
-            let created = storage.properties().create(&prop)?;
-            Ok(OpEffect {
-                value: serde_json::to_value(&created)?,
-                sync: vec![(SyncTable::Property, created.id)],
-                page_ids: Vec::new(),
-            })
-        }
-        ("property", "set") => {
-            // Upsert 而非裸 INSERT（#108 验收#1/#5）：属性删除是软删（行留存，
-            // UNIQUE(block_id,key) 会拦裸 INSERT），且块删除级联软删属性后
-            // undelete_blocks 不复活属性 —— 撤销恢复属性必须走 upsert（冲突即
-            // 复活 is_deleted=0 / deleted_at=NULL）。id / sort_order / is_hidden
-            // 由快照忠实带回（不可重生成 id，否则与软删行 UNIQUE 冲突）。
-            let prop_id = str_param(&params, "id");
+        // 字段值读写单源：FieldValueService 直接读写库内 `FieldValue` 行（无 Property
+        // 中间形状），`key` 由服务层 join 定义表填充。同步登记 SyncTable::FieldValue
+        // （+ 自动建 FieldDefinition 时登记 FieldDefinition）。
+        // create / set / update 参数同构（key 定位定义），语义均为保存整行。
+        ("property", "create") | ("property", "set") | ("property", "update") => {
+            // Upsert 语义（#108 验收#1/#5）：字段值删除是软删，且块删除级联软删值后
+            // undelete_blocks 不复活值 —— 撤销恢复必须走 upsert。id / seq 由快照忠实
+            // 带回（不可重生成 id，否则复活匹配失败）。
+            let id = str_param(&params, "id");
             let now = chrono::Utc::now().timestamp_millis();
             let r#type = {
                 let t = str_param(&params, "type");
@@ -344,54 +389,39 @@ fn apply_one(storage: &mut dyn StorageAdapter, op: &Value) -> Result<OpEffect, B
                     t
                 }
             };
-            let property = Property {
-                id: if prop_id.is_empty() {
-                    PropertyService::generate_id()
+            let fv = FieldValue {
+                id: if id.is_empty() {
+                    uuid::Uuid::new_v4().to_string()
                 } else {
-                    prop_id.to_string()
+                    id.to_string()
                 },
                 block_id: str_param(&params, "block_id").to_string(),
-                key: str_param(&params, "key").to_string(),
-                value: str_param(&params, "value").to_string(),
-                r#type: r#type.to_string(),
-                sort_order: params
+                field_definition_id: String::new(), // save 按 key 解析定义后回填
+                value_json: str_param(&params, "value").to_string(),
+                value_type: r#type.to_string(),
+                seq: params
                     .get("sort_order")
                     .and_then(|v| v.as_i64())
                     .unwrap_or(0),
-                is_hidden: params
-                    .get("is_hidden")
-                    .and_then(|v| v.as_i64())
-                    .unwrap_or(0),
-                is_deleted: 0,
-                schema_version: 1,
-                version: 0,
-                deleted_at: None,
                 created_at: now,
                 updated_at: now,
+                version: 0,
+                deleted_at: None,
+                key: str_param(&params, "key").to_string(),
             };
-            let prop_id = property.id.clone();
-            let saved = storage.properties().upsert(&property)?;
+            let (saved, fd_id) = FieldValueService::save(storage, &fv)?;
             Ok(OpEffect {
-                value: serde_json::to_value(saved)?,
-                sync: vec![(SyncTable::Property, prop_id)],
-                page_ids: Vec::new(),
-            })
-        }
-        ("property", "update") => {
-            let prop: Property = serde_json::from_value(params)?;
-            let updated = storage.properties().update(&prop)?;
-            Ok(OpEffect {
-                value: serde_json::to_value(&updated)?,
-                sync: vec![(SyncTable::Property, updated.id)],
+                value: serde_json::to_value(&saved)?,
+                sync: vec![(SyncTable::FieldValue, saved.id), (SyncTable::FieldDefinition, fd_id)],
                 page_ids: Vec::new(),
             })
         }
         ("property", "delete") => {
             let id = str_param(&params, "id").to_string();
-            PropertyService::delete(storage, &id)?;
+            FieldValueService::delete(storage, &id)?;
             Ok(OpEffect {
                 value: json!({ "success": true }),
-                sync: vec![(SyncTable::Property, id)],
+                sync: vec![(SyncTable::FieldValue, id)],
                 page_ids: Vec::new(),
             })
         }
@@ -508,6 +538,269 @@ fn apply_one(storage: &mut dyn StorageAdapter, op: &Value) -> Result<OpEffect, B
             })
         }
 
+        // ---- tag ---- （ADR-0049 D6；ADR-0050 D10 单父 + 读取侧继承解析）
+        // 裁定：走 TagService 而非裸 repo —— 有效字段解析与环守卫都在 service 层，
+        // 若此处直连 repo 写入，会绕开守卫而静默漂移（与 ADR-0048「两份分派表漂移」同构）。
+        ("tag", "get") => {
+            let tags = TagService::get_all(storage)?;
+            Ok(OpEffect::plain(serde_json::to_value(tags)?))
+        }
+        ("tag", "tree") => {
+            // 标签树读接口（ADR-0050 D10）：原始行 + 解析后有效字段 + 后代闭包。
+            // 解析单源在 Rust，TS 侧不得重实现（避免双源漂移）。
+            let tags = TagService::get_all(storage)?;
+            let mut entries: Vec<TagTreeEntry> = Vec::new();
+            for tag in tags {
+                let effective_field_ids = TagService::effective_field_ids(storage, &tag.id)?;
+                let descendant_ids = TagService::descendant_tag_ids(storage, &tag.id)?;
+                entries.push(TagTreeEntry {
+                    tag,
+                    effective_field_ids,
+                    descendant_ids,
+                });
+            }
+            Ok(OpEffect::plain(serde_json::to_value(entries)?))
+        }
+        ("tag", "create") => {
+            let created = TagService::create(
+                storage,
+                TagCreateOptions {
+                    title: str_param(&params, "title").to_string(),
+                    field_ids: str_array_param(&params, "field_ids"),
+                    // 可选父：缺失 / null → 顶级（ADR-0050 D10）
+                    parent_id: optional_str_param(&params, "parent_id"),
+                },
+            )?;
+            Ok(OpEffect {
+                value: serde_json::to_value(&created)?,
+                sync: vec![(SyncTable::Tag, created.id)],
+                page_ids: Vec::new(),
+            })
+        }
+        ("tag", "update") => {
+            let id = str_param(&params, "id").to_string();
+            // 仅当入参显式给出时才覆盖对应字段（None = 保持不变）。
+            let field_ids = optional_str_array_param(&params, "field_ids");
+            // 身份字段（ADR-0050 D11）：缺失 / null = 保持不变；空串 = 清空（未填写 / 无色）。
+            let description = clearable_str_param(&params, "description");
+            let color = clearable_str_param(&params, "color");
+            let updated = TagService::update(
+                storage,
+                &id,
+                TagUpdateOptions {
+                    title: params.get("title").and_then(|v| v.as_str()),
+                    field_ids,
+                    description: description.as_deref(),
+                    color: color.as_deref(),
+                },
+            )?;
+            Ok(OpEffect {
+                value: serde_json::to_value(&updated)?,
+                sync: vec![(SyncTable::Tag, updated.id)],
+                page_ids: Vec::new(),
+            })
+        }
+        ("tag", "set_parent") => {
+            // 单父槽位（ADR-0050 D10）：缺失 / null → 清空回顶级；成环由服务层拒绝。
+            let id = str_param(&params, "id").to_string();
+            let parent = optional_str_param(&params, "parent_id");
+            let updated = TagService::set_parent(storage, &id, parent.as_deref())?;
+            Ok(OpEffect {
+                value: serde_json::to_value(&updated)?,
+                sync: vec![(SyncTable::Tag, updated.id)],
+                page_ids: Vec::new(),
+            })
+        }
+        ("tag", "delete") => {
+            let id = str_param(&params, "id").to_string();
+            TagService::delete(storage, &id)?;
+            // block.tags 里的悬空引用保留不动（软删不销毁数据，undo 可完整还原）。
+            Ok(OpEffect {
+                value: json!({ "success": true }),
+                sync: vec![(SyncTable::Tag, id)],
+                page_ids: Vec::new(),
+            })
+        }
+
+        // ---- field_definition ---- （ADR-0049 D3/D9）
+        ("field_definition", "get") => {
+            let defs = FieldDefinitionService::get_all(storage)?;
+            Ok(OpEffect::plain(serde_json::to_value(defs)?))
+        }
+        ("field_definition", "create") => {
+            let created = FieldDefinitionService::create(
+                storage,
+                crate::types::FieldDefinitionCreateOptions {
+                    key: str_param(&params, "key").to_string(),
+                    title: str_param(&params, "title").to_string(),
+                    r#type: str_param(&params, "type").to_string(),
+                    closed_values: optional_str_array_param(&params, "closed_values"),
+                    default_value: optional_str_param(&params, "default_value"),
+                    is_system: params
+                        .get("is_system")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false),
+                    min: optional_f64_param(&params, "min"),
+                    max: optional_f64_param(&params, "max"),
+                    step: optional_f64_param(&params, "step"),
+                },
+            )?;
+            Ok(OpEffect {
+                value: serde_json::to_value(&created)?,
+                sync: vec![(SyncTable::FieldDefinition, created.id)],
+                page_ids: Vec::new(),
+            })
+        }
+        ("field_definition", "update") => {
+            // update 无级联/物化不变量，故 repo 层就地改写即可；
+            // 有语义的是 delete（走 service 做级联软删，见下）。
+            let id = str_param(&params, "id").to_string();
+            let mut fd =
+                repository::FieldDefinitionRepository::get_by_id(storage.field_definitions(), &id)?;
+            if let Some(t) = params.get("title").and_then(|v| v.as_str()) {
+                fd.title = t.to_string();
+            }
+            if let Some(ty) = params.get("type").and_then(|v| v.as_str()) {
+                fd.r#type = ty.to_string();
+            }
+            // 键存在才改动：显式 null → 清空候选值（非选项型）；缺失 → 原样保留。
+            if params.get("closed_values").is_some() {
+                fd.closed_values = optional_str_array_param(&params, "closed_values");
+            }
+            // 键存在才改动：显式 null / 空串 → 清空默认（无默认）；缺失 → 原样保留。
+            if params.get("default_value").is_some() {
+                fd.default_value = optional_str_param(&params, "default_value");
+            }
+            // 隐藏规则（ADR-0050 D18）：键存在才改动；白名单外的值归一为 never，不静默放行。
+            if let Some(h) = params.get("hide_when").and_then(|v| v.as_str()) {
+                fd.hide_when = crate::types::field_definition::normalize_hide_when(h);
+            }
+            // 展示形态覆盖（ADR-0050 D21 决策 5）：键存在才改动；白名单外的值归一为 auto。
+            if let Some(f) = params.get("display_form_override").and_then(|v| v.as_str()) {
+                fd.display_form_override =
+                    crate::types::field_definition::normalize_display_form_override(f);
+            }
+            // 数值约束（ADR-0055 D5）：min / max / step。键存在才改动；null / 非数字 → 清除约束。
+            if params.get("min").is_some() {
+                fd.min = optional_f64_param(&params, "min");
+            }
+            if params.get("max").is_some() {
+                fd.max = optional_f64_param(&params, "max");
+            }
+            if params.get("step").is_some() {
+                fd.step = optional_f64_param(&params, "step");
+            }
+            // 特化标记（issue T6/T7/T10）：键存在才改动；null / 空串 → 清除特化。
+            if params.get("spec").is_some() {
+                fd.spec = optional_str_param(&params, "spec");
+            }
+            // 字段描述（ADR-0057 D3）：键存在才改动；null / 空串 → 清除描述。
+            if params.get("description").is_some() {
+                fd.description = optional_str_param(&params, "description");
+            }
+            let updated =
+                repository::FieldDefinitionRepository::update(storage.field_definitions(), &fd)?;
+            Ok(OpEffect {
+                value: serde_json::to_value(&updated)?,
+                sync: vec![(SyncTable::FieldDefinition, updated.id)],
+                page_ids: Vec::new(),
+            })
+        }
+        ("field_definition", "delete") => {
+            let id = str_param(&params, "id").to_string();
+            // 级联软删引用它的 FieldValue；系统 seed 行会被 service 拒绝（ADR D3）。
+            let report = FieldDefinitionService::delete_with_cascade(storage, &id)?;
+            Ok(OpEffect {
+                value: json!({ "success": true, "affected_values": report.affected_values }),
+                sync: vec![(SyncTable::FieldDefinition, id)],
+                page_ids: Vec::new(),
+            })
+        }
+        ("field_definition", "get_deleted_presets") => {
+            // 恢复按钮可见性：被软删的预设字段定义列表（is_preset=1 且 deleted_at 非空）。
+            let defs = FieldDefinitionService::get_deleted_presets(storage)?;
+            Ok(OpEffect::plain(serde_json::to_value(defs)?))
+        }
+        ("field_definition", "restore_presets") => {
+            // 批量复活被软删的预设（ADR-0049 三态模型：预设删后可恢复）。
+            // 只复活 is_preset=1 且已软删的行，绝不覆盖活跃编辑；返回复活条数。
+            let restored = FieldDefinitionService::restore_presets(storage)?;
+            let sync = restored
+                .iter()
+                .map(|id| (SyncTable::FieldDefinition, id.clone()))
+                .collect();
+            Ok(OpEffect {
+                value: json!({ "restored": restored.len() }),
+                sync,
+                page_ids: Vec::new(),
+            })
+        }
+
+        // ---- field_value ---- （ADR-0049 D9）
+        ("field_value", "get") => {
+            let block_id = str_param(&params, "block_id").to_string();
+            let values = repository::FieldValueRepository::get_by_block_id(
+                storage.field_values(),
+                &block_id,
+            )?;
+            Ok(OpEffect::plain(serde_json::to_value(values)?))
+        }
+        // 按定义反查值行（ADR-0057「使用于」）：弹窗展示持有该字段值的块列表。
+        // 只读，无 sync 副作用。软删行天然排除（SQL 过滤 deleted_at IS NULL）。
+        ("field_value", "get_by_field") => {
+            let field_definition_id = str_param(&params, "field_definition_id").to_string();
+            let values = repository::FieldValueRepository::get_by_field_definition_id(
+                storage.field_values(),
+                &field_definition_id,
+            )?;
+            Ok(OpEffect::plain(serde_json::to_value(values)?))
+        }
+        ("field_value", "create") => {
+            let created = repository::FieldValueRepository::create(
+                storage.field_values(),
+                &FieldValue::new(FieldValueCreateOptions {
+                    block_id: str_param(&params, "block_id").to_string(),
+                    field_definition_id: str_param(&params, "field_definition_id").to_string(),
+                    value_json: str_param(&params, "value_json").to_string(),
+                    value_type: str_param(&params, "value_type").to_string(),
+                    seq: params.get("seq").and_then(|v| v.as_i64()).unwrap_or(0),
+                }),
+            )?;
+            Ok(OpEffect {
+                value: serde_json::to_value(&created)?,
+                sync: vec![(SyncTable::FieldValue, created.id)],
+                page_ids: Vec::new(),
+            })
+        }
+        ("field_value", "update") => {
+            let id = str_param(&params, "id").to_string();
+            let mut fv = repository::FieldValueRepository::get_by_id(storage.field_values(), &id)?;
+            if let Some(v) = params.get("value_json").and_then(|v| v.as_str()) {
+                fv.value_json = v.to_string();
+            }
+            if let Some(v) = params.get("value_type").and_then(|v| v.as_str()) {
+                fv.value_type = v.to_string();
+            }
+            if let Some(s) = params.get("seq").and_then(|v| v.as_i64()) {
+                fv.seq = s;
+            }
+            let updated = repository::FieldValueRepository::update(storage.field_values(), &fv)?;
+            Ok(OpEffect {
+                value: serde_json::to_value(&updated)?,
+                sync: vec![(SyncTable::FieldValue, updated.id)],
+                page_ids: Vec::new(),
+            })
+        }
+        ("field_value", "delete") => {
+            let id = str_param(&params, "id").to_string();
+            repository::FieldValueRepository::delete(storage.field_values(), &id)?;
+            Ok(OpEffect {
+                value: json!({ "success": true }),
+                sync: vec![(SyncTable::FieldValue, id)],
+                page_ids: Vec::new(),
+            })
+        }
+
         _ => Ok(OpEffect::plain(json!({
             "error": format!("Unknown operation: {} {}", entity, action)
         }))),
@@ -516,4 +809,134 @@ fn apply_one(storage: &mut dyn StorageAdapter, op: &Value) -> Result<OpEffect, B
 
 fn str_param<'a>(params: &'a Value, key: &str) -> &'a str {
     params.get(key).and_then(|v| v.as_str()).unwrap_or_default()
+}
+
+/// 可选字符串参数：**缺失 / null / 空串 → None**（单父槽位等「无」语义参用）。
+fn optional_str_param(params: &Value, key: &str) -> Option<String> {
+    params
+        .get(key)
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+}
+
+/// 可清空字符串参数：**缺失 / null → None（保持不变）**；**空串 → Some("")（清空）**。
+///
+/// 与 `optional_str_param` 的区别：后者把空串折成 `None`（「无」语义参，如单父槽位），
+/// 而本函数里空串是**有意义的值** —— `description` 未填写 / `color` 无色（ADR-0050 D11）。
+fn clearable_str_param(params: &Value, key: &str) -> Option<String> {
+    params.get(key).and_then(|v| v.as_str()).map(|s| s.to_string())
+}
+
+/// 字符串数组参数：**缺失或 null → 空数组**（用于 create 的缺省值）。
+fn str_array_param(params: &Value, key: &str) -> Vec<String> {
+    optional_str_array_param(params, key).unwrap_or_default()
+}
+
+/// 字符串数组参数：**缺失或 null → None**，语义由调用方解释 ——
+/// update 里 None = 保持原值；create 里 None = 非选项型字段。
+fn optional_str_array_param(params: &Value, key: &str) -> Option<Vec<String>> {
+    params.get(key).and_then(|v| v.as_array()).map(|arr| {
+        arr.iter()
+            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+            .collect()
+    })
+}
+
+/// 可选浮点参数（ADR-0055 D5）：数值字段约束 min/max/step。
+/// **缺失 / null / 非数字 → None**（无约束）；JSON 数字或数字字符串均可解析。
+/// update 里「键存在但为 null/非数字」= 清除该约束；create 里 None = 无约束。
+fn optional_f64_param(params: &Value, key: &str) -> Option<f64> {
+    match params.get(key) {
+        None => None,
+        Some(Value::Null) => None,
+        Some(v) => {
+            if let Some(n) = v.as_f64() {
+                Some(n)
+            } else if let Some(s) = v.as_str() {
+                s.parse::<f64>().ok()
+            } else {
+                None
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::services::BlockWriteService;
+    use crate::storage::SQLiteAdapter;
+
+    fn seed_page(storage: &mut dyn StorageAdapter, title: &str) -> String {
+        PageService::create(storage, "", title, Some("page"), None, None, Some("[]"), None)
+            .unwrap()
+            .id
+    }
+
+    fn block(id: &str, page_id: &str) -> Block {
+        Block {
+            id: id.to_string(),
+            page_id: page_id.to_string(),
+            parent_id: None,
+            pos: 1000,
+            content: "x".to_string(),
+            format: "{}".to_string(),
+            r#type: "table".to_string(),
+            created_at: 1,
+            updated_at: 1,
+            version: 0,
+            deleted_at: None,
+            tags: Vec::new(),
+        }
+    }
+
+    /// 跨页搬移的撤销（ADR-0025 D4b）：快照里的 `page_id` 与现库不同时必须真的换页。
+    ///
+    /// `BlockService::update` 的形参不含页（编辑器打字路径从不换页），若此处只走它，
+    /// 撤销会把块「复活在错误的页」——真机验收就是栽在这条上：块活着、`deleted_at` 为
+    /// 空、`page_id` 却还指着目标页。
+    #[test]
+    fn block_update_moves_block_across_pages() {
+        let mut adapter = SQLiteAdapter::open_in_memory().unwrap();
+        let pa = seed_page(&mut adapter, "A");
+        let pb = seed_page(&mut adapter, "B");
+        BlockWriteService::save_blocks(&mut adapter, vec![block("b1", &pb)], true).unwrap();
+
+        // 撤销：把 b1 退回 A 页
+        let ops = vec![json!({
+            "entity": "block",
+            "action": "update",
+            "params": serde_json::to_value(block("b1", &pa)).unwrap(),
+        })];
+        apply_batch(&mut adapter, &ops).unwrap();
+
+        let after = BlockService::get_by_id(&mut adapter, "b1").unwrap();
+        assert_eq!(after.page_id, pa);
+        assert_eq!(after.deleted_at, None);
+    }
+
+    /// 同页 update 不受影响（不该顺手把页改掉，也不该多一次整行写）。
+    #[test]
+    fn block_update_keeps_page_when_unchanged() {
+        let mut adapter = SQLiteAdapter::open_in_memory().unwrap();
+        let pa = seed_page(&mut adapter, "A");
+        BlockWriteService::save_blocks(&mut adapter, vec![block("b1", &pa)], true).unwrap();
+
+        let mut incoming = block("b1", &pa);
+        incoming.content = "改了正文".to_string();
+        apply_batch(
+            &mut adapter,
+            &[json!({
+                "entity": "block",
+                "action": "update",
+                "params": serde_json::to_value(incoming).unwrap(),
+            })],
+        )
+        .unwrap();
+
+        let after = BlockService::get_by_id(&mut adapter, "b1").unwrap();
+        assert_eq!(after.page_id, pa);
+        assert_eq!(after.content, "改了正文");
+    }
 }

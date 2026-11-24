@@ -1,17 +1,27 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+
 import { useRightSidebar } from '../../composables/useRightSidebar'
+import { usePageStore } from '../../stores/pages'
 import Icon from '../Icons/Icon.vue'
 import { getRegisteredPanels } from './panels'
 
 const { visible, activePanelId, settings, setActivePanel,  setWidth, persistSettings } = useRightSidebar()
+const pageStore = usePageStore()
+
+// 非页目的地（ADR-0060 D8）无 currentPageId：隐藏大纲面板（反链在 Page 内天然缺位），
+// 右栏默认退到全图图谱面板。
+const visiblePanelIds = computed(() => {
+  const ids = getRegisteredPanels().map(p => p.id)
+  return pageStore.currentPageId ? ids : ids.filter(id => id !== 'toc')
+})
 
 const isResizing = ref(false)
 
 const sidebarWidth = computed(() => settings.value.width + 'px')
 
 const orderedPanels = computed(() => {
-  const all = getRegisteredPanels()
+  const all = getRegisteredPanels().filter(p => visiblePanelIds.value.includes(p.id))
   const order = settings.value.panelOrder
   const ordered = order
     .map(id => all.find(p => p.id === id))
@@ -25,7 +35,7 @@ const orderedPanels = computed(() => {
 })
 
 const activePanel = computed(() => {
-  return orderedPanels.value.find(p => p.id === activePanelId.value)
+  return orderedPanels.value.find(p => p.id === activePanelId.value) ?? orderedPanels.value[0]
 })
 
 function handleResizeStart(e: MouseEvent) {
@@ -100,8 +110,9 @@ function handleResizeStart(e: MouseEvent) {
 
 <style lang="scss" scoped>
 .right-sidebar {
-  top: var(--nav-height);
-  height: calc(100vh - var(--nav-height));
+  // 顶栏为文档流首行（31px），右侧面板从顶栏之下起算、填满其下高度
+  top: 31px;
+  height: calc(100vh - 31px);
   background: var(--bg-sidebar);
   border: 1px solid var(--border);
   border-top-left-radius: var(--radius-md);
@@ -155,7 +166,7 @@ function handleResizeStart(e: MouseEvent) {
   background: transparent;
   cursor: pointer;
   color: var(--text-tertiary);
-  transition: background 80ms ease, color 80ms ease, border-color 120ms ease;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
   border-bottom: 1px solid transparent;
 
   &:hover {
@@ -189,7 +200,7 @@ function handleResizeStart(e: MouseEvent) {
 
 .right-sidebar-enter-active,
 .right-sidebar-leave-active {
-  transition: width 200ms ease, opacity 200ms ease;
+  transition: width var(--dur-base) var(--ease-in-out), opacity var(--dur-base) var(--ease-out);
 }
 
 .right-sidebar-enter-from,

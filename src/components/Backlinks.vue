@@ -1,16 +1,22 @@
 <script setup lang="ts">
-import { ref, watch, computed, nextTick } from 'vue'
-import { usePageStore } from '../stores/pages'
-import { useEditorStore } from '../stores/editor'
-import { useNavigateToPage } from '../composables/useNavigateToPage'
-import { useBlockStore } from '../stores/blocks'
-import { usePropertyStore } from '../stores/property'
+import { ChevronDown, FileText } from 'lucide-vue-next'
+import { computed, nextTick, ref, watch } from 'vue'
+
 import { useBlockRegistry } from '../composables/useBlockRegistry'
-import { buildDocumentOrder } from '../utils/block-helpers'
+import { useNavigateToPage } from '../composables/useNavigateToPage'
+import { useNavigateToTag } from '../composables/useNavigateToTag'
+import { useOpenPageInOtherPane } from '../composables/useOpenPageInOtherPane'
+import { useBlockStore } from '../stores/blocks'
+import { useEditorStore } from '../stores/editor'
+import { useFieldValueStore } from '../stores/fieldValue'
+import { usePageStore } from '../stores/pages'
+import { useTagsStore } from '../stores/tags'
 import type { Block } from '../types/block'
-import type { PropertyValue } from '../types/property'
-import PropertyInline from './Block/PropertyInline.vue'
-import PropertyDisplay from './Block/PropertyDisplay.vue'
+import type { FieldValueData } from '../types/field-definition'
+import { buildDocumentOrder } from '../utils/block-helpers'
+import { extractFieldBacklinks } from '../utils/field-backlinks'
+import { decodeFieldValueData } from '../utils/field-value-codec'
+import BlockFieldZone from './Block/BlockFieldZone.vue'
 
 const props = withDefaults(defineProps<{
   pageId?: string
@@ -21,8 +27,11 @@ const props = withDefaults(defineProps<{
 const pageStore = usePageStore()
 const editorStore = useEditorStore()
 const blockStore = useBlockStore()
-const propertyStore = usePropertyStore()
+const fieldValueStore = useFieldValueStore()
+const tagsStore = useTagsStore()
 const { navigateToPage } = useNavigateToPage()
+const { openPageInOtherPane } = useOpenPageInOtherPane()
+const { navigateToTag } = useNavigateToTag()
 const { getHandler } = useBlockRegistry()
 
 interface Link {
@@ -60,6 +69,10 @@ async function loadBacklinks() {
 
   loading.value = true
   try {
+    // 字段名取自持久化定义（tagsStore.fieldDefinitions）。反链可能先于块字段区首次
+    // 渲染加载，缺定义时字段标题会退化成 `f-*` 内部 key。失败不阻断反链本体。
+    await Promise.allSettled([tagsStore.ensureLoaded()])
+
     // 2. 获取指向当前页的所有反链
     const links = await blockStore.getBacklinks(currentId)
 
@@ -69,6 +82,21 @@ async function loadBacklinks() {
     for (const link of links) {
       if (!uniqueLinks.has(link.sourceBlockId)) {
         uniqueLinks.set(link.sourceBlockId, link)
+      }
+    }
+
+    // 3.5 字段引用并入反链（issue T3 AC4）：content 解析（[[X]]）覆盖不到的
+    //     字段值引用——前端聚合，遍历字段值缓存中 value_type==='page' 且值=本页
+    //     id 的块（最小实现，不动 Rust；缓存只含本会话已加载块，见 field-backlinks.ts）。
+    for (const { blockId } of extractFieldBacklinks(fieldValueStore.fieldValuesByBlock, currentId)) {
+      if (!uniqueLinks.has(blockId)) {
+        uniqueLinks.set(blockId, {
+          id: `field-ref:${blockId}`,
+          sourceBlockId: blockId,
+          targetPageId: currentId,
+          relationshipType: 'field-ref',
+          createdAt: 0,
+        })
       }
     }
 
@@ -131,10 +159,10 @@ async function loadBacklinks() {
     // 按页面标题字母序排序
     groups.sort((a, b) => a.sourcePageTitle.localeCompare(b.sourcePageTitle))
 
-    // 7. 加载所有块的属性（PropertyDisplay/PropertyInline 需要）
+    // 7. 加载所有块的字段值（BlockFieldZone 需要）
     const allBlockIds = groups.flatMap(g => g.items.map(i => i.block.id))
     await Promise.allSettled(
-      allBlockIds.map(id => propertyStore.loadBlockProperties(id))
+      allBlockIds.map(id => fieldValueStore.loadBlockFieldValues(id))
     )
 
     groupedBacklinks.value = groups
@@ -143,9 +171,25 @@ async function loadBacklinks() {
   }
 }
 
-// 点击块内容：处理 wiki link 导航（[[页面名]] / 外部链接），普通文本点击冒泡到 backlink-block
+// 点击块内容：处理 inline #tag 与 wiki link（[[页面名]] / 外部链接）导航，
+// 普通文本点击冒泡到 backlink-block
 function handleContentClick(e: MouseEvent) {
   const target = e.target as HTMLElement
+
+  // ADR-0050 D7：inline `#tag` chip → 该 tag 的聚合页，与正文渲染态同口径。
+  // 必须先于 `.block-link` 判定：纯文本兜底渲染出的 tag 同时带 `block-link` 类
+  // 和 `data-page="标签名"`，走链接分支会跳到一个不存在同名页面的地址。
+  const tagChip = target.closest('.block-tag') as HTMLElement | null
+  if (tagChip) {
+    const tagId = tagChip.dataset.tagId
+    if (tagId) {
+      navigateToTag(tagId).catch(err => {
+        console.error('标签导航失败:', err)
+      })
+    }
+    return
+  }
+
   const link = target.closest('.block-link') as HTMLElement | null
   if (!link) return
 
@@ -155,6 +199,13 @@ function handleContentClick(e: MouseEvent) {
   }
   const pageName = link.dataset.page
   if (pageName) {
+    // 对称 pane（ADR-0059）：Ctrl/⌘+Click → 目标页在另一栏打开，与正文渲染态同口径
+    if (e.ctrlKey || e.metaKey) {
+      openPageInOtherPane(pageName).catch(err => {
+        console.error('另一栏打开失败:', err)
+      })
+      return
+    }
     navigateToPage(pageName).catch(err => {
       console.error('导航失败:', err)
     })
@@ -162,9 +213,10 @@ function handleContentClick(e: MouseEvent) {
 }
 
 // 点击反链块：跳转到源页 + 激活该块
-// wiki link 点击由 handleContentClick 负责导航，此处跳过避免双重导航
+// wiki link / tag 点击由 handleContentClick 负责导航，此处跳过避免双重导航
 async function handleBacklinkClick(item: BacklinkItem, event: MouseEvent) {
-  if ((event.target as HTMLElement).closest('.block-link')) return
+  const target = event.target as HTMLElement
+  if (target.closest('.block-link') || target.closest('.block-tag')) return
 
   if (editorStore.activeBlockId) {
     editorStore.deactivateBlock()
@@ -188,18 +240,18 @@ async function handleGroupClick(sourcePageId: string) {
   }
 }
 
-function getBlockPropertiesMap(blockId: string): Record<string, PropertyValue> {
-  const props = propertyStore.getBlockProperties(blockId)
-  const result: Record<string, PropertyValue> = {}
-  for (const prop of props) {
-    result[prop.key] = prop.value
+function getBlockFieldValuesMap(blockId: string): Record<string, FieldValueData> {
+  const rows = fieldValueStore.getBlockFieldValues(blockId)
+  const result: Record<string, FieldValueData> = {}
+  for (const fv of rows) {
+    result[fv.key] = decodeFieldValueData(fv.value_json, fv.value_type) as FieldValueData
   }
   return result
 }
 
 function getBlockLanguage(blockId: string): string | undefined {
-  const prop = propertyStore.getBlockProperty(blockId, 'language')
-  return prop?.value as string | undefined
+  const fv = fieldValueStore.getBlockFieldValue(blockId, 'language')
+  return fv ? (decodeFieldValueData(fv.value_json, fv.value_type) as string) : undefined
 }
 
 // 监听 targetPageId 变化，重新加载 Backlinks
@@ -223,7 +275,16 @@ watch(
       class="backlinks-header"
       @click="collapsed = !collapsed"
     >
-      <span class="backlinks-toggle">{{ collapsed ? '▶' : '▼' }}</span>
+      <!-- 折叠指示：与 block 的 bullet-chevron 同一个 lucide 图标（ChevronDown），
+           折叠态由 CSS rotate(-90°) 表达（同 _block.scss 的 .bullet-chevron），
+           不做 v-if 换图标——换图标只能瞬间跳变，旋转才能与折叠动画同时起止。
+           箭头只表示折叠态，header 整行才是点击目标。 -->
+      <span class="backlinks-toggle">
+        <ChevronDown
+          :size="16"
+          :stroke-width="2"
+        />
+      </span>
       <span class="backlinks-title">
         反向链接
         <span class="backlinks-count">({{ groupedBacklinks.reduce((sum, g) => sum + g.items.length, 0) }})</span>
@@ -252,12 +313,19 @@ watch(
             :key="group.sourcePageId"
             class="backlink-group"
           >
-            <!-- 组标题：[[A]] (count)，点击跳转到源页 -->
+            <!-- 组标题：页面身份（图标 + 页名）+ 计数，点击跳转到源页。
+                 不拼 `[[ ]]`——分组键是页面实体，不是正文里的 wiki link 语法，
+                 原样拼括号在视觉上等于「未渲染的源码」。 -->
             <div
               class="backlink-group-header"
               @click="handleGroupClick(group.sourcePageId)"
             >
-              <span class="backlink-group-title">[[{{ group.sourcePageTitle }}]]</span>
+              <FileText
+                class="backlink-group-icon"
+                :size="13"
+                aria-hidden="true"
+              />
+              <span class="backlink-group-title">{{ group.sourcePageTitle }}</span>
               <span class="backlink-group-count">({{ group.items.length }})</span>
             </div>
 
@@ -274,10 +342,10 @@ watch(
                   <span class="bullet-dot" />
                 </span>
 
-                <!-- PropertyInline: between-bullet-content -->
-                <PropertyInline
+                <!-- 内联槽: between -->
+                <BlockFieldZone
                   :block-id="item.link.sourceBlockId"
-                  position="between-bullet-content"
+                  variant="between"
                 />
 
                 <!-- 块内容：renderComponent（readonly） -->
@@ -286,7 +354,7 @@ watch(
                   v-if="getHandler(item.block.type)"
                   :block-id="item.link.sourceBlockId"
                   :content="item.block.content"
-                  :properties="getBlockPropertiesMap(item.link.sourceBlockId)"
+                  :field-values="getBlockFieldValuesMap(item.link.sourceBlockId)"
                   :language="getBlockLanguage(item.link.sourceBlockId)"
                   :readonly="true"
                   @content-click="handleContentClick"
@@ -296,18 +364,13 @@ watch(
                   class="backlink-text-fallback"
                 >{{ item.block.content || '空块' }}</span>
 
-                <!-- PropertyInline: right-of-content -->
-                <PropertyInline
-                  :block-id="item.link.sourceBlockId"
-                  position="right-of-content"
-                />
-
-                <!-- PropertyDisplay（下方属性区，stopPropagation） -->
-                <div
-                  class="backlink-properties"
-                  @click.stop
-                >
-                  <PropertyDisplay :block-id="item.link.sourceBlockId" />
+                <!-- 下方字段区：只读投影，自身不再拦截点击——点字段冒泡到块行，
+                     语义等于「跳到源块的这一处」 -->
+                <div class="backlink-properties">
+                  <BlockFieldZone
+                    :block-id="item.link.sourceBlockId"
+                    variant="all"
+                  />
                 </div>
               </div>
             </div>
@@ -328,13 +391,15 @@ watch(
 
 .backlinks-panel {
   flex-shrink: 0;
-  border-top: 2px  var(--border);
   background: var(--bg-base);
   display: flex;
   flex-direction: column;
-  padding: 0;
+  /* 镜像 .main-content 的横向盒模型：同 max-width + 居中 + 同左右内边距，
+     使「反向链接」标题左缘与页面标题/正文左缘对齐（窄 pane 下也不贴边）。 */
   max-width: var(--max-width);
   width: 100%;
+  margin: 0 auto;
+  padding: 0 var(--space-6);
   box-sizing: border-box;
 }
 
@@ -344,7 +409,7 @@ watch(
   padding: var(--space-3) 0;
   cursor: pointer;
   border-radius: var(--radius-md);
-  transition: background 80ms ease;
+  transition: background var(--dur-fast) var(--ease-out);
 }
 
 .backlinks-title {
@@ -368,12 +433,25 @@ watch(
 }
 
 .backlinks-toggle {
-  font-size: var(--text-xs);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   color: var(--text-tertiary);
   padding: 2px var(--space-1);
   /* 展开 + 非 hover 时隐藏；hover 或折叠时可见 */
   opacity: 0;
-  transition: opacity 120ms ease;
+  transition: opacity var(--dur-fast) var(--ease-out);
+
+  svg {
+    display: block;
+    /* 折叠方向旋转的过渡基线：与 .backlinks-body-wrapper 的 grid-template-rows
+       动画逐字一致（--dur-base + --ease-in-out），起止同步。 */
+    transition: transform var(--dur-base) var(--ease-in-out);
+  }
+}
+
+.backlinks-panel.is-collapsed .backlinks-toggle svg {
+  transform: rotate(-90deg);
 }
 
 .backlinks-header:hover .backlinks-toggle,
@@ -390,7 +468,7 @@ watch(
 .backlinks-body-wrapper {
   display: grid;
   grid-template-rows: 1fr;
-  transition: grid-template-rows 200ms ease;
+  transition: grid-template-rows var(--dur-base) var(--ease-in-out);
   overflow: hidden;
   /* body 相对 header 向右缩进 24px（与 backlink-block-list 对齐） */
   padding-left: 24px;
@@ -424,25 +502,37 @@ watch(
   gap: var(--space-1);
 }
 
-/* 组标题 */
+/* 组标题 = 页面身份行（图标 + 页名 + 计数）。
+   hover 只染字色不改底：底留给块行，否则「组头」与「块行」争同一视觉权重。 */
 .backlink-group-header {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: var(--space-2) 0;
+  gap: var(--space-2);
+  padding: var(--space-2) 0 var(--space-1);
   cursor: pointer;
-  border-radius: var(--radius-md);
-  transition: background 80ms ease;
 }
 
-.backlink-group-header:hover {
-  background: var(--bg-hover);
+.backlink-group-icon {
+  flex: none;
+  color: var(--text-tertiary);
+  transition: color var(--dur-fast) var(--ease-out);
+}
+
+.backlink-group-header:hover .backlink-group-icon {
+  color: var(--accent);
 }
 
 .backlink-group-title {
   font-size: var(--text-sm);
   font-weight: var(--font-medium);
+  /* 与面板标题（--text-secondary）同色会读成同层：组标题是列表的结构锚点，
+     保持 primary，靠图标与 medial 字重和块正文区分 */
   color: var(--text-primary);
+  transition: color var(--dur-fast) var(--ease-out);
+}
+
+.backlink-group-header:hover .backlink-group-title {
+  color: var(--accent);
 }
 
 .backlink-group-count {
@@ -467,7 +557,7 @@ watch(
   padding: var(--space-1) var(--space-2);
   border-radius: var(--radius-md);
   cursor: pointer;
-  transition: background 80ms ease;
+  transition: background var(--dur-fast) var(--ease-out);
 }
 
 .backlink-block:hover {
@@ -505,9 +595,51 @@ watch(
   color: var(--text-primary);
 }
 
-/* PropertyDisplay 下方属性区 */
+/* 块内字段区（all 变体，只读）+ 视觉分层：
+   1. 压到块正文之下一档——字段是块的元数据，不是块的正文；
+   2. 抹掉 all 变体自带的纱底与外边距，那是块内语境，在反链行里会与行 hover 底打架；
+   3. 去掉 chip 的 hover 反馈与手型：此处不可编辑，唯一交互是「跳到源块」。 */
 .backlink-properties {
   width: 100%;
   padding-left: 24px; /* 对齐 bullet 宽度 20px + gap 4px */
+}
+
+.backlink-properties :deep(.property-display) {
+  margin-top: 2px;
+  padding: 0;
+  background: transparent;
+}
+
+.backlink-properties :deep(.property-item) {
+  font-size: var(--text-xs);
+  cursor: default;
+}
+
+.backlink-properties :deep(.property-item:hover) {
+  background: transparent;
+}
+
+/* 字段名统一压到 tertiary：含 built-in 字段，其强调色在次要区里会跳（优先级需压过
+   `.property-item.built-in .property-key`，故选择器逐层写全） */
+.backlink-properties :deep(.property-item .property-key),
+.backlink-properties :deep(.property-item.built-in .property-key) {
+  color: var(--text-tertiary);
+  font-weight: var(--font-normal);
+}
+
+.backlink-properties :deep(.block-field-zone-chip) {
+  font-size: var(--text-xs);
+  line-height: calc(var(--leading-normal) * var(--text-xs));
+  cursor: default;
+}
+
+.backlink-properties :deep(.block-field-zone-chip:hover) {
+  background: transparent;
+  border-color: var(--border-color);
+}
+
+/* 值比字段名亮一档，但仍低于块正文（--text-primary）：层级 = 正文 > 值 > 字段名 */
+.backlink-properties :deep(.bfz-chip-value) {
+  color: var(--text-secondary);
 }
 </style>

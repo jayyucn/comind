@@ -1,14 +1,22 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
-import type { Block, BlockClipPayload } from '../types/block'
-import type { PropertyType, PropertyValue } from '../types/property'
-import { debounce } from '../utils/debounce'
-import { generateUUID } from '../utils/id'
-import { decodePropertyValue } from '../utils/property-codec'
-import { initCoreClient, isTauriEnvironment, triggerSync } from '../wasm/client'
-import { useBlockCardStore } from './blockCard'
-import { usePropertyStore } from './property'
 
+import type { BatchOperation } from '@/wasm/types'
+
+import {
+  isOrderedListItem,
+  nextOrderedListIndexAfter,
+  orderedListIndexAt,
+  orderedListIndexForNewItem,
+  type OrderedListSibling,
+  planOrderedListNumbering,
+} from '../composables/ordered-list-index'
+import { parseParagraphStyle } from '../composables/useContentRenderer'
+import { markQueryViewOrphan, restoreQueryViewNamespace } from '../services/query-view-namespace'
+import { renderedOffsetToEncodedOffset } from '../services/render-text'
+import { normalizeTextRange, planTextRangeReplacement, type TextRange } from '../services/text-range'
+import type { Block, BlockClipPayload } from '../types/block'
+import type { FieldType, FieldValueData } from '../types/field-definition'
 import {
   calcInsertPos,
   findBlockIndex,
@@ -22,11 +30,25 @@ import {
   SAVE_DEBOUNCE_MS,
   sortByPos
 } from '../utils/block-helpers'
-
-import type { BatchOperation } from '@/wasm/types'
-import { renderedOffsetToEncodedOffset } from '../services/render-text'
-import { normalizeTextRange, type TextRange } from '../services/text-range'
+import { debounce } from '../utils/debounce'
+import { decodeFieldValueData } from '../utils/field-value-codec'
+import { generateUUID } from '../utils/id'
+import type { InlineMarkRange } from '../utils/inline-marks'
+import {
+  normalizeInlineMarks,
+  readInlineMarks,
+  sameInlineMarks,
+  shiftInlineMarks,
+  sliceInlineMarks,
+  writeInlineMarks,
+} from '../utils/inline-marks'
 import type { CoreClient } from '../wasm/client'
+import { initCoreClient, isTauriEnvironment, triggerSync } from '../wasm/client'
+import { useBlockCardStore } from './blockCard'
+import { useEditorStore } from './editor'
+import { useFieldValueStore } from './fieldValue'
+import { usePageStore } from './pages'
+import { useTagsStore } from './tags'
 
 /**
  * 文本选区删除计划（#100）：把「删了什么」表达为数据，供编排层先做关系清理
@@ -39,10 +61,12 @@ export interface TextRangeDeletionPlan {
   mergedAwayBlockId: string | null
   /** 存活但内容被裁的块 → 操作后的最终内容（清理的存活检查与 apply 的落库共用） */
   contentAfter: Record<string, string>
+  /** 裁剪后的行内格式（与 contentAfter 同键；缺省 = 清空格式） */
+  contentAfterMarks?: Record<string, InlineMarkRange[]>
   /** 部分消失的文本片段（清理的目标提取输入，与宿主块存亡无关） */
   vanishedFragments: Array<{ blockId: string; text: string }>
   /** 应用阶段的结构合并（source 并入 target：target 存活、source 消失）；null = 纯裁剪/切片 */
-  merge: { targetId: string; sourceId: string; mergedContent: string } | null
+  merge: { targetId: string; sourceId: string; mergedContent: string; inlineMarks?: InlineMarkRange[] } | null
   /** 删除后的光标落点（ProseMirror position 口径 = 文本偏移 + 1） */
   cursor: { id: string; cursorPos: number }
 }
@@ -133,6 +157,22 @@ async function safeCalcInsertPos(
     }
     throw error
   }
+}
+
+/**
+ * 一次粘贴的结果。
+ *
+ * `moved === true` 表示这次是**搬移**（源块被复活并换了页，id 不变），
+ * 与「新建副本」在调用方要分头处理：搬移不需要任何类型专属的重建（配置就挂在同一个 id 上）。
+ */
+export interface PasteOutcome {
+  blocks: Block[]
+  moved: boolean
+  /**
+   * 搬移前这些根块所在的页（`moved === false`、来源不明、或根块来自多页时为 null）。
+   * 调用方据此把源页与目标页的撤销步配成一步（`linkCrossPageStep`）。
+   */
+  movedFromPageId: string | null
 }
 
 export const useBlockStore = defineStore('blocks', () => {
@@ -285,6 +325,7 @@ export const useBlockStore = defineStore('blocks', () => {
           type: brd.block.type as Block['type'],
           renderSegments: brd.render_segments || [],
           properties: brd.properties ?? {},
+          tags: brd.block.tags ?? [],
           createdAt: brd.block.created_at,
           updatedAt: brd.block.updated_at
         })),
@@ -305,6 +346,7 @@ export const useBlockStore = defineStore('blocks', () => {
           type: rustBlock.type as Block['type'],
           renderSegments: undefined,
           properties: [],
+          tags: rustBlock.tags ?? [],
           createdAt: rustBlock.created_at,
           updatedAt: rustBlock.updated_at
         })),
@@ -368,6 +410,7 @@ export const useBlockStore = defineStore('blocks', () => {
       if (myGeneration !== multiPageLoadGeneration) return
 
       const existingIds = new Set(blocks.value.map(b => b.id))
+      const existingById = new Map(blocks.value.map(b => [b.id, b]))
       for (const pwb of pagesWithBlocks) {
         if (!pwb) continue
         for (const brd of pwb.blocks) {
@@ -388,6 +431,18 @@ export const useBlockStore = defineStore('blocks', () => {
           if (!existingIds.has(newBlock.id)) {
             blocks.value.push(newBlock)
             existingIds.add(newBlock.id)
+            existingById.set(newBlock.id, newBlock)
+            continue
+          }
+          // 已存在的块（Backlinks 逐块 loadBlock 预览拉进来的）只带基本字段、无
+          // render_segments —— 此处「已在缓存就跳过」会把渲染段永久留在 undefined，
+          // 渲染态只能走纯文本兜底：#tag 丢 data-tag-id 与标签色（点击还会按 data-page
+          // 当页面跳）。故补齐渲染段。
+          // 守卫 content 相等：本地编辑过的块（updateBlockContent 主动置 undefined 防
+          // 陈旧段）内容已与库中不同，不可把陈旧段塞回去。
+          const existing = existingById.get(newBlock.id)
+          if (existing && existing.renderSegments === undefined && existing.content === newBlock.content) {
+            existing.renderSegments = newBlock.renderSegments
           }
         }
       }
@@ -435,6 +490,14 @@ export const useBlockStore = defineStore('blocks', () => {
   /** S9: blockId → save failure flag. UI shows red dot in rendered state. */
   const saveErrors = ref<Record<string, boolean>>({})
 
+  // ── 标签建签门（ADR-0050 content 联动，与 [[page]] 同一提交语义）──
+  // 打字中间态（#f、#fo）不得建标签：防抖打字保存以 create_missing_tags=false 落库，
+  // 提交动作（blur / 拆分 / 粘贴 / 合并等）置位 pendingCommitTags 后以 true 落库。
+  /** 待提交建签的 blockId 集合：_doSave 消费后清除。 */
+  const pendingCommitTags = new Set<string>()
+  /** blockId → 最近一次落库是否跳过了建签。内容未变的 commit 由此判断要不要补一次保存。 */
+  const lastSaveSkippedCreation = new Map<string, boolean>()
+
   let syncDebounceTimer: ReturnType<typeof setTimeout> | null = null
 
   function _triggerSyncDebounced() {
@@ -445,6 +508,17 @@ export const useBlockStore = defineStore('blocks', () => {
     }, 5000)
   }
 
+  /**
+   * 系统任务 tag 的持久化 id：is_system 且其有效字段中含 key==='status'。
+   * 用字段特征而不是硬编码 id / title，避免 seed id 或本地化标题变动导致失配。
+   */
+  function systemTaskTagId(): string | undefined {
+    const tagsStore = useTagsStore()
+    return tagsStore.allTags.find((t) =>
+      t.is_system && tagsStore.effectiveFieldDefinitions(t.id).some((d) => d.key === 'status'),
+    )?.id
+  }
+
   async function _doSave(block: Block): Promise<void> {
     const currentBlock = blocks.value.find(b => b.id === block.id)
     if (!currentBlock) {
@@ -453,6 +527,9 @@ export const useBlockStore = defineStore('blocks', () => {
     }
 
     const client = await getClient()
+    // 建签门：blur/拆分等提交动作置位过 pendingCommitTags → 允许建；
+    // 纯打字防抖保存未置位 → false，`#f`、`#fo` 中间前缀不落标签表（ADR-0050）。
+    const createMissingTags = pendingCommitTags.has(block.id)
     const blockUpdate = {
       id: currentBlock.id,
       page_id: currentBlock.pageId,
@@ -462,7 +539,8 @@ export const useBlockStore = defineStore('blocks', () => {
       format: JSON.stringify(currentBlock.format || {}),
       type: currentBlock.type,
       created_at: currentBlock.createdAt,
-      updated_at: Date.now()
+      updated_at: Date.now(),
+      create_missing_tags: createMissingTags
     }
 
     try {
@@ -487,6 +565,10 @@ export const useBlockStore = defineStore('blocks', () => {
         }
       }
 
+      // 建签门状态收口：已消费的提交意图清除（失败路径不清，重试仍带）。
+      pendingCommitTags.delete(currentBlock.id)
+      pendingCommitTags.delete(savedBlock.id)
+
       const saved = savedBlock.id !== currentBlock.id
         ? { ...currentBlock, id: savedBlock.id }
         : currentBlock
@@ -509,6 +591,34 @@ export const useBlockStore = defineStore('blocks', () => {
         }
       }
 
+      // 回写 Rust 派生的 block.tags（content 中 `#tag` 引用 → 标签归属由 Rust 解析并写入）。
+      // 不回写则本地 block.tags 永远停留在输入前的值，块下字段展示区（BlockFieldZone 读
+      // block.tags）在输入 #tag 后不刷新，需手动切页 / 重开才更新。
+      const prevTags = new Set(currentBlock.tags ?? [])
+      if (savedBlock.tags) {
+        currentBlock.tags = savedBlock.tags
+      }
+      // 块新获得标签 → 回读该块字段值。Rust 侧 `apply_field_defaults_for_new_tags` 已在落库时
+      // 为「打标自动填默认」写出 FieldValue，但 field-value store 不会被保存路径刷新
+      // （只有手动 setFieldValue 才回读）；不回读，字段区会一直显示占位「—」，看不到默认值
+      // （bug 2 前端侧）。仅在新获得标签时回读，避免每次打字保存都触发整块属性重载。
+      const gainedTag = (savedBlock.tags ?? []).some((t: string) => !prevTags.has(t))
+      if (gainedTag) {
+        const fieldValueStore = useFieldValueStore()
+        void fieldValueStore.loadBlockFieldValues(currentBlock.id).catch(() => {})
+      }
+
+      // 引用了系统任务 tag 但尚无 status 字段值 → 自动补 Todo，使 status 任务图标自动展示。
+      // ensureTodo 幂等（已有 status 直接跳过）且并发安全（ensureTodoInFlight 守卫），
+      // fire-and-forget：失败不影响本次保存落库。
+      const taskTagId = systemTaskTagId()
+      if (taskTagId && currentBlock.tags?.includes(taskTagId)) {
+        const fieldValueStore = useFieldValueStore()
+        if (!fieldValueStore.getBlockFieldValue(currentBlock.id, 'status')) {
+          void fieldValueStore.ensureTodo(currentBlock.id).catch(() => {})
+        }
+      }
+
       // 事件驱动同步该 block 下未 dismissed 通知的 payload。
       // 去掉 content 变化 guard（_doSave 内无法可靠捕获前值），
       // syncPayloadForBlock 内部按 storedRefs 长度和 dismissed 状态自动跳过。
@@ -518,6 +628,12 @@ export const useBlockStore = defineStore('blocks', () => {
       } catch (e) {
         console.error('[BlockStore] syncPayloadForBlock failed:', e)
       }
+
+      // 内容改动回写所属页的 updatedAt（内存层）。Rust 落库时 recount_word_count 已把
+      // Page.updated_at 刷新，但前端的 pages store 不会因此响应式更新，导致按 updatedAt 排序的
+      // 最近列表在编辑当前页时不实时上移。这里在保存成功后补一次内存层 touch，使最近列表实时反映。
+      const pageStore = usePageStore()
+      pageStore.touchPage(currentBlock.pageId)
     } catch (error) {
       console.error('[BlockStore] Failed to save block:', error)
       saveErrors.value = { ...saveErrors.value, [block.id]: true }
@@ -596,7 +712,7 @@ export const useBlockStore = defineStore('blocks', () => {
       pageId: opts.pageId,
       pos: newPos,
       format: opts.format ?? {},
-      type: opts.type ?? 'bullet',
+      type: opts.type ?? 'text',
       createdAt: Date.now(),
       updatedAt: Date.now()
     }
@@ -639,8 +755,8 @@ export const useBlockStore = defineStore('blocks', () => {
     const contentLen = block.content.length
 
     // ── 获取原 block 的 status（新 block 也加 todo）────────────────────────
-    const propertyStore = usePropertyStore()
-    const hasSourceStatus = !!propertyStore.getBlockProperty(blockId, 'status')
+    const fieldValueStore = useFieldValueStore()
+    const hasSourceStatus = !!fieldValueStore.getBlockFieldValue(blockId, 'status')
 
     // ── 位置判断 ─────────────────────────────────────────────────────────
     // 空行（contentLen === 0）应视作行尾，插入子节点而非兄弟节点
@@ -698,15 +814,58 @@ export const useBlockStore = defineStore('blocks', () => {
           }
         }
 
+        // 切点对齐（其余结构化段）：切点落在 link / typed_link / tag 段内部时推至该段末尾 ——
+        // 既避免切出残缺标记（`...[[D` / `((part-of`），也保证下方 segments 裁剪不产生跨界段。
+        // date-ref 已由上面的正则处理，此处覆盖其余非 text 段（segments 即 Rust 权威段边界）。
+        const sourceSegments = block.renderSegments
+        if (sourceSegments) {
+          for (const seg of sourceSegments) {
+            if (seg.type !== 'text' && textOffset > seg.start && textOffset < seg.end) {
+              textOffset = seg.end
+              before = block.content.slice(0, textOffset)
+              after = block.content.slice(textOffset)
+              break
+            }
+          }
+        }
+
+        // 行内格式随正文一起在切点处劈开：前半留在原块，后半平移后挂到新块。
+        const sourceMarks = readInlineMarks(block.format, contentLen)
+        const leftMarks = sliceInlineMarks(sourceMarks, 0, textOffset)
+        const rightMarks = sliceInlineMarks(sourceMarks, textOffset, contentLen)
+
         // 更新当前节点的内容（前半部分）
         block.content = before
+        block.format = writeInlineMarks(block.format, leftMarks)
         block.updatedAt = Date.now()
-        // 内容变更后清除过时的 renderSegments（同 updateBlockContent 逻辑）
-        block.renderSegments = undefined
+        // 旧块紧接着失活 → BulletRender 读 renderSegments。此处**同步**裁剪出 before 的段而非置
+        // undefined：undefined 会走纯文本回退，`((type))` 关系语法裸显（`[[x]]` / `#tag` 尚能自救，
+        // 仅关系语法不能 —— 见 BulletRender.normalContent 的 segments 缺失分支）。
+        // 不能用「切片后 await flushSave」替代：handleSplit 已先 deactivateBlock，Vue 的渲染 flush
+        // 早于任何 await 落库完成，等到回写时裸标记已画出一帧以上。
+        // 裁剪只做边界切割、不引入解析，不破坏「关系解析单源在 Rust」；落库后 _doSave 会用 Rust
+        // 重算值覆盖（content guard 通过），二者内容一致。切点已对齐到段边界，故非 text 段不跨界，
+        // 只有尾部 text 段需要截断。
+        block.renderSegments = sourceSegments
+          ? sourceSegments
+              .filter(s => s.start < textOffset)
+              .map(s => (s.type === 'text' && s.end > textOffset ? { ...s, end: textOffset } : s))
+          : undefined
         _scheduleSave(block)
 
         // 在指定位置插入新节点（后半部分）
-        newBlock = await insertAtPosition(block.pageId, newParentId, after, block, childBlocks, hasExpandedChildren, blockFormat)
+        const newBlockFormat = rightMarks.length > 0
+          ? { ...(blockFormat ?? {}), inlineMarks: rightMarks }
+          : blockFormat
+        newBlock = await insertAtPosition(block.pageId, newParentId, after, block, childBlocks, hasExpandedChildren, newBlockFormat)
+
+        // 新块同样按 after 裁剪出平移后的段：新块先以编辑态呈现（编辑器渲染原文、不吃 segments），
+        // 但失活后会走 BulletRender，缺 segments 会重演同一裸显。
+        if (newBlock && sourceSegments) {
+          newBlock.renderSegments = sourceSegments
+            .filter(s => s.end > textOffset)
+            .map(s => ({ ...s, start: Math.max(s.start, textOffset) - textOffset, end: s.end - textOffset }))
+        }
       } else {
         // ── 行尾：无文本拆分 ─────────────────────────────────────────────
         newBlock = await insertAtPosition(block.pageId, newParentId, '', block, childBlocks, hasExpandedChildren, blockFormat)
@@ -714,11 +873,11 @@ export const useBlockStore = defineStore('blocks', () => {
     }
 
     // ── 原 block 有 status 时，新 block 加 Todo ───────────────────────────
-    // 注意：需先 _doSave 将新 block 持久化到数据库，否则 setProperty 会因
-    // FOREIGN KEY 约束失败（property 表引用不存在的 block）
+    // 注意：需先 _doSave 将新 block 持久化到数据库，否则 setFieldValue 会因
+    // FOREIGN KEY 约束失败（field_value 表引用不存在的 block）
     if (newBlock && hasSourceStatus) {
       await _doSave(newBlock)
-      await propertyStore.setProperty(newBlock.id, 'status', 'Todo', 'string')
+      await fieldValueStore.setFieldValue(newBlock.id, 'status', 'Todo', 'string')
     }
 
     return newBlock
@@ -732,17 +891,15 @@ export const useBlockStore = defineStore('blocks', () => {
     block: Block,
     blockFormat?: Block['format']
   ): Promise<Block> {
-    // 预先捕获 nextPos，避免 renumber 后 block.pos 被就地修改导致回调中的 nextPos 偏离
-    const originalNextPos = block.pos
-
+    // 两个邻居都必须在回调内现取：gap 耗尽恢复会就地重编号（renumberBlocks 直接改写
+    // block.pos），预捕获的 nextPos 会变成陈旧值，与现取的 prev 混算 → 落点漂到块栈中部。
     const calcPositions = () => {
       const siblings = getSortedSiblings(blocks.value, block, false)
       const blockIndex = findBlockIndex(siblings, block.id)
       const prevSibling = blockIndex > 0 ? siblings[blockIndex - 1] : undefined
       return {
         prevPos: prevSibling?.pos ?? null,
-        // 必须用原始 nextPos，不能用 block.pos（renumber 后 block.pos 已改变）
-        nextPos: originalNextPos
+        nextPos: block.pos
       }
     }
 
@@ -785,9 +942,6 @@ export const useBlockStore = defineStore('blocks', () => {
   ): Promise<Block> {
     let newPos: number
 
-    // 预先捕获 refBlock.pos，避免 renumber 后 refBlock.pos 被就地修改
-    const originalPrevPos = refBlock.pos
-
     if (asFirstChild) {
       // 作为第一个子节点：插入到现有子节点之前
       const calcPositions = () => {
@@ -808,12 +962,14 @@ export const useBlockStore = defineStore('blocks', () => {
       )
     } else {
       // 作为下方兄弟节点：插入到 refBlock 之后
+      // 两个邻居都必须在回调内现取而非外面快照：gap 耗尽恢复会就地重编号（renumberBlocks
+      // 直接改写 refBlock.pos），任何预捕获的 pos 都会变成陈旧值；把它与现取的 next
+      // 混算会得到「陈旧 prev ↔ 新 next」的中点 → 落点漂到块栈中部（行尾连续 Enter 实证）。
       const calcPositions = () => {
         // 重编号后重新获取兄弟节点
         const nextSibling = getNextSibling(blocks.value, refBlock)
         return {
-          // 必须用原始 prevPos，不能用 refBlock.pos（renumber 后已改变）
-          prevPos: originalPrevPos,
+          prevPos: refBlock.pos,
           nextPos: nextSibling?.pos ?? null
         }
       }
@@ -953,7 +1109,7 @@ export const useBlockStore = defineStore('blocks', () => {
    * - 有展开的子 Block → 第一个子 Block
    * - 否则（无子节点 / 已折叠）→ 下一个兄弟；没有则上溯到最近一个有后继兄弟的祖先
    *
-   * 注意：选区「成员资格」不走这里（Ctrl+A / 拖拽扩展有意包含隐藏块，见 ADR-0045 ④）。
+   * 注意：选区「成员资格」不走这里（Ctrl+Shift+A / 拖拽扩展有意包含隐藏块，见 ADR-0045 ④）。
    */
   function findNextVisibleBlock(blockId: string): Block | undefined {
     const block = blocks.value.find(b => b.id === blockId)
@@ -996,7 +1152,8 @@ export const useBlockStore = defineStore('blocks', () => {
     targetId: string,
     sourceId: string,
     mergedContent: string,
-    cursorPos: number
+    cursorPos: number,
+    inlineMarks?: InlineMarkRange[],
   ) {
     if (targetId === sourceId) return null
     const target = blocks.value.find(b => b.id === targetId)
@@ -1004,6 +1161,8 @@ export const useBlockStore = defineStore('blocks', () => {
     if (!target || !source) return null
 
     target.content = mergedContent
+    // 合并后的正文格式由调用方给出（拼接/裁剪已换算偏移）；缺省则清空，避免旧偏移错位。
+    target.format = writeInlineMarks(target.format, inlineMarks ?? [])
     target.updatedAt = Date.now()
     // 内容变更后清除过时的 renderSegments（同 updateBlockContent 逻辑）
     target.renderSegments = undefined
@@ -1059,11 +1218,22 @@ export const useBlockStore = defineStore('blocks', () => {
     const mergeTarget = findPreviousVisibleBlock(blockId)
     if (!mergeTarget) return
 
+    const targetMarks = readInlineMarks(mergeTarget.format, mergeTarget.content.length)
+    const sourceMarks = shiftInlineMarks(
+      readInlineMarks(block.format, block.content.length),
+      mergeTarget.content.length,
+    )
+    const mergedMarks = normalizeInlineMarks(
+      [...targetMarks, ...sourceMarks],
+      mergeTarget.content.length + block.content.length,
+    )
+
     return mergeBlockInto(
       mergeTarget.id,
       blockId,
       mergeTarget.content + block.content,
-      mergeTarget.content.length + 1
+      mergeTarget.content.length + 1,
+      mergedMarks,
     )
   }
 
@@ -1084,9 +1254,9 @@ export const useBlockStore = defineStore('blocks', () => {
 
     const lo = renderedOffsetToEncodedOffset(startBlock.content, startBlock.renderSegments, start.offset)
     const hi = renderedOffsetToEncodedOffset(endBlock.content, endBlock.renderSegments, end.offset)
-    // 只有普通文本块参与裁剪/合并（heading 等同为 bullet + format）
-    const startIsText = startBlock.type === 'bullet'
-    const endIsText = endBlock.type === 'bullet'
+    // 只有普通文本块参与裁剪/合并（heading 等同为 text + format）
+    const startIsText = startBlock.type === 'text'
+    const endIsText = endBlock.type === 'text'
     // 光标口径换算：cursorPos 是 ProseMirror position（文档位置 = 文本偏移 + 1）
     const caret = (textOffset: number) => textOffset + 1
 
@@ -1094,10 +1264,18 @@ export const useBlockStore = defineStore('blocks', () => {
     if (!startIsText && !endIsText) return null
 
     if (start.blockId === end.blockId) {
+      const content = startBlock.content.slice(0, lo) + startBlock.content.slice(hi)
+      const marks = readInlineMarks(startBlock.format, startBlock.content.length)
       return {
         middleBlockIds: [],
         mergedAwayBlockId: null,
-        contentAfter: { [startBlock.id]: startBlock.content.slice(0, lo) + startBlock.content.slice(hi) },
+        contentAfter: { [startBlock.id]: content },
+        contentAfterMarks: {
+          [startBlock.id]: normalizeInlineMarks(
+            [...sliceInlineMarks(marks, 0, lo), ...sliceInlineMarks(marks, hi, startBlock.content.length)],
+            content.length,
+          ),
+        },
         vanishedFragments: [{ blockId: startBlock.id, text: startBlock.content.slice(lo, hi) }],
         merge: null,
         cursor: { id: startBlock.id, cursorPos: caret(lo) },
@@ -1106,20 +1284,34 @@ export const useBlockStore = defineStore('blocks', () => {
 
     // 端点落在非文本块上：该块原样保留，只裁剪另一端的文本块
     if (!startIsText) {
+      const content = endBlock.content.slice(hi)
       return {
         middleBlockIds,
         mergedAwayBlockId: null,
-        contentAfter: { [endBlock.id]: endBlock.content.slice(hi) },
+        contentAfter: { [endBlock.id]: content },
+        contentAfterMarks: {
+          [endBlock.id]: normalizeInlineMarks(
+            sliceInlineMarks(readInlineMarks(endBlock.format, endBlock.content.length), hi, endBlock.content.length),
+            content.length,
+          ),
+        },
         vanishedFragments: [{ blockId: endBlock.id, text: endBlock.content.slice(0, hi) }],
         merge: null,
         cursor: { id: endBlock.id, cursorPos: caret(0) },
       }
     }
     if (!endIsText) {
+      const content = startBlock.content.slice(0, lo)
       return {
         middleBlockIds,
         mergedAwayBlockId: null,
-        contentAfter: { [startBlock.id]: startBlock.content.slice(0, lo) },
+        contentAfter: { [startBlock.id]: content },
+        contentAfterMarks: {
+          [startBlock.id]: normalizeInlineMarks(
+            sliceInlineMarks(readInlineMarks(startBlock.format, startBlock.content.length), 0, lo),
+            content.length,
+          ),
+        },
         vanishedFragments: [{ blockId: startBlock.id, text: startBlock.content.slice(lo) }],
         merge: null,
         cursor: { id: startBlock.id, cursorPos: caret(lo) },
@@ -1129,10 +1321,18 @@ export const useBlockStore = defineStore('blocks', () => {
     // 合并后生存块内容：apply 落库（mergeBlockInto）与清理的存活检查（contentAfter）
     // 两个消费方共用同一值，必须一致
     const mergedContent = startBlock.content.slice(0, lo) + endBlock.content.slice(hi)
+    const mergedMarks = normalizeInlineMarks(
+      [
+        ...sliceInlineMarks(readInlineMarks(startBlock.format, startBlock.content.length), 0, lo),
+        ...sliceInlineMarks(readInlineMarks(endBlock.format, endBlock.content.length), hi, endBlock.content.length),
+      ],
+      mergedContent.length,
+    )
     return {
       middleBlockIds,
       mergedAwayBlockId: endBlock.id,
       contentAfter: { [startBlock.id]: mergedContent },
+      contentAfterMarks: { [startBlock.id]: mergedMarks },
       vanishedFragments: [
         { blockId: startBlock.id, text: startBlock.content.slice(lo) },
         { blockId: endBlock.id, text: endBlock.content.slice(0, hi) },
@@ -1141,6 +1341,7 @@ export const useBlockStore = defineStore('blocks', () => {
         targetId: startBlock.id,
         sourceId: endBlock.id,
         mergedContent,
+        inlineMarks: mergedMarks,
       },
       cursor: { id: startBlock.id, cursorPos: caret(lo) },
     }
@@ -1149,13 +1350,39 @@ export const useBlockStore = defineStore('blocks', () => {
   /** 应用删除计划：纯裁剪/切片走 updateBlockContent；合并走 mergeBlockInto（含 source 删除与子块迁移） */
   async function applyTextRangeDeletion(plan: TextRangeDeletionPlan): Promise<{ id: string; cursorPos: number } | null> {
     if (plan.merge) {
-      const merged = await mergeBlockInto(plan.merge.targetId, plan.merge.sourceId, plan.merge.mergedContent, plan.cursor.cursorPos)
+      const merged = await mergeBlockInto(
+        plan.merge.targetId,
+        plan.merge.sourceId,
+        plan.merge.mergedContent,
+        plan.cursor.cursorPos,
+        plan.merge.inlineMarks,
+      )
       return merged ?? { id: plan.cursor.id, cursorPos: plan.cursor.cursorPos }
     }
     for (const [blockId, content] of Object.entries(plan.contentAfter)) {
-      await updateBlockContent(blockId, content)
+      await updateBlockContent(blockId, content, { inlineMarks: plan.contentAfterMarks?.[blockId] })
     }
     return { id: plan.cursor.id, cursorPos: plan.cursor.cursorPos }
+  }
+
+  /**
+   * 把单块内的文本选区替换成 `replacement`（选区包裹为 `[[页名]]` 的写回入口）。
+   *
+   * 与删除同一条坐标链（渲染偏移 → 编码偏移 → content 拼接），运算委托纯模块
+   * `planTextRangeReplacement`，这里只负责落库与光标口径（PM position = 偏移 + 1）。
+   *
+   * 落库走默认 `commitTags: true`：包裹属于提交动作，Rust 侧要按新内容建页/写 link。
+   * 跨块或非法区间返回 null，调用方据此不落任何写。
+   */
+  async function replaceTextRange(
+    pageId: string,
+    range: TextRange,
+    replacement: string,
+  ): Promise<{ id: string; cursorPos: number } | null> {
+    const plan = planTextRangeReplacement(getBlocksByPage(pageId), range, replacement)
+    if (!plan) return null
+    await updateBlockContent(plan.blockId, plan.content, { inlineMarks: plan.inlineMarks })
+    return { id: plan.blockId, cursorPos: plan.caretOffset + 1 }
   }
 
   /**
@@ -1190,11 +1417,15 @@ export const useBlockStore = defineStore('blocks', () => {
     const newPos = await safeCalcInsertPos(prevPos, nextPos, blocks.value, calcPositions)
 
     // 再修改 parentId 和 pos
+    const previousParentId = block.parentId
     block.parentId = prev.id
     block.pos = newPos
 
     block.updatedAt = Date.now()
     _scheduleSave(block)
+
+    // 跨父：旧父组少了一项、新父组多了一项，两段各自重排
+    scheduleOrderedListReindex(block.pageId, { parents: [block.parentId, previousParentId] })
 
     // 落入折叠父块 ⇒ 展开（ADR-0045 D4）：落点必须是可见结果
     reconcileCollapse([], [prev.id])
@@ -1219,11 +1450,15 @@ export const useBlockStore = defineStore('blocks', () => {
     const newPos = await safeCalcInsertPos(prevPos, nextPos, blocks.value, calcPositions)
 
     // 再修改 parentId 和 pos
+    const previousParentId = block.parentId
     block.parentId = newParentId
     block.pos = newPos
 
     block.updatedAt = Date.now()
     _scheduleSave(block)
+
+    // 跨父：新旧两段各自重排（同 indent）
+    scheduleOrderedListReindex(block.pageId, { parents: [previousParentId, newParentId] })
 
     // 原父块可能被掏空 ⇒ 复位；升入的新父块若折叠 ⇒ 展开（ADR-0045 D2/D4）
     reconcileCollapse([parent.id], newParentId ? [newParentId] : [])
@@ -1279,14 +1514,34 @@ export const useBlockStore = defineStore('blocks', () => {
     // 2. 保存快照（深拷贝当前状态，用于 RPC 失败时回滚）
     const snapshot = blocks.value.map(b => ({ ...b }))
 
+    // 2.5 有序列表：被删块所在的父组就是「被碰到的段」。必须在删除前记下 ——
+    //     块从数组里摘掉之后就查不到它原本挂在哪。同段删一项 ⇒ 后续项补号、段首回 1
+    //     （段首恒 1，不需要像锚点时代那样单独判定「删的是不是段首」）。
+    const touchedParents = new Map<string, Set<string | null>>()
+    for (const id of toDelete) {
+      const b = blocks.value.find(x => x.id === id)
+      if (!b) continue
+      const set = touchedParents.get(b.pageId) ?? new Set<string | null>()
+      set.add(b.parentId)
+      touchedParents.set(b.pageId, set)
+    }
+
     // 3. 立即从 reactive 数组移除（同步，触发 tree rebuild）
     const blockCardStore = useBlockCardStore()
+    // 查询块把视图配置挂在 `screen_view` 的 per-block 命名空间上，块删了它就成孤儿。
+    // 收口在本方法（所有删除路径 —— Backspace / 菜单 / 剪切 / 批量 —— 都经过这里）：
+    // 挂到各调用方必漏，删块不清理配置的行会永久留在库里。
+    const orphanQueryIds = [...toDelete].filter(
+      id => blocks.value.find(b => b.id === id)?.type === 'query',
+    )
     for (const id of toDelete) {
       pendingSaves.get(id)?.cancel()
       pendingSaves.delete(id)
       blockCardStore.invalidate(id)
     }
     blocks.value = blocks.value.filter(b => !toDelete.has(b.id))
+    // 异步标记（只改命名空间归属，不改内容）——撤销复活后配置原样回来
+    for (const id of orphanQueryIds) void markQueryViewOrphan(id)
 
     // 折叠不变量对账（ADR-0045 D2）：本次删除可能掏空某些【存活】父块 ——
     // 含「至少留一块」闸门保留下来的那块（其子节点已全部进入 toDelete）。
@@ -1323,6 +1578,11 @@ export const useBlockStore = defineStore('blocks', () => {
         console.warn('[deleteBlocks] rolled back to snapshot')
       }
     }, 0)
+
+    // 删掉的可能是段中项 ⇒ 只重排被碰到的父组（同段补号）
+    for (const pageId of affectedPages) {
+      scheduleOrderedListReindex(pageId, { parents: touchedParents.get(pageId) ?? [] })
+    }
   }
 
   /** 删除单个 Block（委托给批量删除） */
@@ -1330,18 +1590,270 @@ export const useBlockStore = defineStore('blocks', () => {
     await deleteBlocks([blockId])
   }
 
-  /** 更新 Block 内容 */
-  async function updateBlockContent(blockId: string, content: string) {
+  // ── 有序列表序号推导 ────────────────────────────────────────────────
+  //
+  // 序号是 content 的字面前缀（不是块类型），结构一动就会失真：删中间项得 `1, 3, 4`，
+  // 缩进/粘贴/拖动后同段落各说各话。这里把「第几项」推导出来并**写回 content** ——
+  // 渲染态（BulletRender）、编辑态（ParagraphStylePreviewExtension）、查询预览读的都是
+  // 同一份字面，不值得为「只改显示」再造一条并行的真相。
+  //
+  // 规则（ADR-0064）：段首恒 1、段内严格 +1、非文本块与高亮块透明。推导全在
+  // `composables/ordered-list-index.ts`（纯函数，有单测）；这里只负责三件纯函数
+  // 管不了的事：谁能写（活动块跳过）、归一到哪个段（作用域）、何时落库。
+
+  /** 合并窗口：一次结构/内容变更只推导一次。只影响落库，显示本就即时（字号、前缀都读内存） */
+  const ORDERED_LIST_REINDEX_MS = 150
+  /** 推导过程中禁止再次触发推导（写回 content 会经过 `updateBlockContent`） */
+  let orderedListApplying = false
+  const orderedListTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  /**
+   * 窗口内被碰到的父组（`parentId ?? 根`）。
+   *
+   * `null` = 整页。归一作用域必须是「被这次操作碰到的段」：一次编辑只改同父的那一段，
+   * 不去动用户没看的列表 —— 段首恒 1 之后，整页扫描会把页面上每一个非 1 起头的段
+   * 都判成「该改」，一次编辑就把全页列表重写了。
+   */
+  const orderedListScopes = new Map<string, Set<string> | null>()
+
+  /** 本块是不是「文本块 + 有有序列表前缀」（段落样式只存在于文本块，同 renderer 口径） */
+  function isOrderedListBlock(block: Block): boolean {
+    return block.type === 'text' && parseParagraphStyle(block.content).style === 'ol'
+  }
+
+  /** 父组键：`parentId` 为空（页根）时用同一个哨兵 */
+  function parentKeyOf(parentId: string | null | undefined): string {
+    return parentId ?? '__root__'
+  }
+
+  /** 同父同页的兄弟（pos 升序），供纯函数推演 */
+  function orderedListSiblings(block: Block): OrderedListSibling[] {
+    return getSortedSiblings(blocks.value, block).map(b => ({
+      id: b.id,
+      content: b.content,
+      // 非文本块与高亮块对编号透明（跨段续号），由纯函数的 `isTransparentForNumbering` 判定
+      type: b.type,
+      format: b.format,
+    }))
+  }
+
+  /**
+   * 写回单个块的序号（只改首段数字）。
+   *
+   * 两处必须跟着平移，否则「改个号」会顺手毁掉别的：
+   * 1. `inlineMarks`：`updateBlockContent` 在正文变化且未给 marks 时清空它们 ——
+   *    删中间一项就把后面所有粗体吃掉一半，是这条链路上最容易漏的副作用。
+   * 2. `renderSegments`：段边界是按旧 content 算的，前缀差 ±1 个字符时整体平移即可。
+   *    清空（`updateBlockContent` 的默认行为）会让这一块在落库回填前退回纯文本渲染，
+   *    肉眼看到 `[[页]]` 的括号闪一下。
+   */
+  function writeOrderedListNumber(block: Block, nextContent: string) {
+    const delta = nextContent.length - block.content.length
+    const previousSegments = block.renderSegments
+    if (delta !== 0) {
+      const marks = readInlineMarks(block.format, block.content.length)
+      block.format = writeInlineMarks(
+        block.format,
+        marks.map(mark => ({ ...mark, start: mark.start + delta, end: mark.end + delta })),
+      )
+    }
+    // 存量 `format.olIndex`（ADR-0062 的锚点）已不再读写，落库时顺手丢掉，
+    // 免得旧库里的死字段一直跟着块复制/导出走。
+    if (block.format && 'olIndex' in block.format) {
+      const nextFormat = { ...block.format }
+      delete nextFormat.olIndex
+      block.format = nextFormat
+    }
+    block.content = nextContent
+    block.updatedAt = Date.now()
+    // 段边界整体平移 delta（不是「去掉前缀」：前缀既可能变长也可能变短，`shiftSegments`
+    // 只接受非负前缀长度、会在这里把 +1 的位移吞掉）。完全落进前缀区的段直接丢掉。
+    if (previousSegments && delta !== 0) {
+      block.renderSegments = previousSegments
+        .map(seg => ({ ...seg, start: seg.start + delta, end: seg.end + delta }))
+        .filter(seg => seg.end > 0 && seg.start >= 0)
+    }
+    _scheduleSave(block)
+    useBlockCardStore().invalidate(block.id)
+  }
+
+  /**
+   * 把有序列表序号写回 content。
+   *
+   * @param opts.parents 只归一这些父组（`null` = 页根）。缺省为**整页** —— 只有
+   *   明确的「按段归一」入口才传作用域；调用方给不出父组时才退回整页。
+   * @param opts.skipIds 额外跳过的块（活动块会自动加入）。
+   * @returns 被改写的块 id
+   */
+  function applyOrderedListNumbering(
+    pageId: string,
+    opts: { parents?: Iterable<string | null> | null; skipIds?: Iterable<string> } = {},
+  ): string[] {
+    const pageBlocks = blocks.value.filter(b => b.pageId === pageId)
+    if (pageBlocks.length === 0) return []
+
+    const skip = new Set(opts.skipIds ?? [])
+    // 正在打字的块不写回（决策：跳过活动块，失活后再对齐）—— 写进去会被编辑器
+    // 300ms 后的下一次防抖保存整段覆盖，白改且会闪。
+    const activeId = useEditorStore().activeBlockId
+    if (activeId) skip.add(activeId)
+
+    const scope = opts.parents ? new Set([...opts.parents].map(parentKeyOf)) : null
+
+    // 按父块分组（子块独立成段，决策 4）；组内保持 pos 顺序
+    const groups = new Map<string, Block[]>()
+    for (const block of pageBlocks) {
+      const key = parentKeyOf(block.parentId)
+      if (scope && !scope.has(key)) continue
+      const group = groups.get(key)
+      if (group) group.push(block)
+      else groups.set(key, [block])
+    }
+
+    const changed: string[] = []
+    orderedListApplying = true
+    try {
+      for (const group of groups.values()) {
+        group.sort((a, b) => a.pos - b.pos)
+        const plan = planOrderedListNumbering(
+          group.map(b => ({ id: b.id, content: b.content, type: b.type, format: b.format })),
+        )
+        for (const entry of plan) {
+          if (!entry.changed || skip.has(entry.id)) continue
+          const block = group.find(b => b.id === entry.id)
+          if (!block) continue
+          writeOrderedListNumber(block, entry.content)
+          changed.push(block.id)
+        }
+      }
+    } finally {
+      orderedListApplying = false
+    }
+    return changed
+  }
+
+  /**
+   * 防抖调度推导（同一页合并成一次，作用域取并集）。
+   *
+   * @param opts.parents 本次操作碰到的父组。不传 = 整页（调用方确实说不清影响面时用）。
+   */
+  function scheduleOrderedListReindex(
+    pageId: string,
+    opts: { parents?: Iterable<string | null> } = {},
+  ) {
+    if (orderedListApplying) return
+
+    const incoming = opts.parents ? [...opts.parents].map(parentKeyOf) : null
+    const accumulated = orderedListScopes.get(pageId)
+    if (accumulated === null) {
+      // 已经是整页：不必再收窄
+    } else if (!incoming) {
+      orderedListScopes.set(pageId, null)
+    } else if (accumulated) {
+      for (const key of incoming) accumulated.add(key)
+    } else {
+      orderedListScopes.set(pageId, new Set(incoming))
+    }
+
+    const pending = orderedListTimers.get(pageId)
+    if (pending) clearTimeout(pending)
+    orderedListTimers.set(
+      pageId,
+      setTimeout(() => {
+        orderedListTimers.delete(pageId)
+        const scope = orderedListScopes.get(pageId)
+        orderedListScopes.delete(pageId)
+        applyOrderedListNumbering(pageId, { parents: scope ? [...scope] : null })
+      }, ORDERED_LIST_REINDEX_MS),
+    )
+  }
+
+  /** 本块作为有序列表项时的序号；不在段内为 null */
+  function orderedListIndexFor(blockId: string): number | null {
+    const block = blocks.value.find(b => b.id === blockId)
+    if (!block) return null
+    return orderedListIndexAt(orderedListSiblings(block), blockId)
+  }
+
+  /** 本块之后新起一项的序号（Enter 续行；决策：向父调度器要号，而不是字面 +1） */
+  function nextOrderedListIndex(blockId: string): number {
+    const block = blocks.value.find(b => b.id === blockId)
+    if (!block) return 1
+    return nextOrderedListIndexAfter(orderedListSiblings(block), blockId)
+  }
+
+  /** 本块转成有序列表时应使用的序号（菜单；接上前面的连续 ol，否则从 1 起） */
+  function orderedListIndexForNew(blockId: string): number {
+    const block = blocks.value.find(b => b.id === blockId)
+    if (!block) return 1
+    return orderedListIndexForNewItem(orderedListSiblings(block), blockId)
+  }
+
+  /**
+   * 更新 Block 内容。
+   *
+   * `opts.commitTags`（默认 **true** = 提交动作）决定本次落库是否允许 Rust 侧按
+   * content 自动建/复活标签（ADR-0050 content 联动）。唯一传 false 的是编辑器
+   * 防抖打字保存 —— 否则 `#f`、`#fo` 这类中间前缀会各建一个垃圾标签，与
+   * `[[page]]` 不建中间页同一道理。
+   */
+  async function updateBlockContent(
+    blockId: string,
+    content: string,
+    opts?: { commitTags?: boolean; inlineMarks?: InlineMarkRange[] },
+  ) {
     const block = blocks.value.find(b => b.id === blockId)
     if (!block) return
+
+    const wasOrderedList = isOrderedListBlock(block)
+    const commitTags = opts?.commitTags ?? true
+    if (commitTags) {
+      pendingCommitTags.add(blockId)
+    }
+
+    const contentChanged = block.content !== content
+    const marksProvided = opts?.inlineMarks !== undefined
+    // 未显式提供格式时视为「格式未知」：内容若变化则清空，避免旧偏移套到新正文上错位着色。
+    const nextMarks = marksProvided
+      ? normalizeInlineMarks(opts?.inlineMarks, content.length)
+      : []
+    const marksChanged = marksProvided
+      ? !sameInlineMarks(readInlineMarks(block.format, block.content.length), nextMarks)
+      // 格式未知：只有正文也变了才需要处理（清空），正文未变一律保留既有格式
+      : contentChanged && readInlineMarks(block.format, block.content.length).length > 0
 
     // 内容无变化守卫：编辑器 blur/unmount 等路径会无条件提交当前文本（handleSave），
     // 若与已存内容相同仍继续会重打 updatedAt 并触发落库（Rust update 无条件
     // updated_at=now + version+1）——只点进点出不改字也会刷新「更新时间」。
     // 相同内容直接返回：不重打时间戳、不调度保存（flushSave 无 pending 即空转）。
-    if (block.content === content) return
+    // 例外 1：commit 且上一轮落库跳过了建签 —— 存量 content 里的新 tag 还没建，
+    // 必须补一次 commit 保存（仅此一次，落库后 lastSaveSkippedCreation 翻回 false）。
+    // 例外 2：仅行内格式变化（正文不动）—— 只更新 format 并调度保存。
+    if (!contentChanged) {
+      if (marksChanged) {
+        block.format = writeInlineMarks(block.format, nextMarks)
+        block.updatedAt = Date.now()
+        _scheduleSave(block)
+        useBlockCardStore().invalidate(blockId)
+        return
+      }
+      if (commitTags && lastSaveSkippedCreation.get(blockId) === true) {
+        // 存量 content 里的新 tag 还没建：补一次 commit 保存（保持置位由 _doSave 消费）；
+        // 记账立即翻回 false —— 无论这次保存成败，不再重复补（防每次 blur 都补）。
+        lastSaveSkippedCreation.set(blockId, false)
+        _scheduleSave(block)
+      } else {
+        // 无需建签的提交：丢弃意图，防止泄漏到下一轮打字保存（那会让打字误带 true）
+        pendingCommitTags.delete(blockId)
+      }
+      return
+    }
+
+    // 建签门记账：本 content 版本落库时是否跳过建签（在意图侧记，不在 _doSave 记 ——
+    // flushSave 无 pending 也会补跑 _doSave，那种「重复落库」不得翻转此状态）。
+    lastSaveSkippedCreation.set(blockId, !commitTags)
 
     block.content = content
+    block.format = writeInlineMarks(block.format, nextMarks)
     block.updatedAt = Date.now()
     // renderSegments 是由 Rust 在 save_block_tree 时重新构建并随返回结果返回的。
     // 内容变更后 segments 的 start/end 索引已过时，先清空避免渲染错误。
@@ -1360,8 +1872,16 @@ export const useBlockStore = defineStore('blocks', () => {
     // block 都会自动成为任务。仅当 block 尚无 status 时补 Todo；
     // 移除 dateRef 时不会反向清除 status（保持任务状态）。
     if (/@\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2})?\s*[📅⏰]/u.test(content)) {
-      const propertyStore = usePropertyStore()
-      await propertyStore.ensureTodo(blockId)
+      const fieldValueStore = useFieldValueStore()
+      await fieldValueStore.ensureTodo(blockId)
+    }
+
+    // 有序列表序号：本块的序号若与推导值不符（手写 `5.`、删项后错位）⇒ 重排它所在的段。
+    // 只在「本来/现在是 ol」时调度 —— 普通正文的每一次打字都排一次是纯浪费。
+    // 作用域是本块的父组：不去动同页别的段（段首恒 1 之后，整页扫描会把所有非 1 起头的段
+    // 都判成「该改」，一次编辑就重写全页列表）。
+    if (!orderedListApplying && (wasOrderedList || (block.type === 'text' && isOrderedListItem(content)))) {
+      scheduleOrderedListReindex(block.pageId, { parents: [block.parentId] })
     }
   }
 
@@ -1376,20 +1896,26 @@ export const useBlockStore = defineStore('blocks', () => {
   }
 
   /**
-   * 折叠不变量的对账（ADR-0045 D2）
+   * 折叠不变量的对账（ADR-0045 D2，折叠范围已扩展为子节点 + 字段带）
    *
    * 一条规则、两种触发，替代「每个操作各自重置 format」：
-   * - `emptiedParentIds`：这些块的子节点集合刚变小/清空 ⇒ 无子节点则不折叠
+   * - `emptiedParentIds`：这些块的子节点集合刚变小/清空 ⇒ 既无子节点**又无字段行**才不折叠
    * - `gainedParentIds`：这些块刚获得子节点 ⇒ 落入折叠块则展开（D4，落点=可见结果）
    *
    * 判定与写入同源（都读 `format.collapsed`），不引入第二份折叠真相；
    * 未折叠的块直接跳过，不产生无谓的 `_scheduleSave`。
+   *
+   * 判据须与读取侧 `useBlockCollapse.canCollapse`（有子块 **或** 有字段行）同口径：
+   * 只查子节点会把「有字段带、无子块」的块的折叠标志当残留清掉，读写守卫不对称。
+   * 字段行取**原始行**（非渲染口径）——隐藏规则 / 内联槽造成的差异只会留下读取侧
+   * 兜底即抹平的标志，呈现无差别。
    */
   function reconcileCollapse(emptiedParentIds: Iterable<string>, gainedParentIds: Iterable<string> = []) {
+    const fieldValueStore = useFieldValueStore()
     const candidate = new Set<string>()
     for (const id of emptiedParentIds) {
       const block = blocks.value.find(b => b.id === id)
-      if (block?.format?.collapsed === true && getChildren(id).length === 0) candidate.add(id)
+      if (block?.format?.collapsed === true && getChildren(id).length === 0 && fieldValueStore.getBlockFieldValues(id).length === 0) candidate.add(id)
     }
     for (const id of gainedParentIds) {
       const block = blocks.value.find(b => b.id === id)
@@ -1411,14 +1937,57 @@ export const useBlockStore = defineStore('blocks', () => {
   }
 
   /**
+   * 重置为空白文本块（块入口菜单「重置为文本块」）。
+   *
+   * 语义是「删掉、在同一位置建一个新的」，不是「就地改字段」：
+   * - 就地改只能清 content / type / format，块上仍挂着字段值（status、priority…）与
+   *   标签绑定，看起来并不「空」；而那些字段值属于块类型独有的配置，用户要的是干净重来。
+   * - 删除走 `deleteBlocks`（唯一删除收口）：级联软删子树 + 字段值 + 查询块的命名视图
+   *   命名空间（`markQueryViewOrphan`），一处也不漏。
+   * - 可撤销性由 ADR-0046 的整页快照栈兜住：删除与新建落在同一个 idle 窗口内，合成
+   *   一步，Ctrl+Z 把块连同字段值、子树一起原样找回（恢复侧走 `undelete` + 字段值重设）。
+   *
+   * 新块沿用旧块的 parentId / pos：同层级、同位置，视觉上就是「原地清空」。
+   *
+   * 页里只剩这一块时 `deleteBlocks` 的不变量闸门会**保留**它（只清正文），那条路径
+   * 改为就地重置 + 显式删掉字段值行，收尾同样是「一个空白文本块」。
+   */
+  async function resetBlockToText(blockId: string): Promise<Block | null> {
+    const block = blocks.value.find(b => b.id === blockId)
+    if (!block) return null
+    const { pageId, parentId, pos } = block
+
+    await deleteBlocks([blockId])
+
+    // 闸门保留下来的同一块（页里唯一顶层块）：没有「删除」可依赖，就地收尾
+    const survivor = blocks.value.find(b => b.id === blockId)
+    if (survivor) {
+      survivor.type = 'text'
+      survivor.format = {}
+      survivor.properties = []
+      survivor.renderSegments = undefined
+      survivor.updatedAt = Date.now()
+      _scheduleSave(survivor)
+      const fieldValueStore = useFieldValueStore()
+      for (const row of [...fieldValueStore.getBlockFieldValues(blockId)]) {
+        await fieldValueStore.deleteFieldValue(row.id, blockId)
+      }
+      useBlockCardStore().invalidate(blockId)
+      return survivor
+    }
+
+    return createBlock({ pageId, content: '', parentId, pos, type: 'text', format: {} })
+  }
+
+  /**
    * 粘贴 block 森林（ADR-0025 D6/D7/D8/D11）
    *
    * - id：一律重生成；content 中指向子树内部的自引用按「旧 id → 新 id」重映射，
    *   子树外部引用保持原样
    * - 层级：完全由 payload.children 决定；顶层根按源顺序作为一组 sibling 依次插入
    * - 落点：有锚点 block → 插在其后；无 → 追加到 fallbackParentId 末尾
-   * - properties：逐条 setProperty 重建（跨页同语义）；先 flushSave 落库再写属性
-   *   （Property 表有 block 外键约束）
+   * - properties：逐条 setFieldValue 重建（跨页同语义）；先 flushSave 落库再写字段值
+   *   （field_value 表有 block 外键约束）
    */
   async function pasteBlocks(
     forest: BlockClipPayload[],
@@ -1431,17 +2000,19 @@ export const useBlockStore = defineStore('blocks', () => {
       : undefined
     const parentId = anchor ? anchor.parentId : (opts.fallbackParentId ?? null)
 
-    // 插入点：锚点之后（nextSiblingId 为锚点的后继，重编号后动态取 pos）
+    // 插入点：锚点之后。两个邻居都按 **id 记录、回调内现取 pos** —— gap 耗尽恢复会就地
+    // 重编号（renumberBlocks 改写 blocks.value 里每个块的 pos），任何预先取出的数值快照
+    // 都会变陈旧，与现取的另一侧混算会把落点漂到块栈中部（同 insertAtPosition 的缺陷）。
     let nextSiblingId: string | null = null
-    let prevPos: number | null = null
+    let prevAnchorId: string | null = null
     {
       const siblings = getSortedChildren(blocks.value, parentId, opts.pageId)
       if (anchor) {
         const idx = siblings.findIndex(b => b.id === anchor.id)
         nextSiblingId = idx >= 0 && idx < siblings.length - 1 ? siblings[idx + 1].id : null
-        prevPos = anchor.pos
+        prevAnchorId = anchor.id
       } else {
-        prevPos = siblings.length > 0 ? siblings[siblings.length - 1].pos : null
+        prevAnchorId = siblings.length > 0 ? siblings[siblings.length - 1].id : null
       }
     }
 
@@ -1464,9 +2035,9 @@ export const useBlockStore = defineStore('blocks', () => {
     }
 
     const created: Block[] = []
-    const propertyJobs: { blockId: string; properties: NonNullable<BlockClipPayload['properties']> }[] = []
+    const fieldValueJobs: { blockId: string; properties: NonNullable<BlockClipPayload['properties']> }[] = []
 
-    const insertTree = async (node: BlockClipPayload, parent: string | null, pos: number): Promise<void> => {
+    const insertTree = async (node: BlockClipPayload, parent: string | null, pos: number): Promise<Block> => {
       const block = await createBlock({
         id: node.id ? idMap.get(node.id) : undefined,
         pageId: opts.pageId,
@@ -1477,55 +2048,287 @@ export const useBlockStore = defineStore('blocks', () => {
         format: node.format ?? {},
       })
       created.push(block)
-      if (node.properties) propertyJobs.push({ blockId: block.id, properties: node.properties })
+      if (node.properties) fieldValueJobs.push({ blockId: block.id, properties: node.properties })
       // 子节点：父为新建块（无既有子节点），直接顺序编号
       for (let i = 0; i < node.children.length; i++) {
         await insertTree(node.children[i], block.id, (i + 1) * 1000)
       }
+      return block
     }
+
+    const posOf = (id: string | null): number | null =>
+      id ? (blocks.value.find(b => b.id === id)?.pos ?? null) : null
 
     // 2. 顶层根依次插入插入点之后（D7/D8）
     for (const root of forest) {
       const calcPositions = () => ({
-        prevPos,
-        nextPos: nextSiblingId
-          ? (blocks.value.find(b => b.id === nextSiblingId)?.pos ?? null)
-          : null,
+        prevPos: posOf(prevAnchorId),
+        nextPos: posOf(nextSiblingId),
       })
-      const pos = await safeCalcInsertPos(prevPos, calcPositions().nextPos, blocks.value, calcPositions)
-      await insertTree(root, parentId, pos)
-      prevPos = pos
+      const { prevPos, nextPos } = calcPositions()
+      const pos = await safeCalcInsertPos(prevPos, nextPos, blocks.value, calcPositions)
+      prevAnchorId = (await insertTree(root, parentId, pos)).id
     }
 
-    // 3. 先落库再建属性（FK：Property 表引用已存在的 block）
+    // 3. 先落库再建字段值（FK：field_value 表引用已存在的 block）
     for (const b of created) {
       await flushSave(b.id)
     }
-    if (propertyJobs.length > 0) {
-      const propertyStore = usePropertyStore()
-      for (const job of propertyJobs) {
-        for (const [key, prop] of Object.entries(job.properties)) {
-          await propertyStore.setProperty(
+    if (fieldValueJobs.length > 0) {
+      const fieldValueStore = useFieldValueStore()
+      for (const job of fieldValueJobs) {
+        for (const [key, entry] of Object.entries(job.properties)) {
+          await fieldValueStore.setFieldValue(
             job.blockId,
             key,
-            decodePropertyValue(prop.value, prop.type) as PropertyValue,
-            prop.type as PropertyType,
+            decodeFieldValueData(entry.value, entry.type) as FieldValueData,
+            entry.type as FieldType,
           )
         }
       }
     }
 
+    // 粘贴进来的列表项带着源文档的序号 ⇒ 按落点的段重排（一律从 1 起、顺排）
+    scheduleOrderedListReindex(opts.pageId, { parents: [parentId] })
+
     return created
   }
 
-  /** 更新 Block 属性（使用独立的 properties 表）。
-   *  必须走 propertyStore.setProperty 完整路径：写完数据库后刷新
-   *  propertyStore 内存缓存 + 失效 blockCard，否则 UI 立即重渲染时
+  /**
+   * 带意图的粘贴（ADR-0025 D4b）：`op === 'cut'` 且源块在本库仍软删时，把块**搬过来**
+   * （id 不变、整棵子树跟着换页），否则回落 `pasteBlocks` 新建副本。
+   *
+   * 为什么搬移要放在 store 而不是调用方：落点（锚点之后、同层级、pos 取中）只有这里知道，
+   * 而菜单粘贴与 Ctrl+V 必须走同一套 —— 两处各算一次落点，就一定会漂。
+   *
+   * `moved === true` 时调用方**不要**再跑 `afterPaste` 之类的类型收尾：配置本来就挂在
+   * 这个 id 上（查询块的命名视图、字段值、`(( ))` 引用），重建反而是错的。
+   */
+  async function pasteBlocksWithOp(
+    forest: BlockClipPayload[],
+    opts: { pageId: string; anchorBlockId?: string | null; fallbackParentId?: string | null },
+    op: 'cut' | 'copy',
+    fromPageId: string | null = null,
+  ): Promise<PasteOutcome> {
+    if (!forest || forest.length === 0) return { blocks: [], moved: false, movedFromPageId: null }
+    if (op === 'cut') {
+      // 源页优先取**载荷**里那份：剪切已经把这些块从 `blocks.value` 摘掉了，回查内存必然落空。
+      // 兜底才查内存（旧载荷 / 手工合成的载荷没有 fromPageId）。
+      const sourcePages = new Set<string>()
+      if (fromPageId) sourcePages.add(fromPageId)
+      else {
+        for (const node of forest) {
+          const found = node.id ? blocks.value.find(b => b.id === node.id) : undefined
+          if (found) sourcePages.add(found.pageId)
+        }
+      }
+      const moved = await movePastedBlocks(forest, opts)
+      if (moved) {
+        return {
+          blocks: moved,
+          moved: true,
+          movedFromPageId: sourcePages.size === 1 ? [...sourcePages][0] : null,
+        }
+      }
+    }
+    return { blocks: await pasteBlocks(forest, opts), moved: false, movedFromPageId: null }
+  }
+
+  /**
+   * 粘贴的搬移分支：把载荷根块原样搬进落点。返回 `null` = 搬不动，交回调用方新建。
+   *
+   * 判据全在 Rust 侧（`move_blocks` 一个事务内校验 + 复活 + 换页，任一失败整组回滚），
+   * 这里只负责算落点与回写内存。搬不动的三种情况都落到同一条回落：
+   * 跨机器/跨库粘贴、同一份剪贴板连粘第二次、源块已被回收站恢复。
+   */
+  async function movePastedBlocks(
+    forest: BlockClipPayload[],
+    opts: { pageId: string; anchorBlockId?: string | null; fallbackParentId?: string | null },
+  ): Promise<Block[] | null> {
+    // 没有源 id 就没有搬移可言（外部粘贴、旧载荷）
+    const roots = forest.filter((n) => !!n.id)
+    if (roots.length !== forest.length) return null
+
+    const anchor = opts.anchorBlockId
+      ? blocks.value.find(b => b.id === opts.anchorBlockId && b.pageId === opts.pageId)
+      : undefined
+    const parentId = anchor ? anchor.parentId : (opts.fallbackParentId ?? null)
+
+    // 落点与 pasteBlocks 同一套算法：每个根块依次取「上一个插入块」与「下一个兄弟」之间。
+    // 搬移时块还没进 store，所以已分配的 pos 用局部表兜住（posOf 读不到未来的值）。
+    let nextSiblingId: string | null = null
+    let prevAnchorId: string | null = null
+    {
+      const siblings = getSortedChildren(blocks.value, parentId, opts.pageId)
+      if (anchor) {
+        const idx = siblings.findIndex(b => b.id === anchor.id)
+        nextSiblingId = idx >= 0 && idx < siblings.length - 1 ? siblings[idx + 1].id : null
+        prevAnchorId = anchor.id
+      } else {
+        prevAnchorId = siblings.length > 0 ? siblings[siblings.length - 1].id : null
+      }
+    }
+    const posOf = (id: string | null): number | null =>
+      id ? (blocks.value.find(b => b.id === id)?.pos ?? null) : null
+    const assigned = new Map<string, number>()
+    const posOfKnown = (id: string | null): number | null =>
+      id && assigned.has(id) ? (assigned.get(id) as number) : posOf(id)
+
+    const positions: number[] = []
+    for (const root of roots) {
+      const calcPositions = () => ({ prevPos: posOfKnown(prevAnchorId), nextPos: posOfKnown(nextSiblingId) })
+      const pos = await safeCalcInsertPos(
+        posOfKnown(prevAnchorId),
+        posOfKnown(nextSiblingId),
+        blocks.value,
+        calcPositions,
+      )
+      positions.push(pos)
+      assigned.set(root.id as string, pos)
+      prevAnchorId = root.id as string
+    }
+
+    const client = await getClient()
+    try {
+      await client.moveBlocks(
+        roots.map((root, i) => ({
+          blockId: root.id as string,
+          pageId: opts.pageId,
+          parentId,
+          pos: positions[i],
+        })),
+      )
+    } catch {
+      // NOT_REVIVABLE / INTO_SELF 都走这里：不提示、不改内存，交给新建路径。
+      return null
+    }
+
+    // 搬移成功 ≠ 界面就位：剪切已经把这些块从 store 数组里摘掉（`deleteBlocks` 的乐观过滤），
+    // 库里搬好了、内存里没有 —— 不读回来就是「块凭空消失」。
+    // 子树成员从**载荷**取（store 里已经查不到它们了），再按 id 从库里读回。
+    const movedIds = new Set<string>()
+    const walkPayload = (nodes: BlockClipPayload[]): void => {
+      for (const node of nodes) {
+        if (node.id) movedIds.add(node.id)
+        walkPayload(node.children)
+      }
+    }
+    walkPayload(forest)
+
+    // 已在内存里的（少见，防御性）先就地把归属与位置改对
+    for (const block of blocks.value) {
+      if (movedIds.has(block.id)) block.pageId = opts.pageId
+    }
+    roots.forEach((root, i) => {
+      const block = blocks.value.find(b => b.id === root.id)
+      if (!block) return
+      block.parentId = parentId
+      block.pos = positions[i]
+    })
+
+    await pullMovedBlocksIntoStore(opts.pageId, movedIds)
+    const rootIds = new Set(roots.map((root) => root.id as string))
+    const movedRoots = blocks.value.filter((b) => rootIds.has(b.id))
+
+    // 派生数据在剪切时被级联清掉，搬移原语只搬 Block 行，必须在这里补回来：
+    // - 字段值：载荷里带着，按**原 id** 逐条重设（upsert 的 ON CONFLICT 会把 deleted_at 清回 NULL，
+    //   与撤销复活块同一机制）；
+    // - 查询块命名视图：剪切时整组改挂到孤儿前缀，搬回来要挂回活前缀，否则块挂载时读到空命名空间
+    //   就 seed 一套默认屏，用户配的视图等于丢了。
+    const fieldValueStore = useFieldValueStore()
+    const restoreNode = async (nodes: BlockClipPayload[]): Promise<void> => {
+      for (const node of nodes) {
+        if (node.properties && node.id) {
+          for (const [key, entry] of Object.entries(node.properties)) {
+            await fieldValueStore.setFieldValue(
+              node.id,
+              key,
+              decodeFieldValueData(entry.value, entry.type) as FieldValueData,
+              entry.type as FieldType,
+            )
+          }
+        }
+        if (node.type === 'query' && node.id) {
+          await restoreQueryViewNamespace(node.id)
+        }
+        await restoreNode(node.children)
+      }
+    }
+    await restoreNode(forest)
+
+    reconcileCollapse([], parentId ? [parentId] : [])
+    // 搬进来的列表项沿用源页序号 ⇒ 按新落点的段重排（源页那一段由剪切时的删除路径负责）
+    scheduleOrderedListReindex(opts.pageId, { parents: [parentId] })
+    return movedRoots
+  }
+
+  /**
+   * 搬移后把块从库里读回内存。
+   *
+   * 只补**缺失**的 id，不做整页替换（`loadPageBlocks` 会覆盖目标页，把还没落库的在途编辑
+   * 从内存里抹掉）。优先走 `getPageWithBlocks`（带 render_segments，行内标记不退化成纯文本），
+   * 旧二进制没有该接口时回退 `getBlocksByPage`。
+   */
+  async function pullMovedBlocksIntoStore(pageId: string, ids: Set<string>): Promise<void> {
+    const known = new Set(blocks.value.map(b => b.id))
+    const wanted = new Set([...ids].filter(id => !known.has(id)))
+    if (wanted.size > 0) {
+      const client = await getClient()
+      const add = (block: Block): void => {
+        if (!wanted.delete(block.id)) return
+        blocks.value.push(block)
+      }
+      try {
+        const pw = await client.getPageWithBlocks(pageId)
+        for (const brd of pw?.blocks ?? []) {
+          if (!wanted.has(brd.block.id)) continue
+          add({
+            id: brd.block.id,
+            pageId: brd.block.page_id,
+            parentId: brd.block.parent_id,
+            pos: brd.block.pos,
+            content: brd.block.content,
+            format: JSON.parse(brd.block.format || '{}'),
+            type: brd.block.type as Block['type'],
+            renderSegments: brd.render_segments ?? [],
+            tags: brd.block.tags ?? [],
+            createdAt: brd.block.created_at,
+            updatedAt: brd.block.updated_at,
+          })
+        }
+      } catch {
+        // 旧二进制无 getPageWithBlocks → 下面回退
+      }
+      if (wanted.size > 0) {
+        const rows = await client.getBlocksByPage(pageId)
+        for (const row of rows) {
+          if (!wanted.has(row.id)) continue
+          add({
+            id: row.id,
+            pageId: row.page_id,
+            parentId: row.parent_id,
+            pos: row.pos,
+            content: row.content,
+            format: JSON.parse(row.format || '{}'),
+            type: row.type as Block['type'],
+            renderSegments: undefined,
+            tags: row.tags ?? [],
+            createdAt: row.created_at,
+            updatedAt: row.updated_at,
+          })
+        }
+      }
+    }
+  }
+
+  /** 更新 Block 字段值（使用独立的 field_value 表）。
+   *  必须走 fieldValueStore.setFieldValue 完整路径：写完数据库后刷新
+   *  fieldValueStore 内存缓存 + 失效 blockCard，否则 UI 立即重渲染时
    *  仍读到旧值（如语言切换后退出编辑态"变回去"，刷新才生效）。 */
-  async function updateBlockProperties(blockId: string, properties: Record<string, PropertyValue>) {
-    const propertyStore = usePropertyStore()
-    for (const [key, value] of Object.entries(properties)) {
-      await propertyStore.setProperty(blockId, key, value)
+  async function updateBlockFieldValues(blockId: string, values: Record<string, FieldValueData>) {
+    const fieldValueStore = useFieldValueStore()
+    for (const [key, value] of Object.entries(values)) {
+      await fieldValueStore.setFieldValue(blockId, key, value)
     }
   }
 
@@ -1560,6 +2363,7 @@ export const useBlockStore = defineStore('blocks', () => {
     mergeWithPrevious,
     planTextRangeDeletion,
     applyTextRangeDeletion,
+    replaceTextRange,
     findPreviousBlockInTreeOrder,
     findPreviousVisibleBlock,
     findLastVisibleDescendant,
@@ -1571,12 +2375,20 @@ export const useBlockStore = defineStore('blocks', () => {
     deleteBlock,
     deleteBlocks,
     pasteBlocks,
+    pasteBlocksWithOp,
     saveErrors,
     retrySave,
     updateBlockContent,
+    applyOrderedListNumbering,
+    scheduleOrderedListReindex,
+    orderedListIndexFor,
+    nextOrderedListIndex,
+    orderedListIndexForNew,
     updateBlockFormat,
     updateBlockType,
-    updateBlockProperties,
+    resetBlockToText,
+    updateBlockFieldValues,
+    systemTaskTagId,
     scheduleSave,
     flushSave,
     trashedPageWarnings,

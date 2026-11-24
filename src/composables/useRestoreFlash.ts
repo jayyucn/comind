@@ -1,4 +1,4 @@
-import { onScopeDispose, ref, type Ref } from 'vue'
+import { onScopeDispose, type Ref,ref } from 'vue'
 
 /**
  * 撤销/重做落点的墨迹测量 + 闪烁状态机（#109 裁定的实现，#115 自 BlockList 抽出）。
@@ -56,6 +56,26 @@ function regionInkRect(host: Element | null): DOMRect | null {
 }
 
 /**
+ * 把元素子树里进行中的 CSS 动画立即落到终态。
+ *
+ * 撤销/重做时内容经 v-html 重渲染会重建 `.block-link` / `.block-tag` 并重放
+ * `motion-pop`（含 `translateY` 上移 + `scale`，300ms）。若在其动画中途量墨迹矩形，
+ * `getClientRects` 返回的是偏移盒子，蓝色闪烁矩形便与 `[[xx]]` 文字上下错位。
+ * `finish()` 让 transform 落到终态（fill:both 保持），不重启动画、无回弹，
+ * 量到的即是归位后的位置。
+ * jsdom 未实现 Web Animations API（`getAnimations` 不存在），用 typeof 守护，单测不受影响。
+ */
+function settleSubtreeAnimations(root: Element): void {
+  if (typeof root.getAnimations !== 'function') return
+  root.getAnimations().forEach((anim) => { try { anim.finish() } catch { /* 已结束/异常忽略 */ } })
+  root.querySelectorAll('*').forEach((el) => {
+    const e = el as Element
+    if (typeof e.getAnimations !== 'function') return
+    e.getAnimations().forEach((anim) => { try { anim.finish() } catch { /* 已结束/异常忽略 */ } })
+  })
+}
+
+/**
  * 量出这些块「内容区 + 属性区」的墨迹矩形（顺序同传参）。
  * 对外唯一测量入口 —— 单测经它构造真实块 DOM 覆盖全部分支，内部函数不外泄。
  */
@@ -66,6 +86,9 @@ export function measureBlockInkRects(root: HTMLElement | null, ids: string[]): D
     // 限定在本实例的渲染树内查：多实例共存时避免量到弹窗/抽屉里的副本
     const blockEl = root.querySelector(`[data-block-id="${id}"]`)
     if (!blockEl) continue
+    // 先把该块子树进行中的入场动画（motion-pop）落到终态，否则量到 pop 中途的偏移盒子，
+    // 蓝色闪烁矩形与文字上下错位（见 settleSubtreeAnimations）。
+    settleSubtreeAnimations(blockEl)
     // 内容区在 .block-row 下还有 .block-inner/.block-body 两层，故用后代选择器；子块的内容区在
     // `.block-children`（.block-row 的**兄弟**）之下，不会被这里捞到。
     const hosts = blockEl.querySelectorAll(':scope > .block-row .block-content, :scope > .block-properties')

@@ -10,8 +10,8 @@
 
 import type { Block } from '../types/block'
 import type { Page } from '../types/page'
-import type { Property } from '../types/property'
-import type { Block as RustBlock, Property as RustProperty } from '../wasm/types'
+import type { FieldValue } from '../types/field-value'
+import type { Block as RustBlock } from '../wasm/types'
 
 /** 严格日期标题（与 Rust %Y-%m-%d 一致，前端本地时区） */
 const STRICT_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
@@ -51,8 +51,8 @@ export function isStaleIdeasPage(
 /** content_json 顶层信封（snake_case 直通库内存储） */
 export interface IdeasSnapshotContentRaw {
   blocks: RustBlock[]
-  /** block_id → 该块未删除属性 */
-  properties: Record<string, RustProperty[]>
+  /** block_id → 该块未删除字段值 */
+  properties: Record<string, FieldValue[]>
 }
 
 /** 映射后的快照数据（camelCase，供 buildTree / 只读渲染消费） */
@@ -60,24 +60,8 @@ export interface IdeasSnapshotData {
   /** 页面标题日期 `yyyy-MM-dd`（即被物化页的标题；与 page_snapshots.date 同源） */
   title: string
   blocks: Block[]
-  /** blockId → 该块属性（当日值） */
-  properties: Record<string, Property[]>
-}
-
-function mapRawProperty(raw: RustProperty): Property {
-  return {
-    id: raw.id,
-    blockId: raw.block_id,
-    key: raw.key,
-    value: raw.value as Property['value'],
-    type: raw.type as Property['type'],
-    sortOrder: raw.sort_order,
-    isHidden: raw.is_hidden === 1,
-    isDeleted: raw.is_deleted === 1,
-    schemaVersion: raw.schema_version,
-    createdAt: raw.created_at,
-    updatedAt: raw.updated_at,
-  }
+  /** blockId → 该块字段值（当日值） */
+  properties: Record<string, FieldValue[]>
 }
 
 function mapRawBlock(raw: RustBlock): Block {
@@ -112,13 +96,9 @@ export function parseIdeasSnapshotContent(contentJson: string, title = ''): Idea
     return null
   }
   if (!Array.isArray(raw?.blocks)) return null
-  const properties: Record<string, Property[]> = {}
-  for (const [blockId, list] of Object.entries(raw.properties ?? {})) {
-    properties[blockId] = list.map(mapRawProperty)
-  }
   return {
     title,
     blocks: raw.blocks.map(mapRawBlock),
-    properties,
+    properties: raw.properties ?? {},
   }
 }

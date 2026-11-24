@@ -23,7 +23,7 @@ body {
   font-size: var(--text-base);
   line-height: $leading-relaxed;
   color: var(--color-ink);
-  background: var(--color-paper);
+  background: var(--surface-subtle);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -99,8 +99,10 @@ html[data-theme="dark"] {
 // 临时占位符元素（跨容器拖拽时插入）。
 // :not(.drop-indicator)：指示器是 .block-list 的常驻直接子 div（无 data-* 标记），
 // 不能被这条兜底规则一起隐藏（display:none !important 会压过 v-show）。
+// :not(.block-list-task-progress)：根级任务进度条同样是 .block-list 的直接子 div
+// （无 data-* 标记），须一并豁免，否则被 display:none 吞掉。
 .block-children > div:not([data-block-id]):not([data-parent-id]):not(.block-list-padding):not(.drop-indicator),
-.block-list > div:not([data-block-id]):not([data-parent-id]):not(.block-list-padding):not(.drop-indicator) {
+.block-list > div:not([data-block-id]):not([data-parent-id]):not(.block-list-padding):not(.drop-indicator):not(.block-list-task-progress) {
   display: none !important;
 }
 
@@ -108,7 +110,7 @@ html[data-theme="dark"] {
 a {
   color: var(--link);
   text-decoration: none;
-  @include transition-base;
+  transition: color var(--dur-fast) var(--ease-out);
 
   &:hover {
     color: var(--link-hover);
@@ -159,4 +161,18 @@ h1, h2, h3, h4, h5, h6 {
 user-select-none,
 .no-select {
   user-select: none;
+}
+
+// 无障碍：用户偏好减少动效时，全局压平过渡与循环动画（ADR-0053）。
+// 不删 transform/opacity 终态，仅去掉过程感；JS 侧时序闸门（如折叠 200ms）不受影响——
+// 提前闸门只会让 display:none 更早生效，视觉上仍是瞬时切换，安全。
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

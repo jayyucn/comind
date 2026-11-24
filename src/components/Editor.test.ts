@@ -13,16 +13,18 @@ vi.mock('../composables/useNavigateToPage', () => ({
 vi.mock('../extensions/WikiLinkExtension', () => ({
   WikiLinkExtension: {
     create: vi.fn(() => ({ name: 'wikiLink' }))
-  }
+  },
+  // editorEvents 事件表引用（Editor.vue setup 时求值）——桩件需带同名导出
+  WIKI_LINK_CLICK_EVENT: 'wikiLinkClick'
 }))
 
 vi.mock('../extensions/WikiLinkTriggerExtension', () => ({
   WikiLinkTriggerExtension: {
-    create: vi.fn(() => ({ name: 'wikiLinkTrigger' })),
-    notifyWikiLinkMenuSelect: vi.fn(),
-    closeWikiLinkMenuByEditor: vi.fn(),
-    findWikiLinkAtCursor: vi.fn(() => ({ found: false, range: null, query: '' }))
-  }
+    create: vi.fn(() => ({ name: 'wikiLinkTrigger' }))
+  },
+  notifyWikiLinkMenuSelect: vi.fn(),
+  closeWikiLinkMenuByEditor: vi.fn(),
+  findWikiLinkAtCursor: vi.fn(() => ({ found: false, range: null, query: '' }))
 }))
 
 describe('Editor WikiLink Selection Logic', () => {
@@ -559,5 +561,154 @@ describe('Editor WikiLink Selection Logic', () => {
 
       expect(bounded).toBe(content.length)
     })
+  })
+
+  describe('debounced save must not clobber external content mount', () => {
+    test('debounced save emits latest text after external re-sync (e.g. #任务 mount)', async () => {
+      vi.useFakeTimers()
+      const wrapper = mount(Editor, {
+        props: { content: 'hello' },
+        global: { stubs: { Teleport: true } }
+      })
+      await flushPromises()
+      await nextTick()
+
+      const editor = (wrapper.vm as any).getEditor()
+      // 用户编辑触发防抖保存（此刻正文 = 'hellox'）
+      editor.commands.insertContent('x')
+      // 外部重新同步（斜杠命令 /priority → ensureTodo 挂载 `#任务`，Editor watch 重设 PM 文档）
+      await wrapper.setProps({ content: 'hello #任务' })
+      await flushPromises()
+      await nextTick()
+
+      // 推进防抖：应以「最新正文」落库，而非用户编辑那一刻捕获的 'hellox'
+      vi.advanceTimersByTime(300)
+      await flushPromises()
+
+      const saves = wrapper.emitted('save') ?? []
+      expect(saves.length).toBeGreaterThan(0)
+      const last = saves[saves.length - 1]
+      expect(last[0]).toBe('hello #任务')
+
+      vi.useRealTimers()
+      wrapper.unmount()
+    })
+  })
+})
+
+describe('Editor 行内格式', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+  })
+
+  test('载入 inlineMarks 后 getContent 能原样序列化', async () => {
+    const wrapper = mount(Editor, {
+      props: {
+        blockId: 'b1',
+        content: 'hello world',
+        inlineMarks: [{ start: 0, end: 5, bold: true }],
+      },
+      global: { stubs: { Teleport: true } },
+    })
+    await flushPromises()
+    await nextTick()
+
+    const payload = (wrapper.vm as any).getContent()
+    expect(payload.text).toBe('hello world')
+    expect(payload.marks).toEqual([{ start: 0, end: 5, bold: true }])
+
+    wrapper.unmount()
+  })
+
+  test('应用颜色 Mark 后按正文偏移输出区间', async () => {
+    const wrapper = mount(Editor, {
+      props: { blockId: 'b1', content: 'hello world' },
+      global: { stubs: { Teleport: true } },
+    })
+    await flushPromises()
+    await nextTick()
+
+    const editor = (wrapper.vm as any).getEditor()
+    // 段落起点为 1：1..6 对应正文 0..5（hello）
+    editor.chain().setTextSelection({ from: 1, to: 6 }).setMark('inlineTextColor', { color: '--tag-color-2' }).run()
+
+    const payload = (wrapper.vm as any).getContent()
+    expect(payload.text).toBe('hello world')
+    expect(payload.marks).toEqual([{ start: 0, end: 5, color: '--tag-color-2' }])
+
+    wrapper.unmount()
+  })
+
+  test('多个格式叠加压平为同一区间', async () => {
+    const wrapper = mount(Editor, {
+      props: { blockId: 'b1', content: 'hello world' },
+      global: { stubs: { Teleport: true } },
+    })
+    await flushPromises()
+    await nextTick()
+
+    const editor = (wrapper.vm as any).getEditor()
+    editor.chain().setTextSelection({ from: 1, to: 6 }).toggleBold().toggleItalic().run()
+
+    const payload = (wrapper.vm as any).getContent()
+    expect(payload.marks).toEqual([{ start: 0, end: 5, bold: true, italic: true }])
+
+    wrapper.unmount()
+  })
+
+  test('save 事件按 (content, commitTags, flush, marks) 顺序发射', async () => {
+    vi.useFakeTimers()
+    const wrapper = mount(Editor, {
+      props: {
+        blockId: 'b1',
+        content: 'hello world',
+        inlineMarks: [{ start: 0, end: 5, bold: true }],
+      },
+      global: { stubs: { Teleport: true } },
+    })
+    await flushPromises()
+    await nextTick()
+
+    const editor = (wrapper.vm as any).getEditor()
+    editor.commands.insertContentAt(editor.state.doc.content.size, ' again')
+    vi.advanceTimersByTime(300)
+    await flushPromises()
+
+    const saves = wrapper.emitted('save') ?? []
+    expect(saves.length).toBeGreaterThan(0)
+    const last = saves[saves.length - 1]!
+    expect(last[0]).toBe('hello world again')
+    expect(last[1]).toBe(false)
+    expect(last[2]).toBe(true)
+    // 形参错位会让 marks 落到 flush 位置、被 handleSave 当作 undefined 而清空格式
+    expect(last[3]).toEqual([{ start: 0, end: 5, bold: true }])
+
+    vi.useRealTimers()
+    wrapper.unmount()
+  })
+
+  test('载入带颜色/背景色的 inlineMarks 后编辑态应渲染对应样式', async () => {
+    const wrapper = mount(Editor, {
+      props: {
+        blockId: 'b1',
+        content: 'hello world',
+        inlineMarks: [
+          { start: 0, end: 5, color: '--tag-color-2' },
+          { start: 6, end: 11, background: '--tag-color-3' },
+        ],
+      },
+      global: { stubs: { Teleport: true } },
+    })
+    await flushPromises()
+    await nextTick()
+
+    const editor = (wrapper.vm as any).getEditor()
+    const html = editor.getHTML() as string
+    expect(html).toContain('data-inline-color="--tag-color-2"')
+    expect(html).toContain('color: var(--tag-color-2)')
+    expect(html).toContain('data-inline-bg="--tag-color-3"')
+
+    wrapper.unmount()
   })
 })

@@ -14,24 +14,24 @@ import { setActivePinia, createPinia } from 'pinia'
 const hoisted = vi.hoisted(() => {
   const propsByBlock = new Map<string, any[]>()
 
-  const getProperties = vi.fn((blockId: string) =>
+  const getFieldValues = vi.fn((blockId: string) =>
     Promise.resolve(propsByBlock.get(blockId) ?? [])
   )
 
-  const setProperty = vi.fn((blockId: string, key: string, valueStr: string, type: string) => {
+  const setFieldValue = vi.fn((blockId: string, key: string, valueStr: string, type: string) => {
     const id = `${blockId}:${key}`
     const prop = {
       id,
       block_id: blockId,
+      field_definition_id: `fd-${key}`,
       key,
-      value: valueStr,
-      type,
-      sort_order: 0,
-      is_hidden: 0,
-      is_deleted: 0,
-      schema_version: 0,
+      value_json: valueStr,
+      value_type: type,
+      seq: 0,
       created_at: Date.now(),
       updated_at: Date.now(),
+      version: 0,
+      deleted_at: null,
     }
     const arr = propsByBlock.get(blockId) ?? []
     const idx = arr.findIndex((p) => p.key === key)
@@ -41,7 +41,7 @@ const hoisted = vi.hoisted(() => {
     return Promise.resolve(prop)
   })
 
-  const deleteProperty = vi.fn((blockId: string, key: string) => {
+  const deleteFieldValue = vi.fn((blockId: string, key: string) => {
     const arr = propsByBlock.get(blockId) ?? []
     propsByBlock.set(
       blockId,
@@ -50,8 +50,8 @@ const hoisted = vi.hoisted(() => {
     return Promise.resolve()
   })
 
-  const client = { getProperties, setProperty, deleteProperty }
-  return { propsByBlock, client, getProperties, setProperty, deleteProperty }
+  const client = { getFieldValues, setFieldValue, deleteFieldValue }
+  return { propsByBlock, client, getFieldValues, setFieldValue, deleteFieldValue }
 })
 
 // ── 共享可变状态（供 handleConfirm 读写 editor / block store） ─────────────
@@ -85,7 +85,7 @@ vi.mock('../stores/blocks', () => ({
 }))
 
 import { useDateTimePickerPanel } from './useDateTimePickerPanel'
-import { usePropertyStore } from '../stores/property'
+import { useFieldValueStore } from '../stores/fieldValue'
 
 beforeEach(() => {
   setActivePinia(createPinia())
@@ -100,7 +100,7 @@ describe('handleConfirm — 自动标记 Todo', () => {
   it('content 模式：插入 schedule dateRef，无 status → 自动补 Todo', async () => {
     const panel = useDateTimePickerPanel()
 
-    blockState.blocks = [{ id: 'b1', content: '买牛奶', type: 'bullet' }]
+    blockState.blocks = [{ id: 'b1', content: '买牛奶', type: 'text' }]
     editorState.dateRefEditor = {
       visible: true,
       blockId: 'b1',
@@ -120,7 +120,7 @@ describe('handleConfirm — 自动标记 Todo', () => {
     expect(blockState.updateBlockContent).toHaveBeenCalledWith('b1', '买牛奶 @2026-07-20 📅 ')
 
     // 自动补 Todo
-    const todoCall = hoisted.setProperty.mock.calls.find((c) => c[0] === 'b1' && c[1] === 'status')
+    const todoCall = hoisted.setFieldValue.mock.calls.find((c) => c[0] === 'b1' && c[1] === 'status')
     expect(todoCall).toBeDefined()
     expect(todoCall![2]).toBe('Todo')
   })
@@ -128,7 +128,7 @@ describe('handleConfirm — 自动标记 Todo', () => {
   it('content 模式：插入 deadline dateRef，无 status → 自动补 Todo', async () => {
     const panel = useDateTimePickerPanel()
 
-    blockState.blocks = [{ id: 'b2', content: '交报告', type: 'bullet' }]
+    blockState.blocks = [{ id: 'b2', content: '交报告', type: 'text' }]
     editorState.dateRefEditor = {
       visible: true,
       blockId: 'b2',
@@ -144,21 +144,21 @@ describe('handleConfirm — 自动标记 Todo', () => {
     await panel.handleConfirm({ kind: 'deadline', iso: '2026-07-25', recurrence: 'none' })
 
     expect(blockState.updateBlockContent).toHaveBeenCalledWith('b2', '交报告 @2026-07-25 ⏰ ')
-    const todoCall = hoisted.setProperty.mock.calls.find((c) => c[0] === 'b2' && c[1] === 'status')
+    const todoCall = hoisted.setFieldValue.mock.calls.find((c) => c[0] === 'b2' && c[1] === 'status')
     expect(todoCall).toBeDefined()
     expect(todoCall![2]).toBe('Todo')
   })
 
   it('已有 status（如 Done）时不降级为 Todo', async () => {
     const panel = useDateTimePickerPanel()
-    const propertyStore = usePropertyStore()
+    const fieldValueStore = useFieldValueStore()
 
     // 先通过 store 设置 status=Done（会写回 propsByBlock 并刷新内存）
-    await propertyStore.setProperty('b3', 'status', 'Done', 'string')
+    await fieldValueStore.setFieldValue('b3', 'status', 'Done', 'string')
     // 仅关心本次 handleConfirm 是否"补" Todo
-    hoisted.setProperty.mockClear()
+    hoisted.setFieldValue.mockClear()
 
-    blockState.blocks = [{ id: 'b3', content: '已完成的任务', type: 'bullet' }]
+    blockState.blocks = [{ id: 'b3', content: '已完成的任务', type: 'text' }]
     editorState.dateRefEditor = {
       visible: true,
       blockId: 'b3',
@@ -174,8 +174,8 @@ describe('handleConfirm — 自动标记 Todo', () => {
     await panel.handleConfirm({ kind: 'schedule', iso: '2026-07-20', recurrence: 'none' })
 
     expect(blockState.updateBlockContent).toHaveBeenCalledTimes(1)
-    // 不应再调用 setProperty('status', 'Todo')
-    const todoCall = hoisted.setProperty.mock.calls.find((c) => c[0] === 'b3' && c[1] === 'status')
+    // 不应再调用 setFieldValue('status', 'Todo')
+    const todoCall = hoisted.setFieldValue.mock.calls.find((c) => c[0] === 'b3' && c[1] === 'status')
     expect(todoCall).toBeUndefined()
   })
 
@@ -215,7 +215,7 @@ describe('handleConfirm — 自动标记 Todo', () => {
     await panel.handleConfirm({ kind: 'schedule', iso: '2026-07-20', recurrence: 'none' })
 
     expect(chainMock).toHaveBeenCalled()
-    const todoCall = hoisted.setProperty.mock.calls.find((c) => c[0] === 'b4' && c[1] === 'status')
+    const todoCall = hoisted.setFieldValue.mock.calls.find((c) => c[0] === 'b4' && c[1] === 'status')
     expect(todoCall).toBeDefined()
     expect(todoCall![2]).toBe('Todo')
   })
@@ -223,7 +223,7 @@ describe('handleConfirm — 自动标记 Todo', () => {
   it('blockId 缺失时不设置 status', async () => {
     const panel = useDateTimePickerPanel()
 
-    blockState.blocks = [{ id: 'b5', content: '普通块', type: 'bullet' }]
+    blockState.blocks = [{ id: 'b5', content: '普通块', type: 'text' }]
     editorState.dateRefEditor = {
       visible: true,
       blockId: null,
@@ -238,6 +238,6 @@ describe('handleConfirm — 自动标记 Todo', () => {
 
     await panel.handleConfirm({ kind: 'schedule', iso: '2026-07-20', recurrence: 'none' })
 
-    expect(hoisted.setProperty).not.toHaveBeenCalled()
+    expect(hoisted.setFieldValue).not.toHaveBeenCalled()
   })
 })

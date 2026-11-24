@@ -56,7 +56,7 @@ vi.mock('./FilterBuilder.vue', () => ({
 }))
 
 const FIELDS: FieldDescriptor[] = [
-  { key: 'title', label: '标题', type: 'text', get: () => '' },
+  { key: 'title', label: '标题', type: 'string', get: () => '' },
   { key: 'type', label: '类型', type: 'select', options: [{ id: 'normal', label: '普通' }], get: () => '' },
   { key: 'createdAt', label: '创建日期', type: 'date', get: () => '' },
 ]

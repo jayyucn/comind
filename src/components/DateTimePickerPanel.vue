@@ -1,13 +1,14 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
-import { Clock, Repeat, Check } from 'lucide-vue-next'
+import { Check,Clock, Repeat } from 'lucide-vue-next'
+import { computed, nextTick,onBeforeUnmount, onMounted, ref, watch } from 'vue'
+
+import { useBlockStore } from '../stores/blocks'
+import { useEditorStore } from '../stores/editor'
+import type { DateRefKind, RecurrenceRule } from '../utils/date-ref'
+import { getCoreClient } from '../wasm/client'
+import type { DateRefRecord } from '../wasm/types'
 import CalendarPopover from './CalendarPopover.vue'
 import BasePopover from './common/BasePopover.vue'
-import { useEditorStore } from '../stores/editor'
-import { useBlockStore } from '../stores/blocks'
-import { getCoreClient } from '../wasm/client'
-import type { DateRefKind, RecurrenceRule } from '../utils/date-ref'
-import type { DateRefRecord } from '../wasm/types'
 
 export interface DateTimePickerConfirm {
   kind: DateRefKind
@@ -391,8 +392,6 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeyDown, true))
 </template>
 
 <style scoped>
-@use '../styles/mixins' as *;
-
 .dtp-panel {
   width: var(--panel-width-md);
   padding: var(--space-3);
@@ -440,7 +439,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeyDown, true))
   background-repeat: no-repeat;
   background-position: right 6px center;
   background-size: 12px;
-  transition: border-color var(--transition-base), box-shadow var(--transition-base);
+  transition: border-color var(--dur-base) var(--ease-out), box-shadow var(--dur-base) var(--ease-out);
 
   &:hover { border-color: var(--border-strong); }
   &:focus { border-color: var(--accent); box-shadow: var(--shadow-focus); }
@@ -562,7 +561,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeyDown, true))
   cursor: pointer;
   font-size: var(--text-sm);
   font-family: inherit;
-  transition: background var(--transition-base), border-color var(--transition-base), transform var(--transition-base);
+  transition: background var(--dur-base) var(--ease-out), border-color var(--dur-base) var(--ease-out), transform var(--dur-base) var(--ease-out);
 }
 
 .dtp-btn--cancel {

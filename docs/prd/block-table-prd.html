@@ -1,0 +1,933 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Block 表格功能 PRD · comind</title>
+<style>
+  :root{
+    --bg:#FAF8F5;
+    --surface:#FFFFFF;
+    --surface-2:#F5F2EC;
+    --border:#E7E2D9;
+    --border-strong:#D6CFC2;
+    --ink:#1F1B16;
+    --ink-2:#3D362D;
+    --muted:#6B6257;
+    --faint:#938A7C;
+    --accent:#B45309;
+    --accent-soft:#FDF1E3;
+    --accent-line:#E9C9A5;
+    --tbd-bg:#FFF8E6;
+    --tbd-line:#E8D29A;
+    --ok:#1F7A4D;
+    --mono:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--ink);
+    font-family:"Segoe UI","Microsoft YaHei",system-ui,-apple-system,sans-serif;
+    font-size:15px;
+    line-height:1.7;
+    -webkit-font-smoothing:antialiased;
+  }
+  .page{max-width:1000px;margin:0 auto;padding:56px 40px 96px}
+  .doc-head{padding-bottom:28px;border-bottom:1px solid var(--border)}
+  .eyebrow{
+    font-size:12px;letter-spacing:.12em;text-transform:uppercase;
+    color:var(--accent);font-weight:600;margin-bottom:14px;
+  }
+  h1{font-size:34px;line-height:1.25;margin:0 0 8px;letter-spacing:-.01em}
+  .subtitle{margin:0;color:var(--muted);font-size:16px}
+  .meta{display:flex;flex-wrap:wrap;gap:8px 22px;margin-top:22px;font-size:13px;color:var(--muted)}
+  .meta span::before{content:"";display:inline-block;width:5px;height:5px;border-radius:50%;
+    background:var(--border-strong);vertical-align:2px;margin-right:8px}
+  .toc{
+    margin:28px 0 0;padding:18px 22px;background:var(--surface);
+    border:1px solid var(--border);border-radius:10px;
+  }
+  .toc-title{font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);margin-bottom:10px}
+  .toc ol{margin:0;padding-left:20px;columns:2;column-gap:36px}
+  .toc li{margin:4px 0;font-size:14px}
+  .toc a{color:var(--ink-2);text-decoration:none;border-bottom:1px solid transparent}
+  .toc a:hover{color:var(--accent);border-bottom-color:var(--accent-line)}
+  section{margin-top:56px}
+  h2{
+    font-size:23px;line-height:1.3;margin:0 0 18px;padding-bottom:10px;
+    border-bottom:1px solid var(--border);letter-spacing:-.005em;
+  }
+  h2 .num{color:var(--accent);font-variant-numeric:tabular-nums;margin-right:12px;font-weight:600}
+  h3{font-size:17px;line-height:1.4;margin:34px 0 12px;color:var(--ink)}
+  h3 .fid{
+    font-family:var(--mono);font-size:11px;font-weight:600;color:var(--accent);
+    background:var(--accent-soft);border:1px solid var(--accent-line);
+    padding:2px 7px;border-radius:4px;margin-right:10px;vertical-align:2px;letter-spacing:.02em;
+  }
+  h4{font-size:14px;margin:22px 0 8px;color:var(--ink-2)}
+  p{margin:10px 0}
+  ul,ol{margin:10px 0;padding-left:24px}
+  li{margin:5px 0}
+  strong{font-weight:600}
+  .lead{font-size:16px;color:var(--ink-2)}
+  .card{
+    background:var(--surface);border:1px solid var(--border);border-radius:10px;
+    padding:20px 24px;margin:18px 0;
+  }
+  .card > :first-child{margin-top:0}
+  .card > :last-child{margin-bottom:0}
+  .callout{
+    border:1px solid var(--tbd-line);background:var(--tbd-bg);border-radius:10px;
+    padding:14px 18px;margin:18px 0;font-size:14px;color:#5C4A1F;
+  }
+  .callout .label{
+    display:inline-block;font-family:var(--mono);font-size:11px;font-weight:700;
+    letter-spacing:.06em;text-transform:uppercase;color:#8A6413;margin-right:8px;
+  }
+  .callout p{margin:6px 0}
+  .callout p:first-of-type{margin-top:0}
+  .callout p:last-child{margin-bottom:0}
+  .tbd{font-family:var(--mono);font-size:12px;color:#8A6413;background:var(--tbd-bg);
+    border:1px solid var(--tbd-line);padding:1px 5px;border-radius:3px;white-space:nowrap}
+  table{width:100%;border-collapse:collapse;margin:18px 0;font-size:14px}
+  th,td{text-align:left;vertical-align:top;padding:11px 14px;border-bottom:1px solid var(--border)}
+  thead th{
+    background:var(--surface-2);font-size:12px;font-weight:600;color:var(--muted);
+    letter-spacing:.04em;text-transform:uppercase;border-bottom:1px solid var(--border-strong);
+  }
+  tbody tr:last-child td{border-bottom:none}
+  .tbl-wrap{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden}
+  .tbl-wrap table{margin:0}
+  .tbl-wrap th:first-child,.tbl-wrap td:first-child{padding-left:18px}
+  .tbl-wrap th:last-child,.tbl-wrap td:last-child{padding-right:18px}
+  code{font-family:var(--mono);font-size:13px;background:var(--surface-2);
+    border:1px solid var(--border);padding:1px 5px;border-radius:3px;color:var(--ink-2)}
+  .req-meta{
+    display:grid;grid-template-columns:96px 1fr;gap:6px 16px;
+    margin:14px 0 6px;padding:14px 18px;background:var(--surface-2);
+    border-radius:8px;font-size:14px;
+  }
+  .req-meta dt{color:var(--faint);font-size:12px;font-weight:600;letter-spacing:.04em;
+    text-transform:uppercase;padding-top:2px}
+  .req-meta dd{margin:0}
+  .flow-wrap{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:18px;margin:20px 0;overflow-x:auto}
+  .flow-wrap svg{display:block;margin:0 auto;min-width:760px}
+  .fig-cap{font-size:12px;color:var(--faint);text-align:center;margin-top:10px}
+
+  /* ---------- prototype ---------- */
+  .proto{
+    background:var(--surface);border:1px solid var(--border);border-radius:12px;
+    margin:24px 0;overflow:hidden;box-shadow:0 1px 0 rgba(31,27,22,.03);
+  }
+  .proto-bar{
+    display:flex;align-items:center;gap:10px;padding:12px 18px;
+    border-bottom:1px solid var(--border);background:var(--surface-2);
+  }
+  .proto-tag{
+    font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
+    color:#fff;background:var(--accent);padding:2px 7px;border-radius:3px;
+  }
+  .proto-title{font-size:13px;color:var(--muted)}
+  .proto-toolbar{
+    display:flex;flex-wrap:wrap;align-items:center;gap:6px;
+    padding:12px 18px;border-bottom:1px solid var(--border);
+  }
+  .proto-toolbar button{
+    font:inherit;font-size:12px;padding:5px 10px;border-radius:5px;cursor:pointer;
+    color:var(--ink-2);background:var(--surface);border:1px solid var(--border-strong);
+    transition:background .12s,border-color .12s,color .12s;
+  }
+  .proto-toolbar button:hover{background:var(--accent-soft);border-color:var(--accent-line);color:var(--accent)}
+  .proto-toolbar button.ghost{border-color:transparent;color:var(--faint)}
+  .proto-toolbar .sep{width:1px;height:18px;background:var(--border);margin:0 4px}
+  .switch{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);cursor:pointer}
+  .switch input{accent-color:var(--accent);margin:0}
+  .grid-wrap{padding:18px 18px 8px;overflow-x:auto}
+  .demo-grid{
+    width:100%;border-collapse:collapse;table-layout:fixed;
+    font-size:13px;
+  }
+  .demo-grid td{
+    border:1px solid var(--border);padding:0;background:var(--surface);
+    transition:background .12s,box-shadow .12s;
+  }
+  .demo-grid td.th{background:#FBF9F5}
+  .demo-grid td.th input{font-weight:600;color:var(--ink)}
+  .demo-grid td.active-cell{box-shadow:inset 0 0 0 2px var(--accent);background:#FFFDF8}
+  .demo-grid input{
+    width:100%;border:0;outline:0;background:transparent;font:inherit;
+    padding:8px 10px;color:var(--ink);
+  }
+  .demo-grid input::placeholder{color:#C7BFB2}
+  .proto-status{
+    padding:8px 18px;font-size:12px;color:var(--muted);font-family:var(--mono);
+    border-top:1px solid var(--border);background:#FCFBF8;min-height:34px;
+  }
+  .proto-hint{padding:4px 18px 16px;font-size:12px;color:var(--faint)}
+
+  .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  @media (max-width:760px){
+    .page{padding:36px 20px 72px}
+    h1{font-size:27px}
+    .toc ol{columns:1}
+    .grid-2{grid-template-columns:1fr}
+    .req-meta{grid-template-columns:1fr;gap:2px}
+    .req-meta dt{padding-top:10px}
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="doc-head">
+    <div class="eyebrow">comind · 产品需求文档</div>
+    <h1>Block 表格功能</h1>
+    <p class="subtitle">以静态内容块的形式，在页面内创建与维护二维表格（纯文本单元格）</p>
+    <div class="meta">
+      <span>状态：待评审</span>
+      <span>版本：v0.1</span>
+      <span>日期：2026-11-03</span>
+      <span>适用端：桌面端 / Web</span>
+    </div>
+  </header>
+
+  <nav class="toc" aria-label="目录">
+    <div class="toc-title">目录</div>
+    <ol>
+      <li><a href="#s1">背景与目标</a></li>
+      <li><a href="#s2">范围</a></li>
+      <li><a href="#s3">产品模型</a></li>
+      <li><a href="#s4">功能需求</a></li>
+      <li><a href="#s5">共享规则与例外</a></li>
+      <li><a href="#s6">异常与边界</a></li>
+      <li><a href="#s7">待决问题</a></li>
+    </ol>
+  </nav>
+
+  <!-- ============ 1 ============ -->
+  <section id="s1">
+    <h2><span class="num">1</span>背景与目标</h2>
+
+    <p class="lead">
+      当前页面由 Block 树构成，可用的内容类型是 bullet、code、image、embed 等。用户需要在笔记里记录
+      “并列对照、分工清单、参数比较”这类二维信息时，只能把内容摊成多级 bullet，或者塞进代码块。
+    </p>
+
+    <div class="card">
+      <p><strong>观察到的现象</strong></p>
+      <ul>
+        <li>用多级 bullet 表达二维关系时，行与列靠缩进和空格对齐，换行、增删一项就会整体错位。</li>
+        <li>塞进代码块可以对齐，但会丢失文字样式、无法逐格编辑，也不适合日常记录。</li>
+        <li>为了对齐，用户会在单元格之间手工敲空格或制表符，之后维护成本高于重新录入。</li>
+      </ul>
+      <p><strong>受影响的用户与时机</strong>　在 Page 中连续书写、需要把多条信息并排比较的记录者（会议纪要、方案对比、读书摘录、任务分工）。</p>
+      <p><strong>产品决策</strong>　引入一种新的 Block 类型：<strong>表格块</strong>。它仍是 Block 树中的一个节点，但在内容区渲染为可编辑的二维网格；单元格只承载纯文本。</p>
+      <p><strong>期望的可观察结果</strong>　用户能在当前页面完成“建表 → 填表 → 增删行列”，离开页面后再次打开，表格的尺寸与内容与离开时一致；整张表可以像普通块一样被选中、复制、删除与撤销。</p>
+    </div>
+  </section>
+
+  <!-- ============ 2 ============ -->
+  <section id="s2">
+    <h2><span class="num">2</span>范围</h2>
+
+    <h3>P0 — 最小完整旅程</h3>
+    <p>从创建入口开始，到一张可用的表格被保存、并能在页面内外被正常打开为止。</p>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>能力</th><th>需求</th><th>完成证据</th></tr></thead>
+        <tbody>
+          <tr><td>创建表格块</td><td>TBL-01 / TBL-02</td><td>输入 <code>/table</code> 后，页面内出现一张可编辑的网格</td></tr>
+          <tr><td>单元格录入</td><td>TBL-03</td><td>中文输入法可正常输入；Enter / Tab 在格子间移动</td></tr>
+          <tr><td>结构调整</td><td>TBL-04 / TBL-05 / TBL-06</td><td>可增删行列、切换首行表头，结构变更即时可见</td></tr>
+          <tr><td>块级操作</td><td>TBL-07</td><td>整块选中后可复制、粘贴、删除，行为与普通块一致</td></tr>
+          <tr><td>单元格文本复制</td><td>TBL-12</td><td>可在格内选择并复制文字</td></tr>
+          <tr><td>整格区域选择</td><td>TBL-13</td><td>拖出起点格即转为整格矩形；复制得 TSV，删除只清内容</td></tr>
+          <tr><td>撤销与恢复</td><td>TBL-08</td><td>误删整块或误删行列后，<code>Ctrl+Z</code> 可回到上一状态</td></tr>
+          <tr><td>持久化</td><td>TBL-09</td><td>刷新、重启、换端打开后内容与尺寸一致</td></tr>
+          <tr><td>打开方式</td><td>TBL-10</td><td>页面内与 BlockModal 中均可正确渲染，只读/可编辑与上下文一致</td></tr>
+          <tr><td>导出与模板</td><td>TBL-11</td><td>Markdown 导出得到合法 GFM 表格；模板明确提示不包含表格内容</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>P1 — 明确支持但不进入本轮验收</h3>
+    <ul>
+      <li>从 Excel / 其他表格应用粘贴 TSV，直接生成表格块。</li>
+      <li>列宽拖动调整，并按表格块持久化。</li>
+      <li>单元格内换行（<code>Shift+Enter</code> / 多行文本）。</li>
+      <li>拖拽调整行、列顺序。</li>
+    </ul>
+
+    <h3>非目标 — 本 PRD 明确不做</h3>
+    <ul>
+      <li>合并单元格、公式、排序、筛选、统计与条件格式。</li>
+      <li>单元格内嵌 Block、图片、附件或链接卡片（单元格只有纯文本）。</li>
+      <li>把表格块当作任务或字段的数据源；这属于查询视图（TableView）的职责。</li>
+      <li>多表联动、跨页引用整张表、把表作为独立页面实体。</li>
+      <li>移动端专属的手势交互（随端能力另行定义）。</li>
+    </ul>
+  </section>
+
+  <!-- ============ 3 ============ -->
+  <section id="s3">
+    <h2><span class="num">3</span>产品模型</h2>
+
+    <h3>3.1 表格块</h3>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>属性</th><th>定义</th></tr></thead>
+        <tbody>
+          <tr><td>对象身份</td><td>Block 的一种 <code>type</code>，与 bullet / code / image / embed 同级；沿用 Block 的 id、父级与排序位置，可缩进、可排序、可整块移动。</td></tr>
+          <tr><td>节点形态</td><td><strong>叶子块</strong>：不拥有子 Block。表格结构不由子 Block 表达，而是由表格自身持有。</td></tr>
+          <tr><td>内容</td><td>一个 <code>行 × 列</code> 的网格；每个单元格是一段纯文本；首行可标记为表头。</td></tr>
+          <tr><td>折叠</td><td>没有子块、也没有字段行时，不满足现有折叠条件，因此不显示折叠入口。表格自身不引入新的折叠状态。</td></tr>
+          <tr><td>字段区</td><td>沿用 Block 既有规则；表格块不额外增加“表格专属字段”。</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>3.2 交互状态</h3>
+    <p>表格块在编辑上下文中只有两种状态，任何时刻只处于其中一种。这个模型决定了键盘行为由谁接管。</p>
+
+    <div class="flow-wrap">
+      <svg viewBox="0 0 760 220" role="img" aria-label="表格块交互状态图">
+        <defs>
+          <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+            <path d="M0,0 L10,5 L0,10 z" fill="#B45309"/>
+          </marker>
+          <marker id="arrMuted" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+            <path d="M0,0 L10,5 L0,10 z" fill="#938A7C"/>
+          </marker>
+        </defs>
+
+        <rect x="40" y="80" width="230" height="64" rx="9" fill="#F5F2EC" stroke="#D6CFC2"/>
+        <text x="155" y="108" text-anchor="middle" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="14" font-weight="600" fill="#1F1B16">块级未聚焦</text>
+        <text x="155" y="128" text-anchor="middle" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="11" fill="#6B6257">整块可被选中 / 复制 / 删除</text>
+
+        <rect x="460" y="80" width="230" height="64" rx="9" fill="#FDF1E3" stroke="#B45309"/>
+        <text x="575" y="108" text-anchor="middle" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="14" font-weight="600" fill="#B45309">单元格编辑</text>
+        <text x="575" y="128" text-anchor="middle" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="11" fill="#8A6413">文字光标可见，表格接管键盘</text>
+
+        <line x1="276" y1="112" x2="454" y2="112" stroke="#B45309" stroke-width="1.6" marker-end="url(#arr)"/>
+        <text x="365" y="100" text-anchor="middle" font-size="11" fill="#6B6257" font-family="Segoe UI, Microsoft YaHei, sans-serif">单击单元格</text>
+
+        <path d="M460,148 C390,202 260,202 195,150" fill="none" stroke="#938A7C" stroke-width="1.4" marker-end="url(#arrMuted)"/>
+        <text x="328" y="216" text-anchor="middle" font-size="11" fill="#938A7C" font-family="Segoe UI, Microsoft YaHei, sans-serif">Esc / 点击表格外（结束编辑）</text>
+      </svg>
+      <div class="fig-cap">状态图：块级未聚焦 ⇄ 单元格编辑</div>
+    </div>
+
+    <p><strong>状态约束</strong></p>
+    <ul>
+      <li><strong>编辑</strong>是唯一会消费文字输入的状态；此时 Enter / Tab / 方向键属于表格，不得冒泡给页面块编辑器（否则会拆分或新建 Block）。</li>
+      <li>进入编辑后，<strong>Esc 或点击表格外</strong>都会结束编辑并保留已输入内容，回到块级未聚焦；块级未聚焦时，表格块与普通块一样参与块选择、复制、删除与拖拽排序。</li>
+      <li><strong>只读上下文（历史页快照）</strong>不进入编辑状态：单击只选中单元格，可选中、可复制，不可输入；也不显示操作条与表头开关。</li>
+    </ul>
+
+    <h3>3.3 创建流程</h3>
+    <div class="flow-wrap">
+      <svg viewBox="0 0 940 210" role="img" aria-label="创建表格块流程">
+        <defs>
+          <marker id="arr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+            <path d="M0,0 L10,5 L0,10 z" fill="#B45309"/>
+          </marker>
+        </defs>
+        <rect x="10" y="66" width="190" height="60" rx="9" fill="#FFFFFF" stroke="#D6CFC2"/>
+        <text x="105" y="92" text-anchor="middle" font-size="13" font-weight="600" fill="#1F1B16" font-family="Segoe UI, Microsoft YaHei, sans-serif">输入 /table 并确认</text>
+        <text x="105" y="110" text-anchor="middle" font-size="11" fill="#6B6257" font-family="Segoe UI, Microsoft YaHei, sans-serif">斜杠菜单项</text>
+
+        <rect x="246" y="66" width="170" height="60" rx="9" fill="#FFFFFF" stroke="#D6CFC2"/>
+        <text x="331" y="92" text-anchor="middle" font-size="13" font-weight="600" fill="#1F1B16" font-family="Segoe UI, Microsoft YaHei, sans-serif">当前块为空且无子块？</text>
+        <text x="331" y="110" text-anchor="middle" font-size="11" fill="#6B6257" font-family="Segoe UI, Microsoft YaHei, sans-serif">判断分支</text>
+
+        <rect x="462" y="10" width="200" height="58" rx="9" fill="#FDF1E3" stroke="#E9C9A5"/>
+        <text x="562" y="36" text-anchor="middle" font-size="13" font-weight="600" fill="#1F1B16" font-family="Segoe UI, Microsoft YaHei, sans-serif">是：块就地转换</text>
+        <text x="562" y="54" text-anchor="middle" font-size="11" fill="#6B6257" font-family="Segoe UI, Microsoft YaHei, sans-serif">移除命令文本，块类型变为 table</text>
+
+        <rect x="462" y="132" width="200" height="58" rx="9" fill="#FDF1E3" stroke="#E9C9A5"/>
+        <text x="562" y="158" text-anchor="middle" font-size="13" font-weight="600" fill="#1F1B16" font-family="Segoe UI, Microsoft YaHei, sans-serif">否：在原块子树后新建</text>
+        <text x="562" y="176" text-anchor="middle" font-size="11" fill="#6B6257" font-family="Segoe UI, Microsoft YaHei, sans-serif">保留文本与子块，新块作为兄弟插入</text>
+
+        <rect x="712" y="66" width="218" height="118" rx="9" fill="#FFFFFF" stroke="#D6CFC2"/>
+        <text x="821" y="94" text-anchor="middle" font-size="13" font-weight="600" fill="#1F1B16" font-family="Segoe UI, Microsoft YaHei, sans-serif">生成默认 3 × 3 网格</text>
+        <text x="821" y="113" text-anchor="middle" font-size="11" fill="#6B6257" font-family="Segoe UI, Microsoft YaHei, sans-serif">首行表头 · 列宽均分</text>
+        <text x="821" y="131" text-anchor="middle" font-size="11" fill="#6B6257" font-family="Segoe UI, Microsoft YaHei, sans-serif">占满内容宽度</text>
+        <text x="821" y="157" text-anchor="middle" font-size="11" fill="#8A6413" font-family="Segoe UI, Microsoft YaHei, sans-serif">[Assumption, TBD] 尺寸可调</text>
+
+        <line x1="200" y1="96" x2="240" y2="96" stroke="#B45309" stroke-width="1.6" marker-end="url(#arr2)"/>
+        <line x1="416" y1="88" x2="456" y2="48" stroke="#B45309" stroke-width="1.6" marker-end="url(#arr2)"/>
+        <line x1="416" y1="105" x2="456" y2="152" stroke="#B45309" stroke-width="1.6" marker-end="url(#arr2)"/>
+        <line x1="662" y1="44" x2="708" y2="86" stroke="#B45309" stroke-width="1.6" marker-end="url(#arr2)"/>
+        <line x1="662" y1="158" x2="708" y2="126" stroke="#B45309" stroke-width="1.6" marker-end="url(#arr2)"/>
+
+        <text x="228" y="86" font-size="11" fill="#6B6257" font-family="Segoe UI, Microsoft YaHei, sans-serif">确认</text>
+        <text x="426" y="54" font-size="11" fill="#6B6257" font-family="Segoe UI, Microsoft YaHei, sans-serif">是</text>
+        <text x="426" y="166" font-size="11" fill="#6B6257" font-family="Segoe UI, Microsoft YaHei, sans-serif">否</text>
+      </svg>
+      <div class="fig-cap">创建流程：就地转换或新建，最终聚焦首行首格进入编辑</div>
+    </div>
+  </section>
+
+  <!-- ============ 4 ============ -->
+  <section id="s4">
+    <h2><span class="num">4</span>功能需求</h2>
+    <p class="lead">每条需求按“触发 → 处理 → 结果与状态变化”描述，界面行为以可交互原型为准。</p>
+    <p><strong>操作入口</strong>　表格块不常驻工具栏。入口依附在表格外缘，按三级显隐：</p>
+    <p>① <strong>默认</strong>（鼠标不在块内）：不显示任何控件。</p>
+    <p>② <strong>块 hover</strong>：表格顶边外侧出现贯穿全宽的列操作条基座，左缘外侧出现行操作条基座，左上角出现表格菜单按钮。基座只作定位提示，不响应点击。</p>
+    <p>③ <strong>压在某段条上</strong>：该段升亮，「条」可整段点击弹出该行 / 列菜单（删除、清空、复制、剪切、粘贴、移动）。</p>
+    <p>④ <strong>压在该段条的端点</strong>（即「+」自身所在的一小块区域内）：才浮出「+」与引导线。「+」为一步插入（行下方 / 列右侧）。三级与四级分开，是因为条是整段长条——若「+」跟着整段走，光标压在条的任意位置都会把几十像素外的「+」拉出来，插入入口的触发区就被放大到整条。行列两个方向完全对称。</p>
+    <p>点击入口不改变当前单元格焦点，操作完成后焦点回到原格。表头行不提供「+」插入行，列菜单仍可用。只读上下文不显示任何入口。</p>
+    <p><strong>菜单打开期间</strong>　同类操作条整排保持可见并维持基座色，被点开菜单的那一段继续深一档：菜单浮在表格之外，鼠标移入菜单后块 hover 已经断开，若仍只按 hover 显隐，整条带子会连同「菜单属于哪一列 / 哪一行」一起消失。此时另一方向的条（列菜单对应行条、行菜单对应列条）保持隐藏，避免两侧同时亮起造成方向歧义。菜单关闭后整排立即回到默认隐藏。</p>
+    <p><strong>超宽表格</strong>　列数超出显示宽度时，表格横向滚动，操作条只画在<strong>可视宽度内</strong>：随内容一起左右滚动、与列边界保持对齐，但不得溢出到表格右侧的空白区域。被右边界裁切的那一列，其「+」位于可视区之外，不显示；滚动到该列完整可见后再出现。行方向的横向引导线同样止于可视右边界。表格底边下方另有<strong>横向滚动条</strong>：滑块长度按可视宽度与内容宽度之比计算，贴在表格下方留白内、与表格左边对齐，可拖拽滚动；列宽总和回落到可视宽度以内时随之消失。全局浮层滚动条只服务纵向，横向溢出若无此控件将没有任何可发现的滚动提示。</p>
+
+    <h3 id="tbl01"><span class="fid">TBL-01</span>创建表格块</h3>
+    <dl class="req-meta">
+      <dt>触发</dt><dd>光标位于某个 Block 内，输入 <code>/table</code> 并在斜杠菜单中确认（回车或点击菜单项）。</dd>
+      <dt>处理</dt><dd>仅当当前块内容为空（只有斜杠命令文本）且没有子块时，就地清除命令文本并把该块转换为表格块；转换不改变块上已有的字段值，字段区按既有规则显示在表格下方。<br>若当前块已有其他文本，或带有子块，则清除命令文本、保留其余内容与子块，并在该块完整子树之后插入一个新的表格块，原有子块不会被表格吞并。页面内与 BlockModal 的插入位置遵循同一父子约束：新表格块作为当前块的兄弟插入；在 BlockModal 中若当前块是子树根，则新表格块作为根块的子块插入，不在根层新增兄弟节点。</dd>
+      <dt>结果</dt><dd>页面内出现一张默认尺寸的表格，焦点落在表格首格并进入编辑状态；<code>/</code> 命令文本不再残留。</dd>
+      <dt>状态</dt><dd>块类型变为 <code>table</code>；表格进入“单元格编辑”态；该操作记入页面撤销历史的一条记录。</dd>
+    </dl>
+    <p><strong>例外</strong>：在只读上下文、或当前块被其他浮层占用时，创建入口不可用。</p>
+
+    <h3 id="tbl02"><span class="fid">TBL-02</span>默认结构</h3>
+    <dl class="req-meta">
+      <dt>触发</dt><dd>表格块首次创建。</dt>
+      <dt>处理</dt><dd>生成 3 行 × 3 列的空网格，首行默认标记为表头；列宽在内容区内均分，并保持最小可读列宽。单元格不写入任何默认文本：表头格为空时显示占位提示，数据格为空时不显示占位字符。</dd>
+      <dt>结果</dt><dd>表头行以浅色底、加粗文字与普通行区分；网格以细线分隔，整体宽度占满块内容区；单行文本按列宽换行显示，行高随内容增长；内容区不足以容纳最小列宽时，表格在内容区内横向滚动，不压缩列宽。</dd>
+      <dt>状态</dt><dd>表格具备“行数、列数、首行是否为表头”三个可持久化属性。</dd>
+    </dl>
+    <div class="callout">
+      <span class="label">Assumption</span>
+      默认 3 × 3 与“首行默认表头”是基于现有记录习惯的假设；若评审认为应默认 2 × 2 或无表头，只改默认值，不改变其余规则。<span class="tbd">[Assumption, TBD]</span>
+    </div>
+
+    <h3 id="tbl03"><span class="fid">TBL-03</span>单元格编辑与键盘</h3>
+    <dl class="req-meta">
+      <dt>触发</dt><dd>用户在可编辑上下文中单击任意单元格。</dd>
+      <dt>处理</dt><dd>单击即进入编辑并显示焦点框；输入即时写入该单元格。粘贴含制表符或换行的文本时，先将其替换为空格再写入当前格，不拆分为多格。键盘规则如下：</dd>
+      <dt>结果</dt><dd>单元格内容可见并即时保存；焦点按规则移动，表格尺寸保持不变（除末行/末列自动扩展）。</dd>
+      <dt>状态</dt><dd>表格处于“单元格编辑”态；输入按输入突发合并为一条撤销记录。</dd>
+    </dl>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>按键</th><th>行为</th><th>边界</th></tr></thead>
+        <tbody>
+          <tr><td><code>Enter</code></td><td>结束编辑，移动到下一行同列并继续编辑</td><td>已在最后一行时，自动新增一行后落入新行同列</td></tr>
+          <tr><td><code>Tab</code></td><td>结束编辑，移动到右一格</td><td>最后一列时回到下一行首列；已是最后一个单元格时，新增一行并落到首列</td></tr>
+          <tr><td><code>Shift+Tab</code></td><td>结束编辑，移动到左一格</td><td>首列时回到上一行最后一列；首格时不移动</td></tr>
+          <tr><td><code>Esc</code></td><td>结束编辑并保留已输入内容，回到块级未聚焦</td><td>不删除内容、不触发布局变化</td></tr>
+          <tr><td>方向键</td><td>上下键在行间移动；左右键先在格内移动光标，到达文本首/尾后再换格</td><td>到边缘时不循环、不越出表格</td></tr>
+          <tr><td>输入法组合</td><td>组合期间不触发任何导航键行为</td><td>回车用于确认候选词时只上屏文字，不移动格子（沿用现有输入法规则）</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p><strong>文字规则</strong>：单元格只接受单行纯文本，输入与粘贴都不产生换行；显示时按列宽自动换行，内容不截断。空数据格不显示占位字符（表头格的占位见 TBL-02）。表格文本不参与标签解析、日期引用与链接识别，也不进入页面搜索与引用匹配（后续是否支持见 Q2）。</p>
+
+    <h3 id="tbl04"><span class="fid">TBL-04</span>行操作</h3>
+    <dl class="req-meta">
+      <dt>触发</dt><dd>在目标行的行操作条上点「+」（在该行下方插入一行），或点击行操作条后在菜单中执行“删除行”。</dd>
+      <dt>处理</dt><dd>插入由「+」一步完成；删除、清空、复制、剪切、粘贴、上移、下移在行菜单中提供，菜单不重复插入项。粘贴用剪贴板中的行<strong>整行覆盖当前行</strong>：列数不变，剪贴板比当前表窄时其余格清空，不新增行。</dd>
+      <dt>结果</dt><dd>插入行落在指定位置，行数 +1；删除行后其下各行上移，行数 −1；当前焦点保持在原列，位置按新结构修正；操作条随新焦点所在行更新。</dd>
+      <dt>状态</dt><dd>行数变化；结构操作单独记入撤销历史。</dd>
+    </dl>
+    <p><strong>边界</strong>：表格至少保留一行。对唯一一行执行删除时，改为清空该行内容并给出提示，不产生 0 行的表格。表头标记固定绑定在首行：删除原表头行后，新首行自动继承表头样式；若希望无表头，需通过“首行表头”开关关闭。</p>
+
+    <h3 id="tbl05"><span class="fid">TBL-05</span>列操作</h3>
+    <dl class="req-meta">
+      <dt>触发</dt><dd>在目标列的列操作条上点「+」（在该列右侧插入一列），或点击列操作条后在菜单中执行“删除列”。</dd>
+      <dt>处理</dt><dd>插入由「+」一步完成；删除、清空、复制、剪切、粘贴、左移、右移在列菜单中提供，菜单不重复插入项。粘贴用剪贴板中的列<strong>整列覆盖当前列</strong>：行数不变，剪贴板比当前表短时其余行清空，不新增列。</dd>
+      <dt>结果</dt><dd>插入列落在指定位置，列数 +1；删除列后其右各列左移，列数 −1；新增列宽与其他列一致；操作条随新焦点所在列更新。</dd>
+      <dt>状态</dt><dd>列数变化；结构操作单独记入撤销历史。</dd>
+    </dl>
+    <p><strong>边界</strong>：表格至少保留一列。对唯一一列执行删除时，改为清空该列内容并给出提示。删除列时，该列所有单元格文本一并移除；撤销可整体恢复。</p>
+
+    <h3 id="tbl06"><span class="fid">TBL-06</span>首行表头</h3>
+    <dl class="req-meta">
+      <dt>触发</dt><dd>操作条中的“首行表头”开关。</dd>
+      <dt>处理</dt><dd>开启时首行使用表头样式并参与“首行”语义；关闭时首行恢复为普通数据行，内容不变。</dd>
+      <dt>结果</dt><dd>样式立即切换；表头单元格仍可编辑；表格尺寸与内容不变。</dd>
+      <dt>状态</dt><dd>表头标记变化并持久化；记入撤销历史。</dd>
+    </dl>
+    <p>表头只影响首行的视觉与语义，不影响列宽、行顺序或导出结构。不存在“多行表头”或“首列表头”的形态。</p>
+
+    <!-- prototype -->
+    <div class="proto" id="proto">
+      <div class="proto-bar">
+        <span class="proto-tag">原型</span>
+        <span class="proto-title">可交互表格块 · 对应 TBL-01 ～ TBL-06</span>
+      </div>
+      <div class="proto-toolbar">
+        <button type="button" data-act="row-below">下方插入行</button>
+        <button type="button" data-act="col-right">右侧插入列</button>
+        <span class="sep"></span>
+        <button type="button" data-act="row-del">删除当前行</button>
+        <button type="button" data-act="col-del">删除当前列</button>
+        <span class="sep"></span>
+        <label class="switch"><input type="checkbox" id="headerToggle" checked> 首行表头</label>
+        <button type="button" class="ghost" data-act="reset">重置</button>
+      </div>
+      <div class="grid-wrap" id="gridWrap"></div>
+      <div class="proto-status" id="protoStatus">—</div>
+      <div class="proto-hint">单击格即编辑 · Enter 下一行同列（末行新增）· Tab 右一格（末格新增）· Esc 结束编辑 · 上下方向键换行。原型以常驻操作条展示，最终形态见第 4 节“操作入口”（三级 hover 显隐，插入走「+」）。</div>
+    </div>
+
+    <h3 id="tbl07"><span class="fid">TBL-07</span>整块操作：选中、复制、删除</h3>
+    <dl class="req-meta">
+      <dt>触发</dt><dd><code>Ctrl/Cmd + 单击</code>表格块所在行（单元格以外的块行区域），或使用块级多选；也可通过块菜单执行删除。</dd>
+      <dt>处理</dt><dd>表格块作为一个整体参与块选择。复制时整张表进入内部剪贴板；剪切、删除与普通块一致。粘贴时生成新的表格块，保留行数、列数、表头标记与全部单元格文本；不保留旧 id 与位置。</dd>
+      <dt>结果</dt><dd>粘贴后的表格与原表内容一致、位置独立；删除整块后页面不再显示该表。</dd>
+      <dt>状态</dt><dd>块选择状态；删除与粘贴各记入撤销历史。</dd>
+    </dl>
+    <p><strong>纯文本回退</strong>：复制到外部应用时，以制表符分隔单元格、换行分隔行；单元格内的制表符与换行替换为空格，避免破坏行列结构。外部纯文本粘回 comind 时按现有规则作为文本处理，不自动成表（见 P1）。</p>
+
+    <h3 id="tbl08"><span class="fid">TBL-08</span>撤销与重做</h3>
+    <dl class="req-meta">
+      <dt>触发</dt><dd><code>Ctrl+Z</code> / <code>Ctrl+Shift+Z</code> / <code>Ctrl+Y</code>。</dt>
+      <dt>处理</dt><dd>沿用页面级唯一撤销栈：单元格内的撤销/重做快捷键交由页面栈处理，不启用输入控件的原生文本撤销；连续输入以 500ms 停顿或焦点变化为界合并为一条，跨单元格不合并；插入/删除行列、切换表头、创建或删除整块各为一条。表格不建立第二套历史。</dd>
+      <dt>结果</dt><dd>撤销后网格尺寸、表头状态与单元格文本整体回到该条记录之前；重做恢复。</dd>
+      <dt>状态</dt><dd>表格结构与内容同时回滚；焦点可落在最近一次操作的单元格。</dd>
+    </dl>
+
+    <h3 id="tbl09"><span class="fid">TBL-09</span>持久化、快照与同步</h3>
+    <dl class="req-meta">
+      <dt>触发</dt><dd>任何单元格输入或结构变更；页面关闭/重开；历史点滴页物化；跨端同步。</dt>
+      <dt>处理</dt><dd>表格的网格数据随所属 Block 一并保存。历史页快照生成时，表格数据作为页面内容的一部分被完整复制；快照中的表格只读。</dd>
+      <dt>结果</dt><dd>重新打开页面（含重启应用）后内容与尺寸一致；历史页显示当日快照中的表格；另一端收到同步后显示相同内容。</dd>
+      <dt>状态</dt><dd>表格数据属于 Block 内容，不属于视图偏好；不新增独立的同步实体。</dd>
+    </dl>
+    <p><strong>说明</strong>：不承诺“单元格级冲突合并”。并发写入遵循现有 Block 级同步策略，冲突结果以到达顺序与既有规则为准 <span class="tbd">[TBD]</span>。</p>
+
+    <h3 id="tbl10"><span class="fid">TBL-10</span>打开方式与可编辑性</h3>
+    <dl class="req-meta">
+      <dt>触发</dt><dd>页面内直接渲染；或作为某个被打开块的后代出现在 BlockModal 中。</dd>
+      <dt>处理</dt><dd>两种上下文使用同一表格渲染与交互；可编辑性由上下文决定，而不是页面日期。表格块是叶子块，自身不能作为 BlockModal 的根被打开。</dd>
+      <dt>结果</dt><dd>活上下文（页面内、任务卡片、BlockModal 中的可编辑子树）中表格完全可编辑；快照上下文中只读，不显示操作条与表头开关。点击表格块的 bullet 圆点不打开 BlockModal，而是把焦点落到表格首格。</dd>
+      <dt>状态</dt><dd>表格块不提供子树展开入口；圆点行为与“无子树”一致。</dd>
+    </dl>
+
+    <h3 id="tbl11"><span class="fid">TBL-11</span>导出与模板序列化</h3>
+    <dl class="req-meta">
+      <dt>触发</dt><dd>页面导出为 Markdown；把含表格块的内容保存为模板。</dt>
+      <dt>处理</dt><dd>Markdown 导出按 GFM 表格语法输出：单元格内的竖线转义为 <code>\|</code>，制表符与换行替换为空格；首行为表头时直接输出表头与分隔行；首行未标记为表头时，补一个空表头行与分隔行，再输出全部数据行，保证语法合法且不丢内容。模板序列化中跳过表格块，不参与“不支持类型降级为 bullet”的路径。</dd>
+      <dt>结果</dt><dd>导出文件可被通用 Markdown 工具还原为表格，表头关闭的表也能完整保留数据行；保存模板时明确提示“模板不包含表格内容”，应用模板不会产生空块。</dd>
+      <dt>状态</dd><dd>导出不修改源数据；模板保存不改变页面中的表格。</dd>
+    </dl>
+
+    <h3 id="tbl12"><span class="fid">TBL-12</span>单元格文本选择与复制</h3>
+    <dl class="req-meta">
+      <dt>触发</dt><dd>在单元格内按下左键并拖动，光标始终不离开起点格；或在格内双击选词。只读上下文同样可用。</dd>
+      <dt>处理</dt><dd>选择范围严格限定在起点格内：编辑态由单元格自身的文本控件完成选择，渲染态由格内文本的原生选区完成；离开起点格后立即转为区域选择（TBL-13），此前的跨格文字选区不再保留。</dd>
+      <dt>结果</dt><dd>只有该格内的文字呈选中态，相邻单元格不会被选中；复制得到这段纯文本。</dd>
+      <dt>状态</dt><dd>不产生页面的文本选区或块选区，不改变表格焦点所在格，不产生撤销记录。</dd>
+    </dl>
+    <p><strong>说明</strong>：选择只在「起点格」内成立。光标一旦出格，语义从「选文字」切换为「选格子」，两段之间不存在同时成立的状态——这正是「光标只经过 A 格，B 格却被选中」的根因所在：把整张表当成一条按行优先拼接的字符流后，从 A 格往下拖一点，字符偏移就已经越过了整行后面的 B 格。</p>
+
+    <h3 id="tbl13"><span class="fid">TBL-13</span>整格区域选择</h3>
+    <dl class="req-meta">
+      <dt>触发</dt><dd>左键按下于某格内，拖动时光标离开起点格；或在格内按下后拖出表格边界。</dd>
+      <dt>处理</dt><dd>以起点格与当前格张成的矩形为选区，行列都含端点；反向拖动先归一为左上 → 右下再渲染。光标离开表格边界时，端点钳制到最近的格。区域内每一格各自铺一层底色，格线保持可见；区域外的格不参与。期间不产生任何跨格文字选区。</dd>
+      <dt>结果</dt><dd>区域内各格呈选中底色。区域选择存在时：<code>Ctrl+C</code> 按制表符分隔列、换行分隔行输出，可直接粘进表格软件；<code>Delete</code> / <code>Backspace</code> / <code>Ctrl+X</code> 只清空区域内各格的文字，行列数与表头设置不变，全空时不产生保存。单击格内或表格外任意位置撤销区域选择。</dd>
+      <dt>状态</dt><dd>不改变焦点所在格；清空内容按一次输入突发记入撤销历史；区域选择本身不是文档状态，切页、失焦后不再保留。</dd>
+    </dl>
+    <p><strong>起点在表格外</strong>　按下位置不在任何格内、拖动过程中经过或停在表格上时，表格按<strong>原子单元</strong>整体入选：一条覆盖整表的色带，不进入格级区域选择。表格的文本是各格拼接的产物、块 content 为空，字符级切片既复制不出内容也回写不了，因此不参与跨块的逐字选择。整表复制走块级载荷（TBL-07），纯文本回退为整表 TSV。</p>
+    <div class="callout">
+      <span class="label">Assumption</span>
+      区域选择不提供「拖拽填充」「整行整列选择」等电子表格的进阶语义，也不在格内选区上叠加编辑态文字操作（渲染态下格内文字选区上的删除键保持浏览器原生行为：不修改内容）。<span class="tbd">[Assumption, TBD]</span>
+    </div>
+
+    <h3>需求索引</h3>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>ID</th><th>能力</th><th>入口</th><th>结构变化</th><th>撤销粒度</th></tr></thead>
+        <tbody>
+          <tr><td><code>TBL-01</code></td><td>创建表格块</td><td><code>/table</code></td><td>新增块或转换类型</td><td>一条</td></tr>
+          <tr><td><code>TBL-02</code></td><td>默认结构</td><td>创建时自动</td><td>3 × 3、首行表头</td><td>随创建</td></tr>
+          <tr><td><code>TBL-03</code></td><td>单元格编辑</td><td>单击 / 输入</td><td>无</td><td>按输入突发</td></tr>
+          <tr><td><code>TBL-04</code></td><td>行操作</td><td>操作条</td><td>行数 ± 1</td><td>一条</td></tr>
+          <tr><td><code>TBL-05</code></td><td>列操作</td><td>操作条</td><td>列数 ± 1</td><td>一条</td></tr>
+          <tr><td><code>TBL-06</code></td><td>首行表头</td><td>操作条开关</td><td>表头标记</td><td>一条</td></tr>
+          <tr><td><code>TBL-07</code></td><td>整块复制/删除</td><td>块选择 / 块菜单</td><td>块增删</td><td>一条</td></tr>
+          <tr><td><code>TBL-08</code></td><td>撤销/重做</td><td>快捷键</td><td>—</td><td>—</td></tr>
+          <tr><td><code>TBL-09</code></td><td>持久化/快照/同步</td><td>自动</td><td>—</td><td>—</td></tr>
+          <tr><td><code>TBL-10</code></td><td>打开方式</td><td>页面 / BlockModal</td><td>—</td><td>—</td></tr>
+          <tr><td><code>TBL-11</code></td><td>导出/模板</td><td>导出、存为模板</td><td>—</td><td>—</td></tr>
+          <tr><td><code>TBL-12</code></td><td>单元格文本选择与复制</td><td>格内拖动 / 双击</td><td>无</td><td>不记录</td></tr>
+          <tr><td><code>TBL-13</code></td><td>整格区域选择（复制 TSV / 清空）</td><td>格内拖出格 / 表格外拖入</td><td>无（清空只改内容）</td><td>清空一条</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============ 5 ============ -->
+  <section id="s5">
+    <h2><span class="num">5</span>共享规则与例外</h2>
+
+    <h3>5.1 键盘归属</h3>
+    <p>表格进入“单元格编辑”态时，<code>Enter</code>、<code>Tab</code>、<code>Esc</code> 与方向键由表格接管，必须阻止其冒泡到页面块编辑器。否则按 Enter 会拆分 Block、按 Tab 会触发块缩进。输入法组合期间，所有导航键交还输入法。这条规则同时约束页面内和 BlockModal 两个上下文。</p>
+
+    <h3>5.2 空值与占位</h3>
+    <ul>
+      <li>空单元格是合法状态，保存为空字符串，不视为错误。</li>
+      <li>占位提示仅用于引导，永远不会被当作内容保存。</li>
+      <li>粘贴、复制与导出时空单元格保留位置，不压缩行列。</li>
+    </ul>
+
+    <h3>5.3 结构底线</h3>
+    <p>表格始终至少保留 1 行 1 列。所有删除入口在触线时转为“清空”并提示，不产生空表。表格不存在“0 行”或“0 列”的持久化状态。</p>
+
+    <h3>5.4 规模限制</h3>
+    <div class="callout">
+      <span class="label">TBD</span>
+      单表行数、列数与单元格字符长度的上限尚未确定。达到上限时，对应的“插入行/列”入口应禁用并给出提示。评审需给出具体数值；在此之前不承诺任何固定上限。<span class="tbd">[TBD]</span>
+    </div>
+
+    <h3>5.5 与现有机制的关系</h3>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>现有机制</th><th>对表格块的要求</th></tr></thead>
+        <tbody>
+          <tr><td>Block 类型注册与渲染</td><td>新增 <code>table</code> 类型，与既有类型同级；页面内与 BlockModal 共用同一渲染与交互实现，不出现两套表格。</td></tr>
+          <tr><td>折叠（Collapse）</td><td>表格为叶子块；无子块且无字段行时不满足折叠条件，不显示折叠入口；不修改现有“折叠由单一状态驱动”的不变式。若表格块保留了字段值，字段区按既有规则正常显示。</td></tr>
+          <tr><td>撤销历史</td><td>只使用页面级唯一撤销栈；单元格内的撤销快捷键同样路由到页面栈，不启用原生文本撤销；输入突发与结构操作按第 4 节粒度记录。</td></tr>
+          <tr><td>块级剪贴板</td><td>表格整块进入块剪贴板载荷；粘贴为新表格块，尺寸、表头与文本完整保留。</td></tr>
+          <tr><td>页面快照</td><td>表格数据随 Block 进入快照；历史页只读展示，编辑不触碰快照。</td></tr>
+          <tr><td>同步</td><td>作为普通 Block 随页面同步，不新增同步表或独立实体。</td></tr>
+          <tr><td>模板序列化</td><td>跳过表格块，不按“不支持类型降级为 bullet”处理；保存模板时提示不包含表格内容，避免空 bullet 造成静默丢失。</td></tr>
+          <tr><td>块字段区</td><td>沿用既有字段区规则，不新增表格专属字段；表格本身不是字段数据源。</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>5.6 权限与只读</h3>
+    <p>表格块沿用页面级权限：能编辑页面即可编辑表格；只读页面不提供单元格输入与行列操作。历史点滴页的快照上下文只读，但表格中的文本可以选中并复制。删除整块属于可撤销操作，不引入额外确认弹窗。</p>
+  </section>
+
+  <!-- ============ 6 ============ -->
+  <section id="s6">
+    <h2><span class="num">6</span>异常与边界</h2>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>场景</th><th>期望行为</th><th>用户可见反馈</th></tr></thead>
+        <tbody>
+          <tr><td>在末行按 Enter</td><td>自动新增一行，焦点落入新行同列</td><td>新行出现，焦点框下移</td></tr>
+          <tr><td>在最后一个单元格按 Tab</td><td>自动新增一行，焦点落到首列</td><td>新行出现，焦点回到行首</td></tr>
+          <tr><td>删除唯一一行 / 唯一一列</td><td>不删除结构，改为清空内容</td><td>提示“表格至少保留一行/一列”</td></tr>
+          <tr><td>输入法组合中按 Enter</td><td>只确认候选词，不移动单元格</td><td>文字正常上屏，焦点不动</td></tr>
+          <tr><td>编辑中点击表格外</td><td>结束编辑并保留已输入内容，再离开表格</td><td>内容不丢失，焦点框消失</td></tr>
+          <tr><td>编辑中切换页面</td><td>结束编辑并保留已输入内容；返回时表格恢复原状</td><td>返回后内容仍在</td></tr>
+          <tr><td>粘贴含制表符/换行的文本到单元格</td><td>替换为空格后写入当前格，不拆分行列</td><td>文本以单行显示</td></tr>
+          <tr><td>保存失败</td><td>沿用现有块保存失败标记与重试机制，不阻塞继续输入</td><td>块上出现保存错误提示</td></tr>
+          <tr><td>只读快照上下文</td><td>单元格不可编辑；不显示操作条与表头开关</td><td>无输入光标、无操作按钮</td></tr>
+          <tr><td>点击表格块的 bullet 圆点</td><td>不打开 BlockModal，焦点落到表格首格</td><td>光标进入表格</td></tr>
+          <tr><td>并发编辑同一表格</td><td>遵循现有 Block 级同步策略，不做单元格级合并</td><td>以最终同步结果为准 <span class="tbd">[TBD]</span></td></tr>
+          <tr><td>超过行/列上限</td><td>禁用对应插入入口</td><td>插入按钮不可用并提示上限</td></tr>
+          <tr><td>粘贴外部纯文本到表格块</td><td>不自动拆分为表格，按普通文本粘贴</td><td>保持原有粘贴行为（列作 P1）</td></tr>
+          <tr><td>复制表格到外部应用</td><td>输出制表符分隔的纯文本；单元格内的制表符与换行替换为空格，保留行列结构</td><td>目标应用得到可识别的表格数据</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============ 7 ============ -->
+  <section id="s7">
+    <h2><span class="num">7</span>待决问题</h2>
+    <p>以下问题会改变实现范围或用户可见行为，需在评审时给出结论；其余细节按文中的既定规则推进。</p>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>#</th><th>问题</th><th>影响</th><th>当前处理</th></tr></thead>
+        <tbody>
+          <tr><td>Q1</td><td>单表行数、列数与单元格字符长度的上限是多少？</td><td>决定插入入口的禁用条件与规模预期</td><td><span class="tbd">[TBD]</span> 评审定值</td></tr>
+          <tr><td>Q2</td><td>后续是否让表格内的文本进入页面搜索与引用匹配？</td><td>影响表格内容能否被全局检索到</td><td>P0 不支持，后续评估</td></tr>
+          <tr><td>Q3</td><td>列宽调整是否提前到 P0？</td><td>影响默认布局与持久化范围</td><td>暂列 P1</td></tr>
+          <tr><td>Q4</td><td>是否支持从 Excel 粘贴 TSV 直接成表？</td><td>影响批量录入效率</td><td>暂列 P1</td></tr>
+          <tr><td>Q5</td><td>多端并发编辑同一表格时是否需要冲突提示？</td><td>影响数据一致性的可见性</td><td>沿用现有 Block 级策略 <span class="tbd">[TBD]</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  var state = {
+    rows: 3,
+    cols: 3,
+    header: true,
+    active: { r: 0, c: 0 },
+    data: [["", "", ""], ["", "", ""], ["", "", ""]]
+  };
+
+  var wrap = document.getElementById("gridWrap");
+  var statusEl = document.getElementById("protoStatus");
+  var headerToggle = document.getElementById("headerToggle");
+  var toolbar = document.querySelector(".proto-toolbar");
+
+  function colName(c){
+    var s = "", n = c + 1;
+    while (n > 0){
+      var m = (n - 1) % 26;
+      s = String.fromCharCode(65 + m) + s;
+      n = Math.floor((n - 1) / 26);
+    }
+    return s;
+  }
+
+  function cellRef(a){ return colName(a.c) + (a.r + 1); }
+
+  function ensureSize(){
+    while (state.data.length < state.rows) state.data.push([]);
+    state.data.length = state.rows;
+    for (var r = 0; r < state.rows; r++){
+      if (!Array.isArray(state.data[r])) state.data[r] = [];
+      while (state.data[r].length < state.cols) state.data[r].push("");
+      state.data[r].length = state.cols;
+      for (var c = 0; c < state.cols; c++){
+        if (typeof state.data[r][c] !== "string") state.data[r][c] = "";
+      }
+    }
+  }
+
+  function defaultStatus(){
+    return "当前单元格 " + cellRef(state.active) + " · " + state.rows + " 行 × " + state.cols + " 列";
+  }
+
+  function setStatus(msg){
+    statusEl.textContent = msg || defaultStatus();
+  }
+
+  function render(focus, caretAtEnd){
+    ensureSize();
+    var table = document.createElement("table");
+    table.className = "demo-grid";
+
+    for (var r = 0; r < state.rows; r++){
+      var tr = document.createElement("tr");
+      for (var c = 0; c < state.cols; c++){
+        var td = document.createElement("td");
+        if (r === 0 && state.header) td.className = "th";
+
+        var input = document.createElement("input");
+        input.type = "text";
+        input.value = state.data[r][c];
+        input.dataset.r = String(r);
+        input.dataset.c = String(c);
+        input.placeholder = (r === 0 && state.header) ? "标题" : "";
+        input.setAttribute("aria-label", "单元格 " + colName(c) + (r + 1));
+
+        input.addEventListener("focus", makeFocusHandler(td, r, c));
+        input.addEventListener("blur", makeBlurHandler(td));
+        input.addEventListener("input", makeInputHandler(r, c));
+        input.addEventListener("keydown", makeKeyHandler(r, c));
+
+        td.appendChild(input);
+        tr.appendChild(td);
+      }
+      table.appendChild(tr);
+    }
+
+    wrap.innerHTML = "";
+    wrap.appendChild(table);
+
+    if (focus){
+      var el = wrap.querySelector('input[data-r="' + focus.r + '"][data-c="' + focus.c + '"]');
+      if (el){
+        el.focus();
+        if (caretAtEnd !== false){
+          var v = el.value;
+          try { el.setSelectionRange(v.length, v.length); } catch (e) {}
+        }
+      }
+    } else {
+      setStatus();
+    }
+  }
+
+  function makeFocusHandler(td, r, c){
+    return function(){
+      state.active = { r: r, c: c };
+      td.classList.add("active-cell");
+      setStatus();
+    };
+  }
+
+  function makeBlurHandler(td){
+    return function(){
+      td.classList.remove("active-cell");
+    };
+  }
+
+  function makeInputHandler(r, c){
+    return function(e){
+      state.data[r][c] = e.target.value;
+      setStatus("单元格 " + cellRef({ r: r, c: c }) + " 已更新");
+    };
+  }
+
+  function makeKeyHandler(r, c){
+    return function(e){
+      var key = e.key;
+
+      if (key === "Enter"){
+        e.preventDefault();
+        var isLastRow = (r === state.rows - 1);
+        if (isLastRow) state.rows++;
+        var nr = Math.min(r + 1, state.rows - 1);
+        state.active = { r: nr, c: c };
+        render(state.active, false);
+        setStatus(isLastRow
+          ? "Enter：末行新增第 " + state.rows + " 行，聚焦 " + cellRef(state.active)
+          : "Enter：移动到 " + cellRef(state.active));
+        return;
+      }
+
+      if (key === "Tab"){
+        e.preventDefault();
+        var tr = r, tc = c + (e.shiftKey ? -1 : 1);
+        if (tc >= state.cols){
+          tc = 0;
+          tr++;
+          if (tr >= state.rows){
+            state.rows++;
+            tr = state.rows - 1;
+          }
+        } else if (tc < 0){
+          tc = state.cols - 1;
+          tr--;
+          if (tr < 0){ tr = 0; tc = 0; }
+        }
+        state.active = { r: tr, c: tc };
+        render(state.active, false);
+        setStatus("Tab：移动到 " + cellRef(state.active));
+        return;
+      }
+
+      if (key === "Escape"){
+        e.preventDefault();
+        e.target.blur();
+        setStatus("Esc：结束编辑并保留内容，回到块级未聚焦");
+        return;
+      }
+
+      if (key === "ArrowUp"){
+        e.preventDefault();
+        if (r > 0){
+          state.active = { r: r - 1, c: c };
+          render(state.active);
+          setStatus("方向键：移动到 " + cellRef(state.active));
+        }
+        return;
+      }
+
+      if (key === "ArrowDown"){
+        e.preventDefault();
+        if (r < state.rows - 1){
+          state.active = { r: r + 1, c: c };
+          render(state.active);
+          setStatus("方向键：移动到 " + cellRef(state.active));
+        }
+        return;
+      }
+
+      var el = e.target;
+      if (key === "ArrowLeft" && el.selectionStart === 0 && c > 0){
+        e.preventDefault();
+        state.active = { r: r, c: c - 1 };
+        render(state.active);
+        setStatus("方向键：移动到 " + cellRef(state.active));
+        return;
+      }
+
+      if (key === "ArrowRight" && el.selectionStart === el.value.length && c < state.cols - 1){
+        e.preventDefault();
+        state.active = { r: r, c: c + 1 };
+        render(state.active);
+        setStatus("方向键：移动到 " + cellRef(state.active));
+      }
+    };
+  }
+
+  toolbar.addEventListener("click", function(e){
+    var btn = e.target.closest("button[data-act]");
+    if (!btn) return;
+
+    var act = btn.getAttribute("data-act");
+    var ar = state.active.r;
+    var ac = state.active.c;
+
+    if (act === "row-below"){
+      state.rows++;
+      state.data.splice(ar + 1, 0, []);
+      ensureSize();
+      state.active = { r: ar + 1, c: ac };
+      render(state.active, false);
+      setStatus("已在 " + cellRef({ r: ar, c: ac }) + " 下方插入一行（当前 " + state.rows + " 行）");
+      return;
+    }
+
+    if (act === "col-right"){
+      state.cols++;
+      for (var i = 0; i < state.data.length; i++) state.data[i].splice(ac + 1, 0, "");
+      ensureSize();
+      state.active = { r: ar, c: ac + 1 };
+      render(state.active, false);
+      setStatus("已在 " + cellRef({ r: ar, c: ac }) + " 右侧插入一列（当前 " + state.cols + " 列）");
+      return;
+    }
+
+    if (act === "row-del"){
+      if (state.rows <= 1){
+        setStatus("表格至少保留一行，未删除");
+        return;
+      }
+      state.data.splice(ar, 1);
+      state.rows--;
+      state.active = { r: Math.min(ar, state.rows - 1), c: ac };
+      render(state.active, false);
+      setStatus("已删除当前行（当前 " + state.rows + " 行）");
+      return;
+    }
+
+    if (act === "col-del"){
+      if (state.cols <= 1){
+        setStatus("表格至少保留一列，未删除");
+        return;
+      }
+      for (var j = 0; j < state.data.length; j++) state.data[j].splice(ac, 1);
+      state.cols--;
+      state.active = { r: ar, c: Math.min(ac, state.cols - 1) };
+      render(state.active, false);
+      setStatus("已删除当前列（当前 " + state.cols + " 列）");
+      return;
+    }
+
+    if (act === "reset"){
+      state.rows = 3;
+      state.cols = 3;
+      state.header = true;
+      state.active = { r: 0, c: 0 };
+      state.data = [["", "", ""], ["", "", ""], ["", "", ""]];
+      headerToggle.checked = true;
+      render(state.active, false);
+      setStatus("已重置为默认 3 × 3、首行表头");
+    }
+  });
+
+  headerToggle.addEventListener("change", function(){
+    state.header = headerToggle.checked;
+    render(state.active, false);
+    setStatus(state.header ? "首行已设为表头" : "已取消表头，首行作为普通行");
+  });
+
+  render(state.active, false);
+  setStatus("默认 3 × 3、首行表头；单击格开始编辑");
+})();
+</script>
+
+</body>
+</html>

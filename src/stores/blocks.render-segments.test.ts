@@ -36,7 +36,6 @@ function makeSaveResult(blockId: string, content: string, renderSegments: any[] 
     id: blockId,
     block: { id: blockId, content } as any,
     render_segments: renderSegments,
-    snapshot: null,
   }
 }
 
@@ -176,13 +175,13 @@ describe('loadPageBlocks（mock WASM）', () => {
 
     mockGetPageWithBlocks.mockResolvedValue(makePageWithBlocks(pageId, [
       {
-        block: { id: 'b1', page_id: pageId, parent_id: null, pos: 100, content: 'Block A', format: '{}', type: 'bullet', created_at: 0, updated_at: 0 },
+        block: { id: 'b1', page_id: pageId, parent_id: null, pos: 100, content: 'Block A', format: '{}', type: 'text', created_at: 0, updated_at: 0 },
         children: [],
         render_segments: [{ type: 'text', start: 0, end: 8 }],
         properties: [],
       },
       {
-        block: { id: 'b2', page_id: pageId, parent_id: null, pos: 200, content: 'Block B', format: '{}', type: 'bullet', created_at: 0, updated_at: 0 },
+        block: { id: 'b2', page_id: pageId, parent_id: null, pos: 200, content: 'Block B', format: '{}', type: 'text', created_at: 0, updated_at: 0 },
         children: [],
         render_segments: [],
         properties: [],
@@ -201,7 +200,7 @@ describe('loadPageBlocks（mock WASM）', () => {
 
     mockGetPageWithBlocks.mockRejectedValue(new Error('RPC unavailable'))
     mockGetBlocksByPage.mockResolvedValue([
-      { id: 'b1', page_id: pageId, parent_id: null, pos: 100, content: 'Fallback Block', format: '{}', type: 'bullet', created_at: 0, updated_at: 0 },
+      { id: 'b1', page_id: pageId, parent_id: null, pos: 100, content: 'Fallback Block', format: '{}', type: 'text', created_at: 0, updated_at: 0 },
     ])
 
     const blocks = await store.loadPageBlocks(pageId)
@@ -229,14 +228,14 @@ describe('loadPageBlocks（mock WASM）', () => {
       pos: 100,
       content: 'history',
       format: {},
-      type: 'bullet',
+      type: 'text',
       createdAt: 0,
       updatedAt: 0,
     })
 
     mockGetPageWithBlocks.mockResolvedValue(makePageWithBlocks('page-a', [
       {
-        block: { id: 'a1', page_id: 'page-a', parent_id: null, pos: 100, content: 'A', format: '{}', type: 'bullet', created_at: 0, updated_at: 0 },
+        block: { id: 'a1', page_id: 'page-a', parent_id: null, pos: 100, content: 'A', format: '{}', type: 'text', created_at: 0, updated_at: 0 },
         children: [],
         render_segments: [],
         properties: [],
@@ -281,7 +280,7 @@ describe('loadMultiPageBlocks（S10 批量 getPagesWithBlocks 携带 renderSegme
     mockGetPagesWithBlocks.mockResolvedValue([
       makePageWithBlocks('hist-1', [
         {
-          block: { id: 'h1b1', page_id: 'hist-1', parent_id: null, pos: 100, content: '((proj))[[页面]] 内容', format: '{}', type: 'bullet', created_at: 0, updated_at: 0 },
+          block: { id: 'h1b1', page_id: 'hist-1', parent_id: null, pos: 100, content: '((proj))[[页面]] 内容', format: '{}', type: 'text', created_at: 0, updated_at: 0 },
           children: [],
           render_segments: [{ type: 'typed_link', start: 0, end: 13 }],
           properties: [],
@@ -289,7 +288,7 @@ describe('loadMultiPageBlocks（S10 批量 getPagesWithBlocks 携带 renderSegme
       ]),
       makePageWithBlocks('hist-2', [
         {
-          block: { id: 'h2b1', page_id: 'hist-2', parent_id: null, pos: 100, content: '@2026-08-11 📅', format: '{}', type: 'bullet', created_at: 0, updated_at: 0 },
+          block: { id: 'h2b1', page_id: 'hist-2', parent_id: null, pos: 100, content: '@2026-08-11 📅', format: '{}', type: 'text', created_at: 0, updated_at: 0 },
           children: [],
           render_segments: [{ type: 'date_ref', start: 0, end: 11 }],
           properties: [],
@@ -323,7 +322,7 @@ describe('loadMultiPageBlocks（S10 批量 getPagesWithBlocks 携带 renderSegme
     mockGetPagesWithBlocks.mockResolvedValue([
       makePageWithBlocks('hist-ok', [
         {
-          block: { id: 'ok1', page_id: 'hist-ok', parent_id: null, pos: 100, content: 'OK', format: '{}', type: 'bullet', created_at: 0, updated_at: 0 },
+          block: { id: 'ok1', page_id: 'hist-ok', parent_id: null, pos: 100, content: 'OK', format: '{}', type: 'text', created_at: 0, updated_at: 0 },
           children: [],
           render_segments: [{ type: 'text', start: 0, end: 2 }],
           properties: [],
@@ -353,7 +352,7 @@ describe('loadMultiPageBlocks（S10 批量 getPagesWithBlocks 携带 renderSegme
     resolveIpc([
       makePageWithBlocks('hist-abort', [
         {
-          block: { id: 'ab1', page_id: 'hist-abort', parent_id: null, pos: 100, content: 'aborted', format: '{}', type: 'bullet', created_at: 0, updated_at: 0 },
+          block: { id: 'ab1', page_id: 'hist-abort', parent_id: null, pos: 100, content: 'aborted', format: '{}', type: 'text', created_at: 0, updated_at: 0 },
           children: [],
           render_segments: [{ type: 'text', start: 0, end: 7 }],
           properties: [],
@@ -383,7 +382,7 @@ describe('ensurePageBlocks - loadBlock 单块注入后整页补齐（Backlinks �
       pos: 100,
       content,
       format: '{}',
-      type: 'bullet',
+      type: 'text',
       created_at: 0,
       updated_at: 0,
     }
@@ -494,5 +493,69 @@ describe('ensurePageBlocks - loadBlock 单块注入后整页补齐（Backlinks �
     await store.ensurePageBlocks(pageId)
     expect(mockGetPageWithBlocks).toHaveBeenCalledTimes(0)
     expect(store.getBlocksByPage(pageId).length).toBe(1)
+  })
+
+  // ============================================================
+  // Backlinks 预览路径：loadBlock 单块注入（无 render_segments）后，
+  // 整页补齐必须把渲染段写回已缓存的块 —— 否则渲染态恒走纯文本兜底，
+  // #tag 丢 data-tag-id 与标签色，点击还会被当页面名跳走。
+  // ============================================================
+  test('loadBlock 单块预览后 loadMultiPageBlocks 补齐渲染段（不重复 push）', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-source-d'
+
+    mockGetBlock.mockResolvedValue(makeRustBlock('d1', pageId, '读 #读书'))
+    mockGetPagesWithBlocks.mockResolvedValue([
+      makePageWithBlocks(pageId, [
+        {
+          block: makeRustBlock('d1', pageId, '读 #读书'),
+          children: [],
+          render_segments: [
+            { type: 'text', start: 0, end: 2 },
+            { type: 'tag', start: 2, end: 5, title: '读书', tag_id: 't1', is_system: false, color: '--tag-color-3' },
+          ],
+          properties: [],
+        },
+      ]),
+    ])
+
+    await store.loadBlock('d1')
+    // 单块预览：getBlock RPC 不带渲染段
+    expect(store.getBlock('d1')!.renderSegments).toBeUndefined()
+
+    await store.loadMultiPageBlocks([pageId])
+
+    const d1 = store.getBlock('d1')!
+    expect(d1.renderSegments?.length).toBe(2)
+    expect(d1.renderSegments?.[1]).toMatchObject({ type: 'tag', tag_id: 't1', color: '--tag-color-3' })
+    // 仍是同一个块实例，不产生重复行
+    expect(store.blocks.filter(b => b.id === 'd1').length).toBe(1)
+  })
+
+  test('本地已改内容（renderSegments 被主动清空）的块不被回填陈旧段', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-source-e'
+
+    mockGetBlock.mockResolvedValue(makeRustBlock('e1', pageId, '库中旧内容'))
+    mockGetPagesWithBlocks.mockResolvedValue([
+      makePageWithBlocks(pageId, [
+        {
+          block: makeRustBlock('e1', pageId, '库中旧内容'),
+          children: [],
+          render_segments: [{ type: 'text', start: 0, end: 5 }],
+          properties: [],
+        },
+      ]),
+    ])
+
+    await store.loadBlock('e1')
+    // 模拟本地编辑：content 已与库中不同，渲染段被清空待保存后重建
+    const local = store.getBlock('e1')!
+    local.content = '库中旧内容 加了一句'
+    local.renderSegments = undefined
+
+    await store.loadMultiPageBlocks([pageId])
+
+    expect(store.getBlock('e1')!.renderSegments).toBeUndefined()
   })
 })

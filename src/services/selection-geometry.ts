@@ -1,4 +1,4 @@
-import type { BlockOffset } from './text-range'
+import type { BlockOffset, RenderedUnitSpan } from './text-range'
 
 /**
  * 文本选区几何映射（DOM 依赖，供 #60 内容区拖拽使用）。
@@ -9,9 +9,40 @@ import type { BlockOffset } from './text-range'
  * 几何回归由 `selection-geometry.test.ts` 注入替身后覆盖。
  */
 
+/**
+ * 文本选区高亮矩形（渲染所需四值）。
+ *
+ * 不复用 `DOMRect`：矩形经过「行带归一化 + 水平合并」后已不对应任何真实 DOM 盒，
+ * 伪装成 DOMRect 只会让人以为能拿去做 `intersects` 之类的几何判断。
+ */
+export interface SelectionRect {
+  left: number
+  top: number
+  width: number
+  height: number
+}
+
 /** 取 block 内容区的根元素（文本偏移只统计内容区，不含 bullet/属性区文字） */
 function contentRoot(blockEl: HTMLElement): HTMLElement {
   return (blockEl.querySelector('.block-content') as HTMLElement | null) ?? blockEl
+}
+
+/**
+ * 内容区里的**纯交互 chrome**：不属于正文、不能进文本坐标系、也不能作为选区端点。
+ *
+ * 目前只有代码块 header（折叠开关 / 语言 / 自动换行 / 复制）。它渲染在 `.block-content`
+ * 内部，于是旧实现把「代码块」「TypeScript」「自动换行」「复制」这些标签当成正文文本节点：
+ * ① `collapsedRangeAtBlockOffset(0)` 落在 header 首个文本节点 ⇒ 高亮色带铺到按钮上；
+ * ② 拖拽经过 header 时 `blockOffsetFromPoint` 命中 header 文本 ⇒ 选区端点跳进工具栏；
+ * ③ `textContent` 偏移被 header 文本撑长 ⇒ 复制/删除切错字符。
+ * 标记在 DOM 上（而非按块类型硬判），新增同类 chrome 只需加属性。
+ */
+export const SELECTION_IGNORE_SELECTOR = '[data-text-selection-ignore]'
+
+/** 节点是否位于选择忽略区内（含忽略区元素自身） */
+function isInSelectionIgnoreZone(node: Node): boolean {
+  const el = node.nodeType === Node.ELEMENT_NODE ? (node as Element) : node.parentElement
+  return !!el && !!el.closest(SELECTION_IGNORE_SELECTOR)
 }
 
 /**
@@ -26,6 +57,8 @@ function contentRoot(blockEl: HTMLElement): HTMLElement {
  */
 export function blockOffsetFromPoint(x: number, y: number): BlockOffset | null {
   const el = document.elementFromPoint(x, y)
+  // 命中交互 chrome（代码块 header）：不是正文落点，不给端点——否则选区端点会跳进工具栏
+  if (el?.closest(SELECTION_IGNORE_SELECTOR)) return null
   const blockEl = el?.closest('[data-block-id]') as HTMLElement | null
   if (!blockEl) return null
 
@@ -38,7 +71,9 @@ export function blockOffsetFromPoint(x: number, y: number): BlockOffset | null {
     return { blockId, offset: 0 }
   }
 
-  return { blockId, offset: textNodeOffsetInRoot(contentRoot(blockEl), range.startContainer, range.startOffset) }
+  const offset = textNodeOffsetInRoot(contentRoot(blockEl), range.startContainer, range.startOffset)
+  // 命中点不在本块可切分的文本里（如表格格间空白）：本次无有效端点，交由调用方忽略
+  return offset === null ? null : { blockId, offset }
 }
 
 /**
@@ -63,12 +98,18 @@ export function caretBlockOffsetFromDomSelection(): BlockOffset | null {
   const root = contentRoot(blockEl)
   // bullet 列 / 属性区不作为文本选区起点（与内容区拖拽的命中面一致）
   if (!root.contains(node)) return null
-  return { blockId, offset: textNodeOffsetInRoot(root, node, sel.anchorOffset) }
+  // 交互 chrome（代码块 header）同样不是起点
+  if (isInSelectionIgnoreZone(node)) return null
+  const offset = textNodeOffsetInRoot(root, node, sel.anchorOffset)
+  return offset === null ? null : { blockId, offset }
 }
 
-/** 遍历 root 下所有文本节点；回调返回 false 提前终止 */
+/** 遍历 root 下所有文本节点；回调返回 false 提前终止。选择忽略区（交互 chrome）整棵跳过 */
 function walkTextNodes(root: Node, fn: (node: Text) => false | void): void {
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode: (node) =>
+      isInSelectionIgnoreZone(node) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
+  })
   let node = walker.nextNode()
   while (node) {
     if (fn(node as Text) === false) return
@@ -76,61 +117,164 @@ function walkTextNodes(root: Node, fn: (node: Text) => false | void): void {
   }
 }
 
-/** 累加 root 下各文本节点长度，定位 container 处偏移在 textContent 中的绝对偏移 */
-function textNodeOffsetInRoot(root: HTMLElement, container: Node, offset: number): number {
+/**
+ * 累加 root 下各文本节点长度，定位 container 处偏移在 textContent 中的绝对偏移。
+ *
+ * 返回 null 表示「这个点不在本块可切分的文本里」，调用方必须当作本次定位无效：
+ * 旧实现把找不到容器的情形退化成「全部文本长度」，于是任何一次落空的光标（拖到
+ * 单元格之间的空白、拖出表格、拖到块外留白）都会把选区端点直接甩到块末——表格里
+ * 表现为「从 A 格往下拖一点，B 格凭空入选」。
+ *
+ * 元素容器（caretRangeFromPoint 在元素边界常返回元素 + 子节点下标）不是落空：
+ * 用 Range 量出该点之前的文本长度，与文本节点路径同一坐标系。
+ */
+function textNodeOffsetInRoot(root: HTMLElement, container: Node, offset: number): number | null {
+  // 落在交互 chrome（代码块 header）里：不是正文偏移，当作本次定位无效
+  if (isInSelectionIgnoreZone(container)) return null
   let total = 0
+  let found = false
   walkTextNodes(root, (node) => {
     if (node === container) {
+      found = true
       total += Math.min(offset, node.length)
       return false
     }
     total += node.length
   })
-  // container 非文本节点（元素容器）：截至当前累计长度
-  return total
+  if (found) return total
+  if (!root.contains(container)) return null
+  try {
+    const probe = document.createRange()
+    probe.setStart(root, 0)
+    probe.setEnd(container, offset)
+    // cloneContents 而非 toString：需要能剔除忽略区文本，否则 code 块里 header 的
+    // 「代码块 / TypeScript / 自动换行 / 复制」会被算进正文偏移（端点整体右移）
+    const fragment = probe.cloneContents()
+    fragment.querySelectorAll(SELECTION_IGNORE_SELECTOR).forEach((el) => el.remove())
+    return fragment.textContent?.length ?? 0
+  } catch {
+    // offset 越界（元素容器的子节点下标非法）：不猜，按落空处理
+    return null
+  }
 }
 
-/** 取 root 下最后一个文本节点（offset 越界时用于钳制） */
+/** 取 root 下最后一个**非空**文本节点（offset 越界时用于钳制） */
 function lastTextNode(root: HTMLElement): Text | null {
   let last: Text | null = null
-  walkTextNodes(root, (node) => { last = node })
+  walkTextNodes(root, (node) => { if (node.nodeValue) last = node })
   return last
 }
 
-/** 取 root 下第一个文本节点（无文本时 null） */
+/**
+ * 取 root 下第一个**非空**文本节点（无文本时 null）。
+ *
+ * 必须跳过 `nodeValue === ""` 的文本节点：空块渲染态是 `<span></span>`，Vue 的空插值
+ * 会在里面留下一个零长文本节点。只判「节点存在」会把空块误认成有文字的块，
+ * 于是走去构造 Range 的路——零长文本节点上的 Range 量不出任何矩形，高亮照旧缺失。
+ */
 function firstTextNode(root: HTMLElement): Text | null {
   let first: Text | null = null
-  walkTextNodes(root, (node) => { first = node; return false })
+  walkTextNodes(root, (node) => {
+    if (!node.nodeValue) return
+    first = node
+    return false
+  })
   return first
 }
 
-/** 按 blockId 取块元素 */
-function blockElement(blockId: string): HTMLElement | null {
-  return document.querySelector(`[data-block-id="${blockId}"]`)
+/**
+ * 按 blockId 取块元素。
+ *
+ * `scope` 限定查找范围：多 pane 同页时同一 `data-block-id` 会渲染多份 DOM，
+ * 不传 scope 的 `document.querySelector` 永远命中第一个（通常是左侧 pane），
+ * 拖拽右侧内容却把高亮画到左侧的根因。调用方必须传入所属 pane 的根元素
+ * （BlockList 的 `.block-list`），确保几何换算落在用户实际操作的那个实例上。
+ */
+function blockElement(blockId: string, scope?: HTMLElement | null): HTMLElement | null {
+  return (scope ?? document).querySelector(`[data-block-id="${blockId}"]`) as HTMLElement | null
+}
+
+/**
+ * 内容区里「整体参与选区」的内联原子单元类名。
+ *
+ * 与渲染器产出的类名同源（`useContentRenderer.CSS_CLASSES`）：
+ * `.block-tag` = inline `#tag` chip、`.date-ref` = `@2026-10-15` 单元、
+ * `.block-link` = `[[wiki]]`、`.rel-type-label` = `((关系))` 标签。
+ * 与 `createInlineUnitKeyboardPlugin` 的单元口径一致——编辑态由 PM 选区闸门
+ * 保证原子性，渲染态（编辑器已卸载）由这里接管。
+ */
+const ATOMIC_UNIT_SELECTOR = '.block-tag, .date-ref, .block-link, .rel-type-label'
+
+/**
+ * 「整块作为选区最小单元」的标记（表格块）。
+ *
+ * 表格的文本是**所有单元格按行优先拼接**出来的，字符偏移跨格没有任何语义：从 A 格拖到
+ * A 下方的格，在偏移坐标里已经越过整行后面的 B 格。且表格数据存在 `format.table`、
+ * 块 `content` 为空，切出来的片段既复制不出内容也回写不了。故表格整块进出选区：
+ * 高亮画整块色带，复制输出整表 TSV。
+ */
+const ATOMIC_BLOCK_SELECTOR = '[data-text-atomic]'
+
+function isAtomicTextBlock(blockEl: HTMLElement): boolean {
+  return blockEl.hasAttribute('data-text-atomic') || !!blockEl.querySelector(ATOMIC_BLOCK_SELECTOR)
+}
+
+/**
+ * 量出某 block 内容区内全部内联原子单元的**渲染文本偏移区间** [start, end)。
+ *
+ * 为什么不复用 `renderSegments`：文本选区的端点是由 DOM 量出来的渲染偏移
+ * （`blockOffsetFromPoint`），单元边界必须来自**同一份 DOM** 才能保证落在同一
+ * 坐标系里；且渲染器在无 segments 的块上也会渲染 chip（`#tag` 兜底扫描），
+ * 以 DOM 为准才能覆盖该路径。偏移累加复用 `textNodeOffsetInRoot`，与端点同源。
+ *
+ * 只做度量、不依赖布局：jsdom 亦可断言。
+ */
+export function atomicUnitSpans(blockId: string): RenderedUnitSpan[] {
+  const blockEl = blockElement(blockId)
+  if (!blockEl) return []
+  const root = contentRoot(blockEl)
+  // 原子块（表格）：整块就是一个单元，内部不允许被切出半格
+  if (isAtomicTextBlock(blockEl)) {
+    const last = lastTextNode(root)
+    const total = last ? textNodeOffsetInRoot(root, last, last.length) : 0
+    return total !== null && total > 0 ? [{ start: 0, end: total }] : []
+  }
+  const spans: RenderedUnitSpan[] = []
+  for (const el of Array.from(root.querySelectorAll<HTMLElement>(ATOMIC_UNIT_SELECTOR))) {
+    const first = firstTextNode(el)
+    const last = lastTextNode(el)
+    if (!first || !last) continue
+    const start = textNodeOffsetInRoot(root, first, 0)
+    const end = textNodeOffsetInRoot(root, last, last.length)
+    if (start === null || end === null) continue
+    if (end > start) spans.push({ start, end })
+  }
+  return spans
 }
 
 /**
  * 由 block 内字符偏移构造一个折叠的 DOM Range（`blockOffsetFromPoint` 的逆映射）。
  * 用于跨块选区高亮时确定起止点。
  */
-export function collapsedRangeAtBlockOffset(blockId: string, offset: number): Range | null {
-  const blockEl = blockElement(blockId)
+export function collapsedRangeAtBlockOffset(blockId: string, offset: number, scope?: HTMLElement | null): Range | null {
+  const blockEl = blockElement(blockId, scope)
   if (!blockEl) return null
 
   const root = contentRoot(blockEl)
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
   let remaining = Math.max(0, offset)
-  let node = walker.nextNode()
   let target: { node: Text; offset: number } | null = null
-  while (node) {
-    const len = (node as Text).length
+  // 与 textNodeOffsetInRoot 同一遍历口径：选择忽略区（代码块 header）整棵跳过。
+  // 否则 offset 0 会落到 header 首个文本节点（「代码块」），高亮色带铺到工具栏按钮上。
+  walkTextNodes(root, (node) => {
+    const len = node.length
+    // 零长文本节点不能作为落点：其上的 Range 量不出矩形（空块渲染态中确实存在这种节点）
+    if (len === 0) return
     if (remaining <= len) {
-      target = { node: node as Text, offset: remaining }
-      break
+      target = { node, offset: remaining }
+      return false
     }
     remaining -= len
-    node = walker.nextNode()
-  }
+  })
 
   if (target) {
     const range = document.createRange()
@@ -154,6 +298,128 @@ function orderedBlockElements(scope: HTMLElement): HTMLElement[] {
   return Array.from(listRoot.querySelectorAll<HTMLElement>('[data-block-id]'))
 }
 
+/** 原始行盒矩形：只取 `getClientRects()` 的四个基础值（不假定 DOMRect 的 right/bottom 存在） */
+interface RawRect {
+  left: number
+  top: number
+  width: number
+  height: number
+}
+
+const rectRight = (r: RawRect): number => r.left + r.width
+const rectBottom = (r: RawRect): number => r.top + r.height
+
+/** 同一视觉行的竖直重叠判据：达到较矮矩形高度的一半即同一行 */
+const SAME_LINE_OVERLAP_RATIO = 0.5
+/** 水平合并允许的缝隙（px）：padding / inline-flex gap 级别的空隙仍属同一连续选区 */
+const MERGE_GAP_PX = 0.75
+
+function verticalOverlapRatio(a: RawRect, b: RawRect): number {
+  const overlap = Math.min(rectBottom(a), rectBottom(b)) - Math.max(a.top, b.top)
+  const shortest = Math.min(a.height, b.height)
+  return shortest > 0 ? overlap / shortest : 0
+}
+
+/** 按竖直重叠把矩形分行（同一行内可能有多段：文字 run、chip 外盒、chip 内层 run） */
+function groupByLine(rects: RawRect[]): RawRect[][] {
+  const lines: RawRect[][] = []
+  for (const r of [...rects].sort((a, b) => a.top - b.top)) {
+    const line = lines.find((group) => group.some((o) => verticalOverlapRatio(o, r) >= SAME_LINE_OVERLAP_RATIO))
+    if (line) line.push(r)
+    else lines.push([r])
+  }
+  return lines
+}
+
+/** 块内是否存在 chip（原子单元）之外的文字 —— 决定行带高度能否以本块矩形为准 */
+function hasTextOutsideUnits(root: HTMLElement): boolean {
+  let found = false
+  walkTextNodes(root, (node) => {
+    if (!node.nodeValue || !node.nodeValue.trim()) return
+    if (node.parentElement?.closest(ATOMIC_UNIT_SELECTOR)) return
+    found = true
+    return false
+  })
+  return found
+}
+
+/**
+ * 把一块内的原始矩形归一成「每行一段」的高亮矩形。
+ *
+ * 要解决的是 chip 参与选区时的两个错观感（真机取证：纯文本 run 173.5/24，
+ * `#任务` 外盒 175.5/21，`#任务` 内层 run 175.5/21，`@2026-10-21` 外盒 175.5/22）：
+ *
+ * 1. **高度不齐**：`getClientRects()` 返回的是各内联盒自身的矩形，chip（`inline-flex`
+ *    的 `.date-ref` / 字号 0.9em 的 `.block-tag`）比文字行盒矮一截、且竖直居中，
+ *    于是选区色带在 chip 处凹下去一块。这里把每行所有矩形统一钉到**行带**——
+ *    取本行「满高矩形」（文字 run，即行盒）的 top 与 `bandHeight`；整行只有矮矩形
+ *    （block 内容本身就是 chip）时以行中心对称扩展，高度取调用方给的行带高度。
+ * 2. **chip 内多一层背景**：Chromium 会把 chip 的**外盒**与**内层文本 run** 各报一次
+ *    （两者差一个 padding，几何不同，等比去重抓不到），两层 55% 半透明的选区色叠加
+ *    ⇒ 该处颜色明显更深（实测亮度 128 vs 98）。这里按行做水平合并，重叠/相切的矩形
+ *    连成一段，同一条选区内永不出现叠层。
+ * 3. **行缝细线**：文字 run 的矩形比行高多出 1~2px（字体上下溢出），逐行铺满会让
+ *    相邻行带在接缝处重叠 —— 又是一处双层半透明。按重叠中点切分，两侧等高、无叠层。
+ */
+function normalizeLineRects(rects: RawRect[], bandHeight: number): SelectionRect[] {
+  const bands = groupByLine(rects)
+    .map((line) => {
+      const fullHeight = line.filter((r) => r.height >= bandHeight - 0.5)
+      // 文字行盒决定行带：它的 top 就是行顶，chip 向内收的部分一并铺满；
+      // 整行只有 chip 盒时以行中心对齐行带（chip 竖直居中于行盒）
+      const top =
+        fullHeight.length > 0
+          ? Math.min(...fullHeight.map((r) => r.top))
+          : (Math.min(...line.map((r) => r.top)) + Math.max(...line.map((r) => rectBottom(r)))) / 2 -
+            bandHeight / 2
+      return { top, bottom: top + bandHeight, line }
+    })
+    .sort((a, b) => a.top - b.top)
+
+  // 相邻行带相切/重叠：文字 run 的矩形高度含字体上下溢出，可比行高多出 1~2px
+  // ⇒ 逐行铺满会在行缝处叠一条更深的细线。按重叠**中点**切分，两侧等高、无叠层。
+  for (let i = 0; i < bands.length - 1; i++) {
+    const overlap = bands[i].bottom - bands[i + 1].top
+    if (overlap <= 0) continue
+    const cut = bands[i].bottom - overlap / 2
+    bands[i].bottom = cut
+    bands[i + 1].top = cut
+  }
+
+  const out: SelectionRect[] = []
+  for (const band of bands) {
+    // 水平合并：重叠或相切（≤0.75px 缝隙）的矩形连成一段。chip 的「外盒 + 内层文本 run」
+    // 会被 Chromium 同时上报（几何不同，等比去重抓不到），两层半透明色叠出更深的色块。
+    const merged: Array<{ left: number; right: number }> = []
+    for (const r of [...band.line].sort((a, b) => a.left - b.left)) {
+      const cur = merged[merged.length - 1]
+      if (cur && r.left <= cur.right + MERGE_GAP_PX) cur.right = Math.max(cur.right, rectRight(r))
+      else merged.push({ left: r.left, right: rectRight(r) })
+    }
+    for (const m of merged) {
+      out.push({ left: m.left, top: band.top, width: m.right - m.left, height: band.bottom - band.top })
+    }
+  }
+  return out
+}
+
+
+/** 空白块行首窄条带的宽度（px）：示意「这一行也在选区内」，不铺满整行喧宾夺主 */
+const EMPTY_LINE_BAND_WIDTH = 8
+
+/** 块内容区是否有内嵌可见内容（图片 / 代码块 / 媒体）：这类块保留整行色带 */
+function hasEmbeddedContent(root: HTMLElement): boolean {
+  return root.querySelector('img, .image-block, .cm-editor, video, canvas') !== null
+}
+
+/** 文字行带的左缘：内层文本容器的 padding-left 之后（与文字 Range 矩形同位） */
+function textBandLeft(root: HTMLElement, boxLeft: number): number {
+  const inner = root.firstElementChild as HTMLElement | null
+  if (!inner) return boxLeft
+  const pad = Number.parseFloat(getComputedStyle(inner).paddingLeft)
+  return boxLeft + (Number.isFinite(pad) ? pad : 0)
+}
+
 /**
  * 计算 anchor→head 跨块选区的所有视口矩形（每行一个）。
  * 支持反向拖拽（head 在 anchor 之前自动交换）。
@@ -166,16 +432,23 @@ function orderedBlockElements(scope: HTMLElement): HTMLElement[] {
  *    还会多吐一个「整个内容区盒子」的矩形，把整行铺成色带；夹到首/末**文本节点**
  *    后只剩逐行的文字行盒（interior 行铺满行宽、末行按实际字符宽度收窄）。
  * 3. Range 跨过嵌套内联元素（如 `[[page]]` 渲染成的 `span > span.block-link >
- *    span.wiki-bracket`）时，Chromium 会把同一段内联盒子**重复上报**（实测两组矩形
- *    浮点值逐位相同）——覆盖层同位叠两层，颜色深一档。按几何去重。
+ *    span.wiki-bracket`）时，Chromium 会把同一段内联盒子**重复上报**（既有浮点值逐位
+ *    相同的重复，也有 chip 外盒 + 内层文本 run 这种「差一个 padding」的重复）——
+ *    覆盖层同位叠两层，半透明色叠出更深的色块。故逐块收集后统一做行带归一化 +
+ *    水平合并（见 `normalizeLineRects`）：每行只留一段、一行之内不叠层。
  *
- * 无文本节点的块（空行、图片块等）**不产生矩形**：它们既构造不出 Range，也没有可
- * 高亮的文字。跳过它们，但**不得**因此丢弃整条选区——拖拽时鼠标扫过空行是常态。
- * 端点落在这种块上时，该端点由相邻文本块的边界兜底（首侧取块首、尾侧取块末）。
+ * 无文本节点的块分两类补色带（2026-10-22 用户样例）：
+ * - 空白块（空行）：只在**行首**补一条窄条带，左缘与文字行带对齐（内层文本容器的
+ *   padding 之后）——整行铺满会把「本来什么都没有的一行」画得像有内容，观感喧宾夺主。
+ * - 图片块等有内嵌可见内容的块：保留整行色带（内容本身占据行宽）。
+ * 两类都要求行盒非零：高度为 0 说明该块不可见（折叠子树被 display:none），
+ * 此时不补矩形（画出来反而凭空高亮一块看不见的区域）。
+ * 这类块也不得牵连整条选区——拖拽时鼠标扫过空行是常态。端点落在这种块上时，
+ * 该端点仍由相邻文本块的边界兜底（首侧取块首、尾侧取块末）。
  */
-export function selectionClientRects(anchor: BlockOffset, head: BlockOffset): DOMRect[] {
-  const anchorEl = blockElement(anchor.blockId)
-  const headEl = blockElement(head.blockId)
+export function selectionClientRects(anchor: BlockOffset, head: BlockOffset, scope?: HTMLElement | null): SelectionRect[] {
+  const anchorEl = blockElement(anchor.blockId, scope)
+  const headEl = blockElement(head.blockId, scope)
   if (!anchorEl || !headEl) return []
 
   const all = orderedBlockElements(anchorEl)
@@ -192,33 +465,81 @@ export function selectionClientRects(anchor: BlockOffset, head: BlockOffset): DO
   const start = reversed ? head : anchor
   const end = reversed ? anchor : head
 
-  const rects: DOMRect[] = []
-  const seen = new Set<string>()
+  const perBlock: Array<{ root: HTMLElement; rects: RawRect[] }> = []
   for (let i = Math.min(anchorIdx, headIdx); i <= Math.max(anchorIdx, headIdx); i++) {
     const el = all[i]
     const blockId = el.getAttribute('data-block-id')
     if (!blockId) continue
 
     const root = contentRoot(el)
+    // 原子块（表格）：内部不可切分，整块入选 —— 高亮取内容区整块色带，
+    // 与图片块同款兜底（表格有文本节点，走下面的 Range 路径会只画出首末两格的字形）
+    if (isAtomicTextBlock(el)) {
+      const box = root.getBoundingClientRect()
+      if (box.width > 0 && box.height > 0) {
+        perBlock.push({
+          root,
+          rects: [{ left: box.left, top: box.top, width: box.width, height: box.height }],
+        })
+      }
+      continue
+    }
     const first = firstTextNode(root)
     const last = lastTextNode(root)
-    if (!first || !last) continue // 无文本节点的块跳过，不弃整条选区
+    if (!first || !last) {
+      // 无文本节点的块：操作侧照样整块带走（删除整删、复制留空行），视觉必须跟上。
+      // 空白块 = 行首窄条带（左缘对齐文字行带）；图片块等有内嵌内容 = 整行色带。
+      // 行盒高度为 0 说明该块不可见（折叠子树被 display:none），此时不补矩形
+      // （画出来反而凭空高亮一块看不见的区域）。
+      const box = root.getBoundingClientRect()
+      if (box.width > 0 && box.height > 0) {
+        if (hasEmbeddedContent(root)) {
+          perBlock.push({
+            root,
+            rects: [{ left: box.left, top: box.top, width: box.width, height: box.height }],
+          })
+        } else {
+          perBlock.push({
+            root,
+            rects: [
+              {
+                left: textBandLeft(root, box.left),
+                top: box.top,
+                width: EMPTY_LINE_BAND_WIDTH,
+                height: box.height,
+              },
+            ],
+          })
+        }
+      }
+      continue
+    }
 
     // 端点侧用真实拖拽端点，其余侧夹到该块的首/末文本节点。端点块本身无文本节点时
-    // 已被上面跳过，改由相邻文本块的边界兜底。
-    const from = blockId === start.blockId ? collapsedRangeAtBlockOffset(blockId, start.offset) : null
-    const to = blockId === end.blockId ? collapsedRangeAtBlockOffset(blockId, end.offset) : null
+    // 不提供 Range 端点（上面已给它补过行盒色带），改由相邻文本块的边界兜底。
+    const from = blockId === start.blockId ? collapsedRangeAtBlockOffset(blockId, start.offset, scope) : null
+    const to = blockId === end.blockId ? collapsedRangeAtBlockOffset(blockId, end.offset, scope) : null
 
     const range = document.createRange()
     range.setStart(from ? from.startContainer : first, from ? from.startOffset : 0)
     range.setEnd(to ? to.startContainer : last, to ? to.startOffset : last.length)
-    for (const rect of Array.from(range.getClientRects())) {
-      if (rect.width <= 0 || rect.height <= 0) continue
-      const key = `${Math.round(rect.left * 100)}|${Math.round(rect.top * 100)}|${Math.round(rect.width * 100)}|${Math.round(rect.height * 100)}`
-      if (seen.has(key)) continue
-      seen.add(key)
-      rects.push(rect)
-    }
+
+    const rects = Array.from(range.getClientRects())
+      .filter((r) => r.width > 0 && r.height > 0)
+      .map((r) => ({ left: r.left, top: r.top, width: r.width, height: r.height }))
+    if (rects.length > 0) perBlock.push({ root, rects })
   }
-  return rects
+
+  // 行带高度：同块内各行共用一套行盒（同一字体/行高），取块内最高矩形即可；块内容
+  // 全是 chip（无 chip 外文字）时本块矩形全是矮内联盒，借整条选区的行带兜底，
+  // 否则纯 chip 块的高亮会比相邻文字行矮一截。
+  const globalBand = Math.max(0, ...perBlock.flatMap((b) => b.rects.map((r) => r.height)))
+
+  const out: SelectionRect[] = []
+  for (const { root, rects } of perBlock) {
+    const blockBand = Math.max(...rects.map((r) => r.height))
+    const bandHeight = hasTextOutsideUnits(root) ? blockBand : Math.max(blockBand, globalBand)
+    out.push(...normalizeLineRects(rects, bandHeight))
+  }
+  return out
 }

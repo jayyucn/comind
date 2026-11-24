@@ -9,8 +9,8 @@ import DatePicker from '../../common/DatePicker.vue'
 function makeRegistry(): Registry {
   const reg = createRegistry()
   const fields: FieldDescriptor[] = [
-    { key: 'title', label: '标题', type: 'text', get: () => '' },
-    { key: 'title2', label: '副标题', type: 'text', get: () => '' },
+    { key: 'title', label: '标题', type: 'string', get: () => '' },
+    { key: 'title2', label: '副标题', type: 'string', get: () => '' },
     { key: 'status', label: '状态', type: 'select', get: () => '', options: [{ id: 'open', label: '进行中' }] },
   ]
   for (const f of fields) reg.register('task', f)

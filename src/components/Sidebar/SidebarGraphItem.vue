@@ -41,7 +41,7 @@ function handleClick() {
   font-size: var(--text-sm);
   font-weight: var(--font-medium);
   color: var(--text-secondary);
-  transition: background 80ms ease, color 80ms ease;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
 }
 
 .nav-item:hover {

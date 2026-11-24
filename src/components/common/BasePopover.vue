@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+
+import { onLayoutChange } from '../../services/layout-change'
 
 /** 通用弹层原语（ADR-0009 D8，避让扩展见 ADR-0038）。
  *
@@ -12,8 +14,12 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
  *   空间不足自动翻到对侧、仍放不下再贴视口边；打开期间监听 scroll/resize 实时跟随。
  * - 遗留点模式：`position:{x,y}`，仅做视口收边，行为保持与 ADR-0009 完全一致。
  *
- * 样式复用项目令牌：--bg-base / --border / --radius-md / --shadow-modal / --transition-base。
+ * 样式复用项目令牌：--corner-glow / --grad-surface / --grad-border / --radius-md / --shadow-floating / --dur-base / --ease-out。
  */
+/** 首选放置侧。四侧为「起点对齐」语义（bottom/top 对齐锚点左缘，left/right 对齐锚点顶边）；
+ *  `-center` 变体只改纵向：与锚点垂直居中。为入口菜单加的，不影响四侧既有行为。 */
+type Placement = 'bottom' | 'top' | 'left' | 'right' | 'left-center' | 'right-center'
+
 const props = withDefaults(
   defineProps<{
     /** 是否显示弹层。 */
@@ -22,17 +28,29 @@ const props = withDefaults(
     position?: { x: number; y: number }
     /** 点击 overlay 空白是否关闭，默认 true。 */
     closeOnOverlay?: boolean
-    /** 锚点元素或返回元素的 getter；提供后进入锚点避让模式（ADR-0038）。
+    /** 锚点元素 / 锚点矩形，或返回它们的 getter；提供后进入锚点避让模式（ADR-0038）。
+     *  DOMRect 形态用于锚点没有稳定 DOM 的场景（如 ProseMirror 光标）：调用方用
+     *  coordsAtPos 实时给出光标点，避免把整行段落盒子当锚点而把面板拽到行首。
      *  不传（默认 null）则退化为遗留点模式，仅按 position 做视口收边（与 ADR-0009 一致）。 */
-    anchorEl?: HTMLElement | (() => HTMLElement | null) | null
+    anchorEl?: HTMLElement | DOMRect | (() => HTMLElement | DOMRect | null) | null
     /** 首选放置侧，默认 'bottom'；空间不足时自动翻到对侧。仅 anchorEl 模式生效。 */
-    placement?: 'bottom' | 'top' | 'left' | 'right'
+    placement?: Placement
+    /** 是否模态：true（默认）铺一层全屏 overlay 接住「点空白关闭」；
+     *  false 时不铺 overlay，改为在 document 上监听 mousedown 判「点在面板外」。
+     *  选区工具条这类不该挡住页面交互的浮层必须用 false——overlay 会把整页指针事件吃掉。 */
+    modal?: boolean
+    /** 非模态模式下的「外部点击」豁免选择器。
+     *  二级浮层（下拉 / 子菜单）Teleport 到 body 后是独立节点，但语义上仍属于本浮层；
+     *  不豁免的话，点它的第一下就把外层关掉了。 */
+    ignoreOutsideSelector?: string
   }>(),
   {
     position: () => ({ x: 0, y: 0 }),
     closeOnOverlay: true,
     placement: 'bottom',
     anchorEl: null,
+    modal: true,
+    ignoreOutsideSelector: '',
   },
 )
 
@@ -56,6 +74,7 @@ const anchorRect = ref<DOMRect | null>(null)
 let resizeObserver: ResizeObserver | null = null
 let scrollTargets: Array<Window | HTMLElement> = []
 let onScroll: (() => void) | null = null
+let offLayoutChange: (() => void) | null = null
 
 function measure() {
   const el = panelEl.value
@@ -86,16 +105,23 @@ function observe() {
   }
 }
 
-function resolveAnchorEl(): HTMLElement | null {
+type AnchorTarget = HTMLElement | DOMRect
+
+function resolveAnchorEl(): AnchorTarget | null {
   const a = props.anchorEl
   if (!a) return null
   const el = typeof a === 'function' ? a() : a
   return el ?? null
 }
 
+/** HTMLElement 没有数值 left/top；用鸭子类型区分元素与矩形，不依赖 instanceof（跨 realm 安全）。 */
+function isAnchorRect(a: AnchorTarget): a is DOMRect {
+  return typeof (a as DOMRect).left === 'number' && typeof (a as DOMRect).top === 'number'
+}
+
 function updateAnchorRect() {
   const el = resolveAnchorEl()
-  anchorRect.value = el ? el.getBoundingClientRect() : null
+  anchorRect.value = !el ? null : isAnchorRect(el) ? el : el.getBoundingClientRect()
 }
 
 /** 向上查找最近的滚动祖先（overflow 含 auto/scroll/hidden 且确有溢出），用于实时重定位。 */
@@ -118,15 +144,22 @@ function attachListeners() {
   onScroll = () => updateAnchorRect()
   scrollTargets = [window]
   const el = resolveAnchorEl()
-  if (el) {
+  // 矩形锚点（光标点）没有 DOM 祖先可挂；window 的 capture 阶段已能接住任意后代滚动。
+  if (el && !isAnchorRect(el)) {
     const sc = getNearestScrollableAncestor(el)
     if (sc) scrollTargets.push(sc)
   }
   scrollTargets.forEach((t) => t.addEventListener('scroll', onScroll!, true))
   window.addEventListener('resize', onScroll)
+  // 折叠侧栏 / 开合右侧栏 / 拖 pane 分隔条只改内容容器宽度，不派发 window resize：
+  // 锚点元素跟着布局平移了，浮层却留在旧坐标（表格范围工具条「不跟手」即此）。
+  // 遗留点模式（position）没有可跟随的锚点，收到信号也只是重读一次空锚点。
+  offLayoutChange = onLayoutChange(onScroll)
 }
 
 function detachListeners() {
+  offLayoutChange?.()
+  offLayoutChange = null
   if (!onScroll) return
   scrollTargets.forEach((t) => t.removeEventListener('scroll', onScroll!, true))
   window.removeEventListener('resize', onScroll)
@@ -134,34 +167,69 @@ function detachListeners() {
   onScroll = null
 }
 
+// ── 非模态：点面板外关闭 ─────────────────────────────────────────
+// 模态模式靠全屏 overlay 接住空白点击；非模态没有 overlay，就得自己判「点在面板外」。
+// 用 capture 阶段，保证在页面自身把这次点击当交互处理之前先关掉浮层。
+let onDocMouseDown: ((e: MouseEvent) => void) | null = null
+
+function attachNonModalCloser() {
+  if (onDocMouseDown || props.modal || !props.closeOnOverlay) return
+  onDocMouseDown = (e: MouseEvent) => {
+    if (!props.visible) return
+    const target = e.target as (Node & Element) | null
+    if (!target) return
+    if (panelEl.value?.contains(target)) return
+    const anchor = resolveAnchorEl()
+    if (anchor && !isAnchorRect(anchor) && anchor.contains(target)) return
+    if (props.ignoreOutsideSelector && target.closest?.(props.ignoreOutsideSelector)) return
+    emit('close')
+  }
+  document.addEventListener('mousedown', onDocMouseDown, true)
+}
+
+function detachNonModalCloser() {
+  if (!onDocMouseDown) return
+  document.removeEventListener('mousedown', onDocMouseDown, true)
+  onDocMouseDown = null
+}
+
 // 显示/锚点/方位变化后（重新）测量面板、同步锚点盒子、挂接 ResizeObserver 与 scroll/resize 监听；
 // 关闭时拆除监听与测量，避免泄漏（ADR-0038 实时重定位）。
 watch(
-  () => [props.visible, props.position, props.anchorEl, props.placement],
+  () => [props.visible, props.position, props.anchorEl, props.placement, props.modal, props.ignoreOutsideSelector],
   () => {
     if (props.visible) {
       nextTick(() => {
         observe()
         updateAnchorRect()
         attachListeners()
+        // 先拆再挂：豁免选择器可能在本监听已挂载后变化
+        detachNonModalCloser()
+        attachNonModalCloser()
       })
     } else {
       disconnectRO()
       detachListeners()
+      detachNonModalCloser()
     }
   },
   { deep: true, immediate: true },
 )
 
-const FLIP: Record<'bottom' | 'top' | 'left' | 'right', 'bottom' | 'top' | 'left' | 'right'> = {
+const FLIP: Record<Placement, Placement> = {
   bottom: 'top',
   top: 'bottom',
   left: 'right',
   right: 'left',
+  // 左侧放不下时落到下方，而不是翻到右侧：入口菜单翻右侧会压住正文开头（锚点就在正文左缘）。
+  // bottom 的落位天然是「锚点左缘 + 下沿 +GAP」，正好是入口胶囊的下方。
+  'left-center': 'bottom',
+  'right-center': 'left-center',
 }
 
 /** 仅当调用方提供锚点或点时才以内联 fixed 定位面板；否则交回 CSS。
  *  锚点模式（ADR-0038）：首选侧起点对齐 → 空间不足自动翻对侧 → 仍放不下贴视口边。
+ *  `-center` 变体沿用同一套避让，只是侧向纵向改为与锚点居中。
  *  遗留点模式：仅按测量尺寸做视口收边，行为保持与 ADR-0009 完全一致。 */
 const panelStyle = computed(() => {
   const vw = typeof window !== 'undefined' ? window.innerWidth : Number.MAX_SAFE_INTEGER
@@ -177,14 +245,20 @@ const panelStyle = computed(() => {
     // 用 scrollHeight/Width 反映内容真实尺寸（不受 maxHeight 裁剪影响），裁剪决策据此得出、稳定不抖动。
     const naturalH = panelScrollH.value || ph
     const naturalW = panelScrollW.value || pw
-    const place = (s: 'bottom' | 'top' | 'left' | 'right') => {
+    const place = (s: Placement) => {
       if (s === 'bottom') return { left: rect.left, top: rect.bottom + ANCHOR_GAP }
       if (s === 'top') return { left: rect.left, top: rect.top - ph - ANCHOR_GAP }
-      if (s === 'right') return { left: rect.right + ANCHOR_GAP, top: rect.top }
-      return { left: rect.left - pw - ANCHOR_GAP, top: rect.top } // left
+      // 侧向：四侧原语义是「与锚点顶边对齐」，保持不变；-center 变体只把纵向换成
+      // 与锚点垂直居中（菜单读起来像从锚点旁探出的一列，而不是从顶边往下挂）。
+      const top =
+        s === 'left-center' || s === 'right-center'
+          ? rect.top + rect.height / 2 - ph / 2
+          : rect.top
+      if (s === 'right' || s === 'right-center') return { left: rect.right + ANCHOR_GAP, top }
+      return { left: rect.left - pw - ANCHOR_GAP, top } // left / left-center
     }
     // 某侧是否「在视口内且不与锚点重叠」
-    const fits = (s: 'bottom' | 'top' | 'left' | 'right', w: number, h: number) => {
+    const fits = (s: Placement, w: number, h: number) => {
       const p = place(s)
       const inView =
         p.left >= EDGE_MARGIN &&
@@ -198,23 +272,20 @@ const panelStyle = computed(() => {
         p.top >= rect.bottom
       return inView && noOverlap
     }
-    const order: Array<'bottom' | 'top' | 'left' | 'right'> = [
-      props.placement,
-      FLIP[props.placement],
-    ]
+    const order: Placement[] = [props.placement, FLIP[props.placement]]
     let chosen = order.find((s) => fits(s, naturalW, naturalH))
 
     let effW = naturalW
     let effH = naturalH
     if (!chosen) {
       // 两侧都放不下：取空间更大的一侧，并把面板尺寸限制在可用空间内（不遮锚点为前提）
-      const freeOf = (s: 'bottom' | 'top' | 'left' | 'right') => {
+      const freeOf = (s: Placement) => {
         const room =
           s === 'top' || s === 'bottom'
             ? s === 'top'
               ? rect.top
               : vh - rect.bottom
-            : s === 'left'
+            : s === 'left' || s === 'left-center'
               ? rect.left
               : vw - rect.right
         return room - ANCHOR_GAP - EDGE_MARGIN
@@ -268,6 +339,7 @@ function onKeyDown(e: KeyboardEvent) {
 onMounted(() => document.addEventListener('keydown', onKeyDown, true))
 onBeforeUnmount(() => {
   document.removeEventListener('keydown', onKeyDown, true)
+  detachNonModalCloser()
   disconnectRO()
   detachListeners()
 })
@@ -277,7 +349,7 @@ onBeforeUnmount(() => {
   <Teleport to="body">
     <Transition name="base-popover-fade">
       <div
-        v-if="visible"
+        v-if="visible && modal"
         class="base-popover-overlay"
         data-testid="base-popover-overlay"
         @click.self="onOverlayClick"
@@ -293,11 +365,22 @@ onBeforeUnmount(() => {
           <slot />
         </div>
       </div>
+      <!-- 非模态：不铺 overlay，面板自己 fixed 定位，页面其余部分照常可交互 -->
+      <div
+        v-else-if="visible"
+        ref="panelEl"
+        class="base-popover"
+        role="dialog"
+        data-testid="base-popover"
+        :style="panelStyle"
+      >
+        <slot />
+      </div>
     </Transition>
   </Teleport>
 </template>
 
-<style scoped>
+<style lang="scss" scoped>
 .base-popover-overlay {
   position: fixed;
   inset: 0;
@@ -307,24 +390,37 @@ onBeforeUnmount(() => {
 .base-popover {
   position: fixed;
   z-index: calc(var(--z-popover) + 1);
-  background: var(--bg-base);
-  border: 1px solid var(--border);
+  // 维度②：顶亮渐变 + accent 顶边光带 + 渐变描边。transparent border 露出 border-box 渐变层；
+  // 背景不随内容滚动（本面板 overflow:auto，::after 描边会被滚走，故不用 ::after）。
+  background:
+    var(--corner-glow) padding-box,
+    var(--grad-surface) padding-box,
+    var(--grad-border) border-box;
+  border: 1px solid transparent;
   border-radius: var(--radius-md);
-  box-shadow: var(--shadow-modal);
+  box-shadow: var(--shadow-floating);
   font-family: inherit;
   max-width: 90vw;
   max-height: 80vh;
   overflow: auto;
 }
 
-.base-popover-fade-enter-active,
-.base-popover-fade-leave-active {
-  transition: opacity var(--transition-base), transform var(--transition-base);
+/* 轻弹层编排（ADR-0053）：base 入 / fast 出（出场永远比入场快） */
+.base-popover-fade-enter-active {
+  transition: opacity var(--dur-base) var(--ease-out), transform var(--dur-base) var(--ease-out);
 }
 
-.base-popover-fade-enter-from,
+.base-popover-fade-leave-active {
+  transition: opacity var(--dur-fast) var(--ease-in), transform var(--dur-fast) var(--ease-in);
+}
+
+.base-popover-fade-enter-from {
+  opacity: 0;
+  transform: translateY(-4px) scale(0.96); // 维度①：弹入（缩放）
+}
+
 .base-popover-fade-leave-to {
   opacity: 0;
-  transform: translateY(-6px);
+  transform: translateY(-2px);
 }
 </style>

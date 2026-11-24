@@ -123,3 +123,35 @@
 `CalendarPopover` / `DateRefKindSelector` / `DateTimePickerPanel` / `PropertyQuickEditor` / `RelationshipMenu` / `QueryChipBar`（→ ConditionPopover/FieldSelectMenu/GroupMenu/SortMenu）。这些的锚点归属父组件，要根治需父级传 `anchorEl`，留待后续按需处理。
 
 **验证：** 全部相关测试通过——`BasePopover` 10、`editorEvents` 13、`PageLinkMenu`、`CodeMirrorEditor` 30、`TableView` 55、`Editor` 39（共 167）。`eslint`：本次改动**未引入新 error**（仅修掉一处 `no-useless-assignment`）；既有 `any`/`_event` 报错均在未触碰代码，与迁移无关。
+
+## 实现后修正：光标型锚点改用视口矩形（D1 修订，2026-11-11）
+
+**问题**：`SlashCommandMenu` 原以 `view.domAtPos(pos)` 反查光标所在元素作锚点。ProseMirror 在文本位置边界返回的是**整行段落元素**（`<p>`），其 `getBoundingClientRect()` 是整行盒子，`left` 固定在行首而非光标 x。面板首帧走 `position` 点模式（`coordsAtPos` 精确坐标）位置正确，`nextTick` 切到锚点模式后被横向钉到内容区左缘；空块时行首≈光标，仅在已有文本后输入 `/` 才暴露。
+
+**决策**：`anchorEl` 联合类型扩展为 `HTMLElement | DOMRect | (() => HTMLElement | DOMRect | null)`。DOMRect 形态供「锚点没有稳定 DOM」的调用方使用：由调用方实时给出锚点视口矩形，`BasePopover` 直接把它作为 `anchorRect`，不再调用 `getBoundingClientRect()`。区分元素与矩形用鸭子类型（数值 `left`/`top`），不依赖 `instanceof`，跨 realm 安全。
+
+- 元素锚点路径行为不变：仍自测 `getBoundingClientRect()`、挂最近滚动祖先、非模态外部点击用 `contains` 判定。
+- 矩形锚点没有 DOM 祖先可挂；`window` 的 scroll 监听本就用 capture 阶段，能接住任意后代滚动，配合 `onLayoutChange` 完成实时重定位。
+- `SlashCommandMenu` 改为用 `view.coordsAtPos(pos)` 构造 `0×0` 光标点矩形，getter 每次重算，滚动/布局变化时面板精确跟随光标；取坐标失败时返回 null，回退 `position` 点模式。
+
+**后果**：面板横向贴在光标处，保留 D2 的避让/翻转/收边与 D3 的实时重定位；其他调用方无需改动。
+
+**回归网**：`tests/slash-menu-anchor-position.spec.ts`（已有文本后输入 `/`，断言面板 x 明显大于段落行首）、`BasePopover.test.ts`（矩形锚点定位 + resize 实时重算 + 非模态外部点击）、`SlashCommandMenu.test.ts`（锚点为 0×0 光标矩形）。
+
+## 实现后修正：锚点来源必须是用户可见的编辑器（D1 补充，2026-11-11）
+
+**问题**：面板先正确弹出，随即整体跳到视口左上角。实测坐标序列：面板 `left/top` 由 `655.359 / 238.891` 在数帧内变成 `8 / 8`（收边后 `EDGE_MARGIN` 的边界值）。
+
+根因不在坐标换算，在**锚点来源**。同一 pane 的多个 tab 视图不卸载非活动 tab，只把它置为 `display:none`，其中的 Block / 编辑器组件照常挂载、照常响应全局 `activeBlockId`。`isActive` 的 pane 作用域护栏只区分 pane，不区分同 pane 内的多个 tab，于是两个 tab 里的同源块都被判成 active；隐藏那份的编辑器会随正文同步走到 `/` 右侧，用 0 尺寸的 DOM 触发 `slash-command-trigger`。它的 `coordsAtPos` 恒返回 (0,0)，覆盖掉可见编辑器刚设好的锚点。实测该事件序列为 `[642×22 @ 655] → [642×22 @ 655] → [0×0 @ 0]`。
+
+同一缺陷还有第二个面：隐藏编辑器会抢先执行 `setActiveEditor`，使全局 `activeEditor` 指向一份看不见的实例。斜杠命令的 `syncQuery` / `bindEditorUpdate` 都以它为源，于是「输入 `/t` 不过滤列表」「回车读不到命令文本」—— 同一根因的连带症状。
+
+**决策**：不可见的编辑器不得成为锚点来源，也不得成为活动编辑器。
+
+- 新增 `utils/element-visibility.ts` 的 `hasHiddenAncestor(el)`：自身或任一祖先 `display:none` / `visibility:hidden` 即判隐藏。刻意不用「尺寸是否为 0」——jsdom 不布局、任何元素都报 0，那会把测试与尚未完成布局的正常挂载一并误杀。
+- `SlashCommandMenu` 收到触发事件后先判来源：隐藏容器里的编辑器、已脱离文档的 DOM 一律丢弃，不覆盖现有锚点。测试替身没有 `view.dom` 时按可信处理，保持旧行为。
+- `Block.focusActiveEditor` 登记 `setActiveEditor` 前过同一判据。
+
+**后果**：面板全程贴住光标，不再产生第二次坐标；斜杠命令的过滤与命令文本回读恢复正常。非活动 tab 里的编辑器仍会挂载（本轮未改 `isActive` 的可见性口径），只是不再产生副作用。
+
+**回归网**：`SlashCommandMenu.test.ts`（隐藏容器实例的重复触发被丢弃，锚点仍停在光标处）、`Block/index.test.ts`（`display:none` 容器内的编辑器不登记 activeEditor）。

@@ -2,13 +2,17 @@ import type { Editor } from '@tiptap/core'
 import { TextSelection } from '@tiptap/pm/state'
 import type { EditorView } from '@tiptap/pm/view'
 import type { Ref } from 'vue'
+
 import { DATE_REF_CLICK_EVENT, type DateRefClickPayload } from '../../extensions/DateRefExtension'
 import type { DateRefKindSelectEvent } from '../../extensions/DateRefTriggerExtension'
+import { INLINE_TAG_CLICK_EVENT, type InlineTagClickPayload } from '../../extensions/InlineTagExtension'
 import {
   closeRelationshipMenuByEditor,
   notifyRelationshipMenuSelect,
 } from '../../extensions/RelationshipTriggerExtension'
+import { WIKI_LINK_CLICK_EVENT, type WikiLinkClickPayload } from '../../extensions/WikiLinkExtension'
 import { getRelationshipLabel } from '../../types/relationship'
+import { docToText } from '../../utils/editor-text'
 
 export interface RelationshipMenuApi {
   open: (opts: {
@@ -29,12 +33,22 @@ export interface WikiLinkMenuApi {
   selectPrev: () => void
 }
 
+/** TagMenu 暴露的实例方法（供 DOM 事件表调用） */
+export interface TagMenuApi {
+  confirmSelect: () => void
+  close: () => void
+  selectNext: () => void
+  selectPrev: () => void
+}
+
 /** date-ref 面板打开配置（DateRefClickPayload + 弹出位置） */
 export type DateRefPanelConfig = DateRefClickPayload & { position: { x: number; y: number } }
 
 export interface EditorEventCtx {
   emit: (event: string, ...args: unknown[]) => void
   getEditor: () => Editor | undefined
+  /** 正文 + 行内格式；缺省时退回 getText()（无格式）。 */
+  getContentPayload?: () => { text: string; marks: unknown }
   props: { blockId: string }
   menuVisible: Ref<boolean>
   menuPosition: Ref<{ x: number; y: number }>
@@ -43,6 +57,14 @@ export interface EditorEventCtx {
   menuRef: Ref<WikiLinkMenuApi | null>
   /** wiki-link 菜单锚点（光标所在 DOM 元素），供 PageLinkMenu 内的 BasePopover 避让/翻转（ADR-0038）。 */
   menuAnchorEl: Ref<HTMLElement | null>
+  // ── tag 菜单（#tag 选择，类比 wiki-link）──
+  tagMenuVisible: Ref<boolean>
+  tagMenuPosition: Ref<{ x: number; y: number }>
+  tagMenuRange: Ref<{ from: number; to: number }>
+  tagMenuQuery: Ref<string>
+  tagMenuRef: Ref<TagMenuApi | null>
+  /** tag 菜单锚点（光标所在 DOM 元素），供 TagMenu 内的 BasePopover 避让/翻转（ADR-0038）。 */
+  tagMenuAnchorEl: Ref<HTMLElement | null>
   kindSelectorVisible: Ref<boolean>
   kindSelectorPosition: Ref<{ left: number; top: number; bottom: number }>
   kindSelectorRange: Ref<{ from: number; to: number }>
@@ -52,6 +74,13 @@ export interface EditorEventCtx {
   relMenu: RelationshipMenuApi
   openDateRefPanel: (cfg: DateRefPanelConfig, source: string) => void
   closeWikiLinkMenuByEditor: () => void
+  closeTagMenuByEditor: () => void
+  /** inline `#tag` chip 点击 → 标签聚合页（编辑态与渲染态同口径，ADR-0050 D7） */
+  navigateToTag: (tagId: string) => void
+  /** `[[wiki link]]` 点击 → 页面导航（编辑态与渲染态同口径） */
+  navigateToPage: (pageName: string) => void
+  /** `[[wiki link]]` Ctrl/⌘+Click → 在另一栏打开目标页（ADR-0059） */
+  openPageInOtherPane: (pageName: string) => void
 }
 
 /**
@@ -99,7 +128,13 @@ export function createEditorEvents(ctx: EditorEventCtx): Record<string, (e: Even
         tr.insertText(`((${label}))`, range.from, endPos)
 
         // 设置光标到末尾
-        const newCursorPos = range.from + label.length + 4 // (( + label + ))
+        let newCursorPos = range.from + label.length + 4 // (( + label + ))
+        // 原子单元口径（inline-unit-keyboard 选择闸门）：编辑既有 typed 单元的类型段时，
+        // 紧随的 [[X]] 使 `((label))[[X]]` 构成完整单元 —— 光标跳到单元之后，
+        // 不停在其内部（否则下一输入会劈开单元）
+        const rest = tr.doc.textBetween(newCursorPos, tr.doc.content.size, '\n', '\u0000')
+        const followLink = rest.match(/^\[\[[^\]]*\]\]/)
+        if (followLink) newCursorPos += followLink[0].length
         tr.setSelection(TextSelection.create(tr.doc, newCursorPos))
 
         edView.dispatch(tr)
@@ -175,6 +210,27 @@ export function createEditorEvents(ctx: EditorEventCtx): Record<string, (e: Even
     )
   }
 
+  // 编辑态 inline `#tag` chip 点击 → 标签聚合页（InlineTagExtension 派发；
+  // 与渲染态 handleContentClick 的 .block-tag 分支同口径，ADR-0050 D7）
+  function handleInlineTagClick(event: Event) {
+    const { tagId } = (event as CustomEvent<InlineTagClickPayload>).detail
+    if (!tagId) return
+    ctx.navigateToTag(tagId)
+  }
+
+  // 编辑态 `[[wiki link]]` 点击 → 页面导航（WikiLinkExtension 派发；
+  // 与渲染态 handleContentClick 的 .block-link 分支同口径）。
+  // Ctrl/⌘+Click 时分流到另一栏（ADR-0059）。
+  function handleWikiLinkClick(event: Event) {
+    const { page, openInOtherPane } = (event as CustomEvent<WikiLinkClickPayload>).detail
+    if (!page) return
+    if (openInOtherPane) {
+      ctx.openPageInOtherPane(page)
+      return
+    }
+    ctx.navigateToPage(page)
+  }
+
   function handleDateRefKindSelect(event: Event) {
     const customEvent = event as CustomEvent<DateRefKindSelectEvent>
     const { view, range, coords } = customEvent.detail
@@ -244,6 +300,59 @@ export function createEditorEvents(ctx: EditorEventCtx): Record<string, (e: Even
     ctx.menuRef.value?.selectPrev()
   }
 
+  // ── tag 菜单（#tag 选择，类比 wiki-link）──────────────────────
+
+  function handleTagTrigger(event: Event) {
+    const customEvent = event as CustomEvent<{
+      view: EditorView
+      position: number
+      range: { from: number; to: number }
+      query: string
+    }>
+
+    const { view, position, range, query } = customEvent.detail
+    const coords = view.coordsAtPos(position)
+
+    try {
+      const node = view.domAtPos(position).node
+      ctx.tagMenuAnchorEl.value =
+        node.nodeType === Node.TEXT_NODE ? node.parentElement : (node as HTMLElement)
+    } catch {
+      ctx.tagMenuAnchorEl.value = null
+    }
+
+    ctx.tagMenuPosition.value = { x: coords.left, y: coords.bottom + 8 }
+    ctx.tagMenuRange.value = range
+    ctx.tagMenuQuery.value = query
+    ctx.tagMenuVisible.value = true
+  }
+
+  function handleTagUpdate(event: Event) {
+    const customEvent = event as CustomEvent<{ query: string }>
+    ctx.tagMenuQuery.value = customEvent.detail.query
+  }
+
+  function handleTagClose() {
+    ctx.tagMenuVisible.value = false
+    ctx.closeTagMenuByEditor()
+  }
+
+  function handleTagMenuEnter() {
+    ctx.tagMenuRef.value?.confirmSelect()
+  }
+
+  function handleTagMenuEscape() {
+    ctx.tagMenuRef.value?.close()
+  }
+
+  function handleTagMenuArrowDown() {
+    ctx.tagMenuRef.value?.selectNext()
+  }
+
+  function handleTagMenuArrowUp() {
+    ctx.tagMenuRef.value?.selectPrev()
+  }
+
   function handleEnterAsBlock(event: Event) {
     const customEvent = event as CustomEvent<{ type: string; pos?: number; x?: number }>
     switch (customEvent.detail.type) {
@@ -280,7 +389,13 @@ export function createEditorEvents(ctx: EditorEventCtx): Record<string, (e: Even
       case 'save': {
         const editor = ctx.getEditor()
         if (editor) {
-          ctx.emit('save', editor.getText())
+          const payload = ctx.getContentPayload?.()
+          if (payload) {
+            ctx.emit('save', payload.text, undefined, payload.marks)
+          } else {
+            // 兜底也走落库口径：TipTap 的 getText 会跳过 hardBreak（段内换行丢失）。
+            ctx.emit('save', docToText(editor.state.doc))
+          }
         }
         break
       }
@@ -295,11 +410,20 @@ export function createEditorEvents(ctx: EditorEventCtx): Record<string, (e: Even
     'wiki-link-menu-escape': handleWikiLinkMenuEscape,
     'wiki-link-menu-arrowdown': handleWikiLinkMenuArrowDown,
     'wiki-link-menu-arrowup': handleWikiLinkMenuArrowUp,
+    'tag-trigger': handleTagTrigger,
+    'tag-update': handleTagUpdate,
+    'tag-close': handleTagClose,
+    'tag-menu-enter': handleTagMenuEnter,
+    'tag-menu-escape': handleTagMenuEscape,
+    'tag-menu-arrowdown': handleTagMenuArrowDown,
+    'tag-menu-arrowup': handleTagMenuArrowUp,
     'enter-as-block': handleEnterAsBlock,
     'relationship-trigger': handleRelationshipTrigger,
     'relationship-close': handleRelationshipClose,
     'dateRefTrigger': handleDateRefTrigger,
     [DATE_REF_CLICK_EVENT]: handleDateRefClick,
+    [INLINE_TAG_CLICK_EVENT]: handleInlineTagClick,
+    [WIKI_LINK_CLICK_EVENT]: handleWikiLinkClick,
     'dateRefKindSelect': handleDateRefKindSelect,
     'dateRefKindSelectClose': handleDateRefKindSelectClose,
   }

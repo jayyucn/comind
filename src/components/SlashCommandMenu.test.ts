@@ -3,7 +3,8 @@ import { setActivePinia, createPinia } from 'pinia'
 import { mount, flushPromises } from '@vue/test-utils'
 import SlashCommandMenu from './SlashCommandMenu.vue'
 import { useEditorStore } from '../stores/editor'
-import { usePropertyStore } from '../stores/property'
+import { useFieldValueStore } from '../stores/fieldValue'
+import { useBlockCardStore } from '../stores/blockCard'
 import { useSlashCommands, buildTemplateCommands, executeTemplateCommand } from '../composables/useSlashCommands'
 import { useTemplateRegistry } from '../composables/useTemplateRegistry'
 import { useUserTemplatesStore } from '../stores/user-templates'
@@ -13,8 +14,12 @@ vi.mock('../stores/editor', () => ({
   useEditorStore: vi.fn()
 }))
 
-vi.mock('../stores/property', () => ({
-  usePropertyStore: vi.fn()
+vi.mock('../stores/fieldValue', () => ({
+  useFieldValueStore: vi.fn()
+}))
+
+vi.mock('../stores/blockCard', () => ({
+  useBlockCardStore: vi.fn()
 }))
 
 vi.mock('../stores/user-templates', () => ({
@@ -98,15 +103,22 @@ describe('SlashCommandMenu', () => {
       activeBlockId: 'block-1',
       showSlashCommand: vi.fn(),
       hideSlashCommand: vi.fn(),
-      showQuickPropertyEditor: vi.fn()
+      showQuickFieldValueEditor: vi.fn()
     }
     vi.mocked(useEditorStore).mockReturnValue(mockEditorStore as any)
     
-    const mockPropertyStore = {
-      setProperty: vi.fn(),
+    const mockFieldValueStore = {
+      setFieldValue: vi.fn(),
       ensureTodo: vi.fn().mockResolvedValue(undefined)
     }
-    vi.mocked(usePropertyStore).mockReturnValue(mockPropertyStore as any)
+    vi.mocked(useFieldValueStore).mockReturnValue(mockFieldValueStore as any)
+
+    const mockBlockCardStore = {
+      getCards: vi.fn().mockResolvedValue([]),
+      invalidate: vi.fn(),
+      cards: { value: [] },
+    }
+    vi.mocked(useBlockCardStore).mockReturnValue(mockBlockCardStore as any)
 
     const mockTemplateRegistry = {
       all: { value: [] },
@@ -156,9 +168,8 @@ describe('SlashCommandMenu', () => {
     expect(wrapper.find('.slash-command-menu').exists()).toBe(true)
   })
 
-  it('engages BasePopover anchor mode (ADR-0038) via cursor getter', async () => {
-    // 验证迁移：触发后 anchorView/anchorPos 被记录，且 anchorElProp getter 能反查到光标元素。
-    const anchorEl = document.createElement('div')
+  it('engages BasePopover anchor mode (ADR-0038) with a caret-point rect', async () => {
+    // 锚点必须是光标的精确坐标，不能是 domAtPos 返回的整行段落盒子（会把面板钉在行首）。
     const mockCommands = createMockCommands(3)
     vi.mocked(useSlashCommands).mockReturnValue({
       commands: mockCommands,
@@ -171,12 +182,10 @@ describe('SlashCommandMenu', () => {
       global: { stubs: { Teleport: { template: '<div><slot /></div>' } } }
     })
 
+    // 只给 coordsAtPos：不再依赖 domAtPos，也就拿不到整行段落元素。
     document.dispatchEvent(new CustomEvent('slash-command-trigger', {
       detail: {
-        view: {
-          coordsAtPos: () => ({ left: 100, bottom: 200 }),
-          domAtPos: () => ({ node: anchorEl, offset: 0 })
-        },
+        view: { coordsAtPos: () => ({ left: 100, bottom: 200 }) },
         position: 5,
         range: { from: 0, to: 1 }
       }
@@ -187,12 +196,74 @@ describe('SlashCommandMenu', () => {
     const vm = wrapper.vm as any
     expect(vm.anchorView).toBeTruthy()
     expect(vm.anchorPos).toBe(5)
-    // anchorElProp 在触发后应是一个 getter，调用它返回光标元素
     expect(typeof vm.anchorElProp).toBe('function')
-    expect(vm.anchorElProp()).toBe(anchorEl)
+    const rect = vm.anchorElProp() as DOMRect
+    expect(rect.left).toBe(100)
+    expect(rect.top).toBe(200)
+    expect(rect.width).toBe(0)
+    expect(rect.height).toBe(0)
 
     // 菜单仍正常渲染
     expect(wrapper.find('.slash-command-menu').exists()).toBe(true)
+  })
+
+  it('ignores slash-command-trigger from an editor hidden in a non-active tab', async () => {
+    // 同一 pane 的多个 tab 视图不卸载非活动 tab，只把它 display:none（Block / 编辑器照常挂载）。
+    // 里面的编辑器随正文同步跑到 `/` 右侧，也会派发同一事件 —— 但它的 DOM 没有几何，
+    // coordsAtPos 恒返回 (0,0)。采纳它会把刚摆好的面板从光标处拽到视口左上角。
+    const mockCommands = createMockCommands(3)
+    vi.mocked(useSlashCommands).mockReturnValue({
+      commands: mockCommands,
+      filterCommands: vi.fn((query: string) => mockCommands),
+      groupCommands: vi.fn(() => new Map([['Test Group', mockCommands]])),
+      parseCommandInput: vi.fn(() => ({ command: null, argument: null }))
+    } as any)
+
+    const wrapper = mount(SlashCommandMenu, {
+      global: { stubs: { Teleport: { template: '<div><slot /></div>' } } }
+    })
+
+    // 用户正在输入的编辑器
+    const visibleDom = document.createElement('div')
+    document.body.appendChild(visibleDom)
+    const visibleView = {
+      dom: visibleDom,
+      coordsAtPos: () => ({ left: 655, bottom: 235 })
+    }
+
+    // 非活动 tab 里的同源编辑器：组件仍挂载，容器 display:none
+    const hiddenTab = document.createElement('div')
+    hiddenTab.style.display = 'none'
+    const hiddenDom = document.createElement('div')
+    hiddenTab.appendChild(hiddenDom)
+    document.body.appendChild(hiddenTab)
+    const hiddenView = {
+      dom: hiddenDom,
+      coordsAtPos: () => ({ left: 0, bottom: 0 })
+    }
+
+    document.dispatchEvent(new CustomEvent('slash-command-trigger', {
+      detail: { view: visibleView, position: 6, range: { from: 6, to: 7 } }
+    }))
+    await flushPromises()
+
+    const vm = wrapper.vm as any
+    expect((vm.anchorElProp() as DOMRect).left).toBe(655)
+
+    // 隐藏实例的重复触发必须被丢弃，锚点仍停在光标处
+    document.dispatchEvent(new CustomEvent('slash-command-trigger', {
+      detail: { view: hiddenView, position: 6, range: { from: 6, to: 7 } }
+    }))
+    await flushPromises()
+
+    expect(vm.anchorView).toBe(visibleView)
+    const rect = vm.anchorElProp() as DOMRect
+    expect(rect.left).toBe(655)
+    expect(rect.top).toBe(235)
+
+    wrapper.unmount()
+    visibleDom.remove()
+    hiddenTab.remove()
   })
 
   it('auto-scrolls when selected item is out of viewport', async () => {
@@ -271,19 +342,20 @@ describe('SlashCommandMenu', () => {
 
     const vm = wrapper.vm as any
 
-    // 初始状态：query 为空 ⇒ 无选中项（-1），不得默认高亮首项（首项是 /time，#122）
-    expect(vm.selectedIndex).toBe(-1)
-
-    // 按 ArrowDown 一次，选中第一项
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }))
-    await flushPromises()
+    // 初始状态：面板打开即自动选中第一项（selectedIndex=0）
     expect(vm.selectedIndex).toBe(0)
 
-    // 模拟编辑器更新，但 query 没有变化（doc.textBetween 返回空字符串，因为 query 仍是空的）
+    // 按 ArrowDown 一次，选中第二项
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }))
+    await flushPromises()
+    expect(vm.selectedIndex).toBe(1)
+
+    // 模拟编辑器更新，但 query 没有变化（文档仍是 '/'，光标停在其右侧）
     // 这模拟了用户按了 ArrowDown 后编辑器触发 update 事件的场景
     const editorStore = useEditorStore()
     const activeEditor = editorStore.activeEditor as any
-    activeEditor.state.doc.textBetween.mockReturnValue('')
+    activeEditor.state.selection.from = 1
+    activeEditor.state.doc.textBetween.mockReturnValue('/')
 
     // 手动调用 updateQuery（这在真实场景中由编辑器 update 事件触发）
     vm.updateQuery()
@@ -291,12 +363,12 @@ describe('SlashCommandMenu', () => {
 
     // 关键断言：selectedIndex 不应被重置回 0！
     // 如果 updateQuery 无条件重置 selectedIndex，这个测试会失败
-    expect(vm.selectedIndex).toBe(0)
+    expect(vm.selectedIndex).toBe(1)
 
-    // 再按 ArrowDown 一次，应该选中第二项
+    // 再按 ArrowDown 一次，应该选中第三项
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }))
     await flushPromises()
-    expect(vm.selectedIndex).toBe(1)
+    expect(vm.selectedIndex).toBe(2)
   })
 })
 
@@ -330,11 +402,11 @@ describe('SlashCommandMenu - Template List Subview', () => {
     }
     vi.mocked(useEditorStore).mockReturnValue(mockEditorStore as any)
     
-    const mockPropertyStore = {
-      setProperty: vi.fn(),
+    const mockFieldValueStore = {
+      setFieldValue: vi.fn(),
       ensureTodo: vi.fn().mockResolvedValue(undefined)
     }
-    vi.mocked(usePropertyStore).mockReturnValue(mockPropertyStore as any)
+    vi.mocked(useFieldValueStore).mockReturnValue(mockFieldValueStore as any)
 
     const mockTemplates = createMockTemplates()
     const mockTemplateRegistry = {
@@ -388,7 +460,9 @@ describe('SlashCommandMenu - Template List Subview', () => {
       state: { 
         selection: { from: 13 },
         doc: { textBetween: vi.fn().mockReturnValue('template list') }
-      }
+      },
+      on: vi.fn(),
+      off: vi.fn()
     }
 
     // 需要触发更新查询的机制 - 通过编辑器更新事件
@@ -471,15 +545,15 @@ describe('SlashCommandMenu - Template List Subview', () => {
     vm.isTemplateListView = true
     await flushPromises()
 
-    // 测试向下箭头导航（起点是「无选中」-1，故第一次落到首项）
+    // 测试向下箭头导航（面板打开即选中首项 0，ArrowDown 落到第二项）
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }))
     await flushPromises()
-    expect(vm.selectedIndex).toBe(0)
+    expect(vm.selectedIndex).toBe(1)
 
-    // 测试向上箭头导航：从首项回卷到末项
+    // 测试向上箭头导航：回到首项
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp' }))
     await flushPromises()
-    expect(vm.selectedIndex).toBe(vm.templateListData.length - 1)
+    expect(vm.selectedIndex).toBe(0)
   })
 
   // 测试 ArrowUp/ArrowDown 在子视图边界时的循环行为
@@ -724,11 +798,18 @@ describe('SlashCommandMenu — priority 命令自动补 Todo', () => {
       activeBlockId: 'block-1',
       showSlashCommand: vi.fn(),
       hideSlashCommand: vi.fn(),
-      showQuickPropertyEditor: vi.fn()
+      showQuickFieldValueEditor: vi.fn()
     } as unknown as ReturnType<typeof useEditorStore>)
+    vi.mocked(useFieldValueStore).mockReturnValue({
+      setFieldValue: vi.fn(),
+      ensureTodo: vi.fn().mockResolvedValue(undefined)
+    } as any)
+    vi.mocked(useBlockCardStore).mockReturnValue({
+      getCards: vi.fn().mockResolvedValue([])
+    } as any)
   })
 
-  it('immediate 优先级命令（如 /high）写入 priority 并调用 ensureTodo', async () => {
+  it('immediate 优先级命令（如 /high）写入 priority 并刷新块卡片投影，不调 ensureTodo（成对补 status 由 store 收口）', async () => {
     const priorityCmd = {
       id: 'high',
       name: 'High',
@@ -736,8 +817,8 @@ describe('SlashCommandMenu — priority 命令自动补 Todo', () => {
       group: '属性',
       icon: '🔴',
       action: () => {},
-      propertyKey: 'priority',
-      propertyValue: 'High',
+      fieldKey: 'priority',
+      fieldValue: 'High',
       immediate: true
     }
     vi.mocked(useSlashCommands).mockReturnValue({
@@ -765,8 +846,14 @@ describe('SlashCommandMenu — priority 命令自动补 Todo', () => {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }))
     await flushPromises()
 
-    const store = vi.mocked(usePropertyStore())
-    expect(store.setProperty).toHaveBeenCalledWith('block-1', 'priority', 'High')
-    expect(store.ensureTodo).toHaveBeenCalledWith('block-1')
+    const store = vi.mocked(useFieldValueStore())
+    expect(store.setFieldValue).toHaveBeenCalledWith('block-1', 'priority', 'High')
+    // 优先级命令不调 ensureTodo：不往 content 挂 #任务（status 成对补默认由
+    // fieldValueStore.setFieldValue 写入收口负责，菜单层不再介入）
+    expect(store.ensureTodo).not.toHaveBeenCalled()
+
+    // 回归 #midium：优先级命令写库后必须刷新块卡片投影，否则新任务不出现在四象限
+    const cardStore = vi.mocked(useBlockCardStore())
+    expect(cardStore.getCards).toHaveBeenCalled()
   })
 })

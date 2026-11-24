@@ -1,8 +1,9 @@
 use crate::{
-    types::{Block, BlockRenderData, Link, PageWithBlocks, RenderSegment},
+    types::{is_text_like, Block, BlockRenderData, Link, PageWithBlocks, RenderSegment},
     storage::repository,
-    services::DateRefService,
+    services::{DateRefService, FieldValueService, TagService},
 };
+use regex::Regex;
 use std::collections::HashMap;
 use std::error::Error;
 
@@ -12,7 +13,7 @@ pub fn build_segments_for_block(
     storage: &mut dyn repository::StorageAdapter,
     block: &Block,
 ) -> Result<Vec<RenderSegment>, Box<dyn Error>> {
-    if block.r#type != "bullet" && block.r#type != "property" {
+    if !is_text_like(&block.r#type) {
         return Ok(Vec::new());
     }
 
@@ -30,7 +31,20 @@ pub fn build_segments_for_block(
         rel_cache.insert(rt.r#type.clone(), (rt.label.clone(), rt.color.clone()));
     }
 
-    build_segments(block, &links, &id_to_title, &rel_cache)
+    let tag_cache = build_tag_cache(storage);
+    build_segments(block, &links, &id_to_title, &rel_cache, &tag_cache)
+}
+
+/// title → (tag id, is_system, color) 查找表（渲染 chip 用；缺行时 chip 仍渲染、id/color 置空）。
+/// `color` 是调色板 token 名（ADR-0050 D11），空串 = 无色 —— 交给前端落回 CSS 默认色。
+fn build_tag_cache(
+    storage: &mut dyn repository::StorageAdapter,
+) -> HashMap<String, (String, bool, String)> {
+    repository::TagRepository::get_all(storage.tags())
+        .unwrap_or_default()
+        .into_iter()
+        .map(|t| (t.title, (t.id, t.is_system, t.color)))
+        .collect()
 }
 
 /// Builds a `PageWithBlocks` response for `get_page_with_blocks`.
@@ -60,7 +74,7 @@ pub fn build_page_with_blocks(
     let block_ids: Vec<String> = blocks.iter().map(|b| b.id.clone()).collect();
     let segment_block_ids: Vec<String> = blocks
         .iter()
-        .filter(|b| b.r#type == "bullet" || b.r#type == "property")
+        .filter(|b| is_text_like(&b.r#type))
         .map(|b| b.id.clone())
         .collect();
 
@@ -93,8 +107,10 @@ pub fn build_page_with_blocks(
         rel_cache.insert(rt.r#type.clone(), (rt.label.clone(), rt.color.clone()));
     }
 
-    let all_properties =
-        repository::PropertyRepository::get_by_block_ids(storage.properties(), &block_ids)?;
+    let tag_cache = build_tag_cache(storage);
+
+    // ADR-0049 D6：字段值直接读库内 FieldValue 行（无 Property 中间形状）
+    let all_properties = FieldValueService::get_by_block_ids(storage, &block_ids)?;
     let mut props_by_block: HashMap<String, Vec<_>> = HashMap::new();
     for prop in all_properties {
         props_by_block
@@ -107,9 +123,9 @@ pub fn build_page_with_blocks(
     for block in &blocks {
         let children = children_map.get(&block.id).cloned().unwrap_or_default();
 
-        let segments = if block.r#type == "bullet" || block.r#type == "property" {
+        let segments = if is_text_like(&block.r#type) {
             let links = links_by_block.get(&block.id).map(|v| v.as_slice()).unwrap_or(&[]);
-            build_segments(block, links, &id_to_title, &rel_cache)?
+            build_segments(block, links, &id_to_title, &rel_cache, &tag_cache)?
         } else {
             Vec::new()
         };
@@ -144,18 +160,6 @@ fn byte_to_utf16_idx(content: &str, byte_idx: usize) -> usize {
     utf16_len
 }
 
-/// Convert UTF-16 code unit index back to byte offset.
-fn utf16_idx_to_byte_idx(content: &str, utf16_idx: usize) -> usize {
-    let mut utf16_count = 0;
-    for (byte_pos, ch) in content.char_indices() {
-        if utf16_count >= utf16_idx {
-            return byte_pos;
-        }
-        utf16_count += ch.len_utf16();
-    }
-    content.len()
-}
-
 /// Total UTF-16 code unit length of the string (matches JS `.length`).
 fn utf16_len(content: &str) -> usize {
     content.chars().map(|c| c.len_utf16()).sum()
@@ -166,15 +170,20 @@ fn build_segments(
     links: &[Link],
     id_to_title: &HashMap<String, String>,
     rel_cache: &HashMap<String, (String, String)>,
+    tag_cache: &HashMap<String, (String, bool, String)>,
 ) -> Result<Vec<RenderSegment>, Box<dyn Error>> {
     let content = &block.content;
+    // 行内代码（`format.inlineMarks` 的 `code` 区间）是字面文本：掩成等长空格后再抽取
+    // `@日期` / `#tag` / `[[链接]]`，代码段里的这些语法不出 chip。等长保证 byte_start /
+    // byte_end 与原文一一对应，后面的字节→UTF-16 换算照旧。
+    let visible = crate::services::inline_literal::visible_text(content, Some(&block.format));
     let mut anchors: Vec<(usize, RenderSegment)> = Vec::new();
 
     // --- 1. Date refs ---
-    let date_refs = DateRefService::extract_date_refs(content);
+    let date_refs = DateRefService::extract_date_refs(visible.as_ref());
     for dr in &date_refs {
         let pattern = format!("@{}", dr.iso);
-        if let Some(start) = content.find(&pattern) {
+        if let Some(start) = visible.find(&pattern) {
             // Extend to cover optional whitespace + emoji (📅/⏰) + |params
             let bytes = content.as_bytes();
             let mut end = start + pattern.len();
@@ -207,6 +216,19 @@ fn build_segments(
                 }
             }
 
+            // Step 3: 吸收尾随空白。
+            // dateRef 之后的空白是分隔符，不应作为后续 Text 段的前导空格；但它必须留在**某个段内** ——
+            // segments 是 content 的严格划分，任何未覆盖字符都会形成空洞：既不被渲染（读态丢字），
+            // 也会让前端「可见长度累计 → encoded 偏移」的换算从该点起整体右移（中部分拆切点右偏 1 字）。
+            // 故由 DateRef 段自己吞掉这段空白，后续段仍从首个非空白字符开始。
+            while end < bytes.len() {
+                let ch = content[end..].chars().next().unwrap();
+                if !ch.is_whitespace() {
+                    break;
+                }
+                end += ch.len_utf8();
+            }
+
             let kind = &dr.kind;
             let recurrence = if dr.recurrence.is_empty() { "none" } else { &dr.recurrence };
             let is_overdue = kind == "deadline" && is_date_past(&dr.iso);
@@ -237,9 +259,9 @@ fn build_segments(
 
         // Search for the link pattern in content
         let (start, end) = if let Some(rt) = &link.relationship_type {
-            search_content(content, rt, &target_title, display)
+            search_content(visible.as_ref(), rt, &target_title, display)
         } else {
-            search_plain_link(content, &target_title, display)
+            search_plain_link(visible.as_ref(), &target_title, display)
         };
 
         if let (Some(s), Some(e)) = (start, end) {
@@ -269,6 +291,25 @@ fn build_segments(
         }
     }
 
+    // --- 3. Inline tags `#foo`（grill 决策 #4）---
+    for (byte_start, byte_end, title) in TagService::extract_tag_spans(visible.as_ref()) {
+        // 与 dateRef 同款：UTF-16 索引（JS slice 语义）
+        let char_start = byte_to_utf16_idx(content, byte_start);
+        let char_end = byte_to_utf16_idx(content, byte_end);
+        let (tag_id, is_system, color) = tag_cache
+            .get(&title)
+            .cloned()
+            .unwrap_or_else(|| (String::new(), false, String::new()));
+        anchors.push((char_start, RenderSegment::Tag {
+            start: char_start,
+            end: char_end,
+            title,
+            tag_id,
+            is_system,
+            color,
+        }));
+    }
+
     // Sort, fill gaps
     anchors.sort_by_key(|(s, _)| *s);
     let char_len = utf16_len(content);
@@ -279,26 +320,18 @@ fn build_segments(
         if pos > cursor {
             segments.push(RenderSegment::Text { start: cursor, end: pos });
         }
+        // ⛔ 不变量：segments 必须是 content 的严格划分（0..utf16_len 无空洞、无重叠）。
+        // 任何未覆盖字符都会让消费方错位：读态不渲染它，
+        // 前端 `renderedOffsetToEncodedOffset` 的「可见长度累计」也会比 encoded 偏移少一截，
+        // 导致该点之后**所有**偏移整体右移（中部分拆切点右偏）。
+        // dateRef 的尾随空白已由锚点构造阶段吸收（见 `Step 3`），此处一律取段尾即可。
         cursor = match &seg {
-            RenderSegment::Text { end, .. } => *end,
-            RenderSegment::Link { end, .. } => *end,
-            RenderSegment::TypedLink { end, .. } => *end,
-            RenderSegment::ExternalLink { end, .. } => *end,
-            RenderSegment::DateRef { end, .. } => {
-                // dateRef 语法（`@ISO [emoji] [|params]`）之后的空白是分隔符，
-                // 不属于任何文本段：跳过它们，避免后续 Text 段带前导空格。
-                // 例："@2026-08-09 ⏰ 2026" → DateRef=[0,13)，Text=[14,18) 而非 [13,18)。
-                let mut byte = utf16_idx_to_byte_idx(content, *end);
-                let bytes = content.as_bytes();
-                while byte < bytes.len() {
-                    let ch = content[byte..].chars().next().unwrap();
-                    if !ch.is_whitespace() {
-                        break;
-                    }
-                    byte += ch.len_utf8();
-                }
-                byte_to_utf16_idx(content, byte)
-            }
+            RenderSegment::Text { end, .. }
+            | RenderSegment::Link { end, .. }
+            | RenderSegment::TypedLink { end, .. }
+            | RenderSegment::ExternalLink { end, .. }
+            | RenderSegment::Tag { end, .. }
+            | RenderSegment::DateRef { end, .. } => *end,
         };
         segments.push(seg);
     }
@@ -310,21 +343,32 @@ fn build_segments(
 }
 
 /// Search for `((type))[[target|display]]` in content, return (start, end) offsets.
+/// 在 content 中定位一条 typed link 的字节范围（`((type))[[target]]` 整段）。
+///
+/// 不能用 `content.find("((type))[[target]]")` 字面拼接：① wiki link 补全会在 `))` 与
+/// `[[` 之间补一个空格（inline-unit-pad.ts）；② 编辑态可能写中文括号 `（（type））`。
+/// 故先定位关系括号段，跳过其后的空白，再匹配三种 `[[...]]` 字面量之一。
 fn search_content(content: &str, rel_type: &str, target: &str, display: &str) -> (Option<usize>, Option<usize>) {
-    // Try: ((type))[[target|display]]
-    let p1 = format!("(({}))[[{}|{}]]", rel_type, target, display);
-    if let Some(s) = content.find(&p1) {
-        return (Some(s), Some(s + p1.len()));
-    }
-    // Try: ((type))[[target]]
-    let p2 = format!("(({}))[[{}]]", rel_type, target);
-    if let Some(s) = content.find(&p2) {
-        return (Some(s), Some(s + p2.len()));
-    }
-    // Try: ((type))[[display]] (alias only)
-    let p3 = format!("(({}))[[{}]]", rel_type, display);
-    if let Some(s) = content.find(&p3) {
-        return (Some(s), Some(s + p3.len()));
+    // 关系括号段：`((type))` / `（（type））`（开闭括号英/中文皆可、可混用）
+    let open_re = match Regex::new(&format!(r"[（(]{{2}}{}[）)]{{2}}", regex::escape(rel_type))) {
+        Ok(re) => re,
+        Err(_) => return (None, None),
+    };
+    // 三种 [[...]] 字面量（顺序与原字面拼接一致：target|display → target → display 别名兜底）
+    let link_literals = [
+        format!("[[{}|{}]]", target, display),
+        format!("[[{}]]", target),
+        format!("[[{}]]", display),
+    ];
+    for m in open_re.find_iter(content) {
+        let rest = &content[m.end()..];
+        let trimmed = rest.trim_start();
+        let skipped = rest.len() - trimmed.len();
+        for lit in &link_literals {
+            if trimmed.starts_with(lit.as_str()) {
+                return (Some(m.start()), Some(m.end() + skipped + lit.len()));
+            }
+        }
     }
     (None, None)
 }

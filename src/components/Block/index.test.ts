@@ -28,7 +28,10 @@ import { getCoreClient } from '../../wasm/client'
 import { cleanupRelationshipTypes, cleanupPages } from '../../../tests/core-client'
 import type { TreeNode } from '../../types/block'
 import { useEditorStore } from '../../stores/editor'
-import { usePropertyStore } from '../../stores/property'
+import { useFieldValueStore } from '../../stores/fieldValue'
+import { useTagsStore } from '../../stores/tags'
+import type { PersistedTagTreeEntry, PersistedFieldDefinition } from '../../types/tag-persisted'
+import { blockDragActive } from './composables/useBlockDragDrop'
 
 vi.mock('../../storage/indexedDB', () => ({
   storage: {
@@ -38,7 +41,7 @@ vi.mock('../../storage/indexedDB', () => ({
     deleteBlock: vi.fn().mockResolvedValue(undefined),
     deleteBlockCascade: vi.fn().mockResolvedValue(undefined),
     getBlockTree: vi.fn().mockResolvedValue([]),
-    getProperties: vi.fn().mockResolvedValue([]),
+    getFieldValues: vi.fn().mockResolvedValue([]),
     createPageWithRootBlock: vi.fn().mockImplementation((title: string, type: 'normal' | 'ideas') => ({
       id: `page-${Date.now()}-${Math.random()}`,
       title,
@@ -108,7 +111,7 @@ describe('Block - rel-type-label click handling', () => {
         pos: 1000,
         content: ORIGINAL_CONTENT,
         format: {},
-        type: 'bullet',
+        type: 'text',
         properties: {},
         createdAt: Date.now(),
         updatedAt: Date.now()
@@ -140,7 +143,7 @@ describe('Block - rel-type-label click handling', () => {
       pos: 1000,
       content: ORIGINAL_CONTENT,
       format: {},
-      type: 'bullet',
+      type: 'text',
       properties: {},
       createdAt: Date.now(),
       updatedAt: Date.now()
@@ -301,7 +304,7 @@ describe('Block - handleDelete 关系清理集成', () => {
       pos: 500,
       content: 'prev block',
       format: {},
-      type: 'bullet',
+      type: 'text',
       properties: {},
       createdAt: Date.now(),
       updatedAt: Date.now()
@@ -313,7 +316,7 @@ describe('Block - handleDelete 关系清理集成', () => {
       pos: 1000,
       content: 'see ((depends-on<->required-by))[[X]]',
       format: {},
-      type: 'bullet',
+      type: 'text',
       properties: {},
       createdAt: Date.now(),
       updatedAt: Date.now()
@@ -325,7 +328,7 @@ describe('Block - handleDelete 关系清理集成', () => {
       pos: 1000,
       content: 'reverse ((required-by))[[P]]',
       format: {},
-      type: 'bullet',
+      type: 'text',
       properties: {},
       createdAt: Date.now(),
       updatedAt: Date.now()
@@ -411,7 +414,7 @@ describe('characterization: render', () => {
     const blockStore = useBlockStore()
     blockStore.blocks = [{
       id: 'block-1', pageId: 'page-1', parentId: null, pos: 0,
-      content: 'hello', format: {}, type: 'bullet',
+      content: 'hello', format: {}, type: 'text',
       createdAt: 0, updatedAt: 0
     }]
     const node: TreeNode = {
@@ -428,12 +431,12 @@ describe('characterization: render', () => {
     wrapper.unmount()
   })
 
-  it('applies priority class based on priority property', async () => {
+  it('applies priority class based on priority field value', async () => {
     const blockStore = useBlockStore()
-    const propertyStore = usePropertyStore()
+    const fieldValueStore = useFieldValueStore()
     blockStore.blocks = [{
       id: 'block-1', pageId: 'page-1', parentId: null, pos: 0,
-      content: '', format: {}, type: 'bullet',
+      content: '', format: {}, type: 'text',
       createdAt: 0, updatedAt: 0
     }]
     const node: TreeNode = {
@@ -446,10 +449,9 @@ describe('characterization: render', () => {
       global: { stubs: { BulletRender: StubBulletRender } }
     })
     await flushPromises()
-    propertyStore.propertiesByBlock.set('block-1', [{
-      id: 'p1', blockId: 'block-1', key: 'priority', value: 'High',
-      type: 'string' as const, sortOrder: 0, isHidden: false, isDeleted: false,
-      schemaVersion: 1, createdAt: 0, updatedAt: 0
+    fieldValueStore.fieldValuesByBlock.set('block-1', [{
+      id: 'p1', block_id: 'block-1', field_definition_id: 'fd-priority', key: 'priority', value_json: 'High',
+      value_type: 'string', seq: 0, created_at: 0, updated_at: 0, version: 0, deleted_at: null
     }])
     await flushPromises()
     expect(wrapper.find('.block').classes()).toContain('priority-high')
@@ -461,7 +463,7 @@ describe('characterization: render', () => {
     const editorStore = useEditorStore()
     blockStore.blocks = [{
       id: 'block-1', pageId: 'page-1', parentId: null, pos: 0,
-      content: '', format: {}, type: 'bullet',
+      content: '', format: {}, type: 'text',
       createdAt: 0, updatedAt: 0
     }]
     const node: TreeNode = {
@@ -492,7 +494,7 @@ describe('characterization: editor lifecycle', () => {
     const editorStore = useEditorStore()
     blockStore.blocks = [{
       id: 'b1', pageId: 'p1', parentId: null, pos: 0,
-      content: '', format: {}, type: 'bullet',
+      content: '', format: {}, type: 'text',
       createdAt: 0, updatedAt: 0
     }]
     const setActiveEditorSpy = vi.spyOn(editorStore, 'setActiveEditor')
@@ -515,7 +517,7 @@ describe('characterization: editor lifecycle', () => {
     const editorStore = useEditorStore()
     blockStore.blocks = [{
       id: 'b1', pageId: 'p1', parentId: null, pos: 0,
-      content: '', format: {}, type: 'bullet',
+      content: '', format: {}, type: 'text',
       createdAt: 0, updatedAt: 0
     }]
     const setActiveEditorSpy = vi.spyOn(editorStore, 'setActiveEditor')
@@ -535,6 +537,57 @@ describe('characterization: editor lifecycle', () => {
     expect(setActiveEditorSpy).toHaveBeenCalledWith(null)
     wrapper.unmount()
   })
+  it('skips setActiveEditor when the editor sits in a hidden tab (display:none)', async () => {
+    // 同一 pane 的多个 tab 视图不卸载非活动 tab，只 display:none。其中的同源块仍会因全局
+    // activeBlockId 变化被判成 active 并走到 focusActiveEditor —— 若让它登记，全局
+    // activeEditor 就指向一份没有几何的实例（斜杠面板拿它算光标恒得 (0,0)，面板跑左上角）。
+    const blockStore = useBlockStore()
+    const editorStore = useEditorStore()
+    blockStore.blocks = [{
+      id: 'b1', pageId: 'p1', parentId: null, pos: 0,
+      content: '', format: {}, type: 'text',
+      createdAt: 0, updatedAt: 0
+    }]
+    const setActiveEditorSpy = vi.spyOn(editorStore, 'setActiveEditor')
+
+    const hiddenTab = document.createElement('div')
+    hiddenTab.style.display = 'none'
+    document.body.appendChild(hiddenTab)
+    const hiddenEditorDom = document.createElement('div')
+    hiddenTab.appendChild(hiddenEditorDom)
+
+    const HiddenTabStubEditor = defineComponent({
+      name: 'Editor',
+      setup(_, { expose }) {
+        expose({
+          getEditor: () => ({ view: { dom: hiddenEditorDom } }),
+          focus: () => {},
+          focusAtCoords: () => {},
+          markSaved: () => {},
+          getText: () => '',
+          syncContent: () => {},
+          cancelDebouncedSave: () => {}
+        })
+        return () => h('div', { class: 'stub-editor' })
+      }
+    })
+
+    const node: TreeNode = { id: 'b1', block: blockStore.blocks[0], children: [] }
+    const wrapper = mount(Block, {
+      props: { node, pageId: 'p1', depth: 0 },
+      attachTo: hiddenTab,
+      global: { stubs: { BulletRender: StubBulletRender, Editor: HiddenTabStubEditor } }
+    })
+    await flushPromises()
+    editorStore.activateBlock('b1', 0)
+    await flushPromises()
+    await new Promise(r => requestAnimationFrame(r))
+    await flushPromises()
+
+    expect(setActiveEditorSpy).not.toHaveBeenCalled()
+    wrapper.unmount()
+    hiddenTab.remove()
+  })
 })
 
 describe('characterization: save', () => {
@@ -549,7 +602,7 @@ describe('characterization: save', () => {
     const updateSpy = vi.spyOn(blockStore, 'updateBlockContent').mockResolvedValue(undefined)
     blockStore.blocks = [{
       id: 'b1', pageId: 'p1', parentId: null, pos: 0,
-      content: 'old', format: {}, type: 'bullet',
+      content: 'old', format: {}, type: 'text',
       createdAt: 0, updatedAt: 0
     }]
     const node: TreeNode = { id: 'b1', block: blockStore.blocks[0], children: [] }
@@ -565,7 +618,7 @@ describe('characterization: save', () => {
     expect(editor.exists()).toBe(true)
     editor.vm.$emit('save', 'new content')
     await flushPromises()
-    expect(updateSpy).toHaveBeenCalledWith('b1', 'new content')
+    expect(updateSpy).toHaveBeenCalledWith('b1', 'new content', { commitTags: true })
     wrapper.unmount()
   })
 })
@@ -592,7 +645,7 @@ describe('characterization: delete', () => {
     const updateSpy = vi.spyOn(blockStore, 'updateBlockContent').mockResolvedValue(undefined)
     blockStore.blocks = [{
       id: 'b1', pageId: 'p1', parentId: null, pos: 0,
-      content: 'text', format: {}, type: 'bullet',
+      content: 'text', format: {}, type: 'text',
       createdAt: 0, updatedAt: 0
     }]
     vi.spyOn(blockStore, 'findPreviousBlockInTreeOrder').mockReturnValue(undefined)
@@ -618,8 +671,8 @@ describe('characterization: delete', () => {
     const editorStore = useEditorStore()
     const deleteSpy = vi.spyOn(blockStore, 'deleteBlocks').mockResolvedValue(undefined)
     blockStore.blocks = [
-      { id: 'prev', pageId: 'p1', parentId: null, pos: 0, content: 'prev', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0 },
-      { id: 'b1', pageId: 'p1', parentId: null, pos: 1, content: 'text', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0 }
+      { id: 'prev', pageId: 'p1', parentId: null, pos: 0, content: 'prev', format: {}, type: 'text', createdAt: 0, updatedAt: 0 },
+      { id: 'b1', pageId: 'p1', parentId: null, pos: 1, content: 'text', format: {}, type: 'text', createdAt: 0, updatedAt: 0 }
     ]
     vi.spyOn(blockStore, 'findPreviousBlockInTreeOrder').mockReturnValue(blockStore.blocks[0])
     const node: TreeNode = { id: 'b1', block: blockStore.blocks[1], children: [] }
@@ -653,11 +706,11 @@ describe('characterization: collapse', () => {
     const updateFormatSpy = vi.spyOn(blockStore, 'updateBlockFormat').mockResolvedValue(undefined)
     const childBlock = {
       id: 'b2', pageId: 'p1', parentId: 'b1', pos: 0,
-      content: '', format: {}, type: 'bullet' as const,
+      content: '', format: {}, type: 'text' as const,
       createdAt: 0, updatedAt: 0
     }
     blockStore.blocks = [
-      { id: 'b1', pageId: 'p1', parentId: null, pos: 0, content: '', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0 },
+      { id: 'b1', pageId: 'p1', parentId: null, pos: 0, content: '', format: {}, type: 'text', createdAt: 0, updatedAt: 0 },
       childBlock
     ]
     const node: TreeNode = {
@@ -683,18 +736,19 @@ describe('characterization: collapse', () => {
   })
 })
 
-describe('bullet dot opens BlockModal (ADR-0039)', () => {
+describe('块入口胶囊打开本块菜单（ADR-0039 D9：入口不再开弹窗）', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
+    document.body.querySelectorAll('.block-entry-menu').forEach((n) => n.remove())
   })
 
-  it('clicking bullet-dot opens BlockModal for the block', async () => {
+  it('点入口胶囊出的是通用段菜单，且不再开 BlockModal', async () => {
     const blockStore = useBlockStore()
     const editorStore = useEditorStore()
     const openSpy = vi.spyOn(editorStore, 'openBlockModal')
     blockStore.blocks = [
-      { id: 'b1', pageId: 'p1', parentId: null, pos: 0, content: '', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0 },
+      { id: 'b1', pageId: 'p1', parentId: null, pos: 0, content: '', format: {}, type: 'text', createdAt: 0, updatedAt: 0 },
     ]
     const node: TreeNode = { id: 'b1', block: blockStore.blocks[0], children: [] }
     const wrapper = mount(Block, {
@@ -702,18 +756,28 @@ describe('bullet dot opens BlockModal (ADR-0039)', () => {
       global: { stubs: { BulletRender: StubBulletRender, VueDraggable: StubVueDraggable } },
     })
     await flushPromises()
-    await wrapper.find('.bullet-dot').trigger('click')
+    await wrapper.find('.block-entry-icon').trigger('click')
     await flushPromises()
-    expect(openSpy).toHaveBeenCalledWith('b1')
+
+    const menu = document.body.querySelector('.block-entry-menu')
+    expect(menu).toBeTruthy()
+    // 菜单开着时胶囊必须常显：指针移进菜单后 .block-row 不再 hover，胶囊不能跟着退场
+    // （CSS 侧规则见 _block.scss 的 .block-entry-icon.is-menu-open）。
+    expect(wrapper.find('.block-entry-icon').classes()).toContain('is-menu-open')
+    // 通用段的项都在（顺序与分组由 BlockMenuCommon 单源定义）
+    expect(menu?.querySelector('[data-block-menu-item="insert-above"]')).toBeTruthy()
+    expect(menu?.querySelector('[data-block-menu-item="paste"]')).toBeTruthy()
+    expect(menu?.querySelector('[data-block-menu-item="reset-text"]')?.textContent).toContain('清空')
+    expect(menu?.querySelector('[data-block-menu-item="delete"]')).toBeTruthy()
+    expect(openSpy).not.toHaveBeenCalled()
+
     wrapper.unmount()
   })
 
-  it('bullet-dot is a no-op inside BlockModal (inBlockModal inject)', async () => {
+  it('弹窗内（inBlockModal）点入口胶囊仍是 no-op', async () => {
     const blockStore = useBlockStore()
-    const editorStore = useEditorStore()
-    const openSpy = vi.spyOn(editorStore, 'openBlockModal')
     blockStore.blocks = [
-      { id: 'b1', pageId: 'p1', parentId: null, pos: 0, content: '', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0 },
+      { id: 'b1', pageId: 'p1', parentId: null, pos: 0, content: '', format: {}, type: 'text', createdAt: 0, updatedAt: 0 },
     ]
     const node: TreeNode = { id: 'b1', block: blockStore.blocks[0], children: [] }
     const wrapper = mount(Block, {
@@ -724,9 +788,135 @@ describe('bullet dot opens BlockModal (ADR-0039)', () => {
       },
     })
     await flushPromises()
-    await wrapper.find('.bullet-dot').trigger('click')
+    await wrapper.find('.block-entry-icon').trigger('click')
     await flushPromises()
-    expect(openSpy).not.toHaveBeenCalled()
+    expect(document.body.querySelector('.block-entry-menu')).toBeNull()
+    wrapper.unmount()
+  })
+})
+
+// ── 悬停开菜单 ────────────────────────────────────────────
+//
+// 手势本身（指针停上去就开、移开就收）是这次的需求；jsdom 没有命中面/hover 链，
+// 这里锁的是**开合时序与互斥**：谁在什么时候把 menuOpen 置真/置假。
+describe('块入口胶囊悬停即开菜单（不必点击）', () => {
+  const ENTRY_OPEN_DELAY = 120
+  const ENTRY_CLOSE_DELAY = 260
+
+  function mountBlock() {
+    const blockStore = useBlockStore()
+    blockStore.blocks = [
+      { id: 'b1', pageId: 'p1', parentId: null, pos: 0, content: '', format: {}, type: 'text', createdAt: 0, updatedAt: 0 },
+    ]
+    const node: TreeNode = { id: 'b1', block: blockStore.blocks[0], children: [] }
+    return mount(Block, {
+      props: { node, pageId: 'p1', depth: 0 },
+      global: { stubs: { BulletRender: StubBulletRender, VueDraggable: StubVueDraggable } },
+    })
+  }
+
+  function menuEl(): Element | null {
+    return document.body.querySelector('.block-entry-menu')
+  }
+
+  /**
+   * 派发 pointerenter。不能用 `trigger(..., { buttons })`：VTU 建的是 MouseEvent，
+   * `buttons` 只有 getter，赋值直接抛错；MouseEvent 构造器的 init 里可以给。
+   */
+  function pointerEnter(el: Element, buttons = 0) {
+    el.dispatchEvent(new MouseEvent('pointerenter', { buttons }))
+  }
+
+  /** 推进假计时器并让 Teleport/过渡跑完 */
+  async function settle(ms: number) {
+    vi.advanceTimersByTime(ms)
+    await flushPromises()
+  }
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    vi.useFakeTimers()
+    document.body.querySelectorAll('.block-entry-menu').forEach((n) => n.remove())
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    blockDragActive.value = false
+  })
+
+  it('指针停进入口胶囊就开菜单，不必点击', async () => {
+    const wrapper = mountBlock()
+    await flushPromises()
+
+    pointerEnter(wrapper.find('.block-entry-icon').element)
+    // 延迟未到：扫过左栏不该立刻弹
+    expect(menuEl()).toBeNull()
+
+    await settle(ENTRY_OPEN_DELAY + 20)
+    expect(menuEl()).toBeTruthy()
+    // 悬停菜单不是模态弹层：铺全屏 overlay 会把页面其余部分的 hover/点击吃掉
+    expect(document.body.querySelector('[data-testid="base-popover-overlay"]')).toBeNull()
+
+    wrapper.unmount()
+  })
+
+  it('指针离开胶囊后菜单收起', async () => {
+    const wrapper = mountBlock()
+    await flushPromises()
+
+    const icon = wrapper.find('.block-entry-icon')
+    pointerEnter(icon.element)
+    await settle(ENTRY_OPEN_DELAY + 20)
+    expect(menuEl()).toBeTruthy()
+
+    await icon.trigger('pointerleave')
+    await settle(ENTRY_CLOSE_DELAY + 20)
+    expect(menuEl()).toBeNull()
+
+    wrapper.unmount()
+  })
+
+  it('走进菜单不收起：菜单上的 pointerenter 取消离开宽限', async () => {
+    const wrapper = mountBlock()
+    await flushPromises()
+
+    const icon = wrapper.find('.block-entry-icon')
+    pointerEnter(icon.element)
+    await settle(ENTRY_OPEN_DELAY + 20)
+
+    await icon.trigger('pointerleave')
+    menuEl()!.dispatchEvent(new Event('pointerenter'))
+    await settle(ENTRY_CLOSE_DELAY + 20)
+
+    expect(menuEl()).toBeTruthy()
+
+    wrapper.unmount()
+  })
+
+  it('按住键扫过入口格不开菜单（跨块选区 / 拖拽途中）', async () => {
+    const wrapper = mountBlock()
+    await flushPromises()
+
+    pointerEnter(wrapper.find('.block-entry-icon').element, 1)
+    await settle(ENTRY_OPEN_DELAY + 20)
+
+    expect(menuEl()).toBeNull()
+
+    wrapper.unmount()
+  })
+
+  it('拖拽进行中不弹菜单（锚点已被摘成 display:none）', async () => {
+    const wrapper = mountBlock()
+    await flushPromises()
+
+    blockDragActive.value = true
+    pointerEnter(wrapper.find('.block-entry-icon').element)
+    await settle(ENTRY_OPEN_DELAY + 20)
+
+    expect(menuEl()).toBeNull()
+
+    blockDragActive.value = false
     wrapper.unmount()
   })
 })
@@ -743,7 +933,7 @@ describe('块选区命中面：Ctrl/Cmd+Click 覆盖整块行非内容区', () =
 
   let blockStore: ReturnType<typeof useBlockStore>
   let pageStore: ReturnType<typeof usePageStore>
-  let propertyStore: ReturnType<typeof usePropertyStore>
+  let fieldValueStore: ReturnType<typeof useFieldValueStore>
   let selectionStub: {
     toggleBlock: ReturnType<typeof vi.fn>
     isBlockSelected: ReturnType<typeof vi.fn>
@@ -788,11 +978,11 @@ describe('块选区命中面：Ctrl/Cmd+Click 覆盖整块行非内容区', () =
     blockStore = useBlockStore()
     blockStore.blocks = [{
       id: BLOCK_ID, pageId: PAGE_ID, parentId: null, pos: 1000,
-      content: 'hello', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0
+      content: 'hello', format: {}, type: 'text', createdAt: 0, updatedAt: 0
     }]
     pageStore = usePageStore()
     Object.defineProperty(pageStore, 'currentPageId', { value: PAGE_ID, configurable: true })
-    propertyStore = usePropertyStore()
+    fieldValueStore = useFieldValueStore()
     selectionStub = {
       toggleBlock: vi.fn(),
       isBlockSelected: vi.fn(() => false),
@@ -850,20 +1040,24 @@ describe('块选区命中面：Ctrl/Cmd+Click 覆盖整块行非内容区', () =
     wrapper.unmount()
   })
 
-  it('Ctrl+Click 自交互元素（属性 chip）→ 不切换，保留 chip 自身语义', async () => {
+  it('Ctrl+Click 自交互元素（字段内联项）→ 不切换，保留其自身语义', async () => {
     const wrapper = mountBlock()
     await flushPromises()
-    // 挂载后再注入属性：loadBlockProperties 会整体替换 propertiesByBlock 的 Map，
+    // 挂载后再注入字段值：loadBlockFieldValues 会整体替换 fieldValuesByBlock 的 Map，
     // 挂载前 set 进去的条目会被丢掉
-    propertyStore.propertiesByBlock.set(BLOCK_ID, [{
-      id: 'prop-1', blockId: BLOCK_ID, key: 'foo', value: 'bar',
-      type: 'string' as const, sortOrder: 0, isHidden: false, isDeleted: false,
-      schemaVersion: 1, createdAt: 0, updatedAt: 0
+    fieldValueStore.fieldValuesByBlock.set(BLOCK_ID, [{
+      id: 'fv-1', block_id: BLOCK_ID, field_definition_id: 'fd-status', key: 'status', value_json: '"Doing"',
+      value_type: 'string', seq: 0, created_at: 0, updated_at: 0, version: 0, deleted_at: null
     }])
     await flushPromises()
-    const chip = wrapper.find('.property-item')
-    expect(chip.exists()).toBe(true)
-    await chip.trigger('mousedown', { ctrlKey: true })
+    // 锚点从行内属性 chip 改为字段内联项（.property-inline-item）：行内 chips 渲染位
+    // 已随 ADR-0050 D20 下线，而块内容区（.block-content）本身要接Ctrl+Click 切块、
+    // 不属自交互元素。验的是同一条不变量——落在 SELF_INTERACTIVE_SELECTOR 里的元素
+    // 上 Ctrl+Click 不得触发块切换（守卫见 index.vue）。用 status：它是
+    // between-bullet-content 内联槽渲染的字段，定义来自系统 seed，无需 RPC 即可取到。
+    const inline = wrapper.find('.property-inline-item')
+    expect(inline.exists()).toBe(true)
+    await inline.trigger('mousedown', { ctrlKey: true })
     expect(selectionStub.toggleBlock).not.toHaveBeenCalled()
     wrapper.unmount()
   })
@@ -875,6 +1069,428 @@ describe('块选区命中面：Ctrl/Cmd+Click 覆盖整块行非内容区', () =
     expect(childBody.exists()).toBe(true)
     await childBody.trigger('mousedown', { ctrlKey: true })
     expect(selectionStub.toggleBlock).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+})
+
+// ── chevron 显示条件（ADR-0045 折叠范围扩展：折叠范围 = 子树 + 字段带）──
+//
+// 守卫两路来源（canCollapse）必须与「折叠下去真的藏了行」同源：chevron 不是「挂了标签就有」，
+// 而是「有可渲染的字段行」。两者的共同依据是 useBlockFieldRows().fields.length。
+describe('collapse chevron 显示条件（有子块 / 仅字段 / 两者皆无）', () => {
+  const PAGE_ID = 'p1'
+  const BLOCK_ID = 'b1'
+
+  let blockStore: ReturnType<typeof useBlockStore>
+
+  const StubBlockDraggableList = defineComponent({
+    name: 'BlockDraggableList',
+    props: {
+      modelValue: { type: Array, default: () => [] },
+      pageId: { type: String, default: '' },
+      parentId: { type: String, default: '' },
+      depth: { type: Number, default: 0 }
+    },
+    setup(_, { expose }) {
+      expose({ getContainerEl: () => null })
+      return () => h('div', { class: 'block-children' })
+    }
+  })
+
+  function treeEntry(
+    over: Partial<PersistedTagTreeEntry> & { id: string; title: string },
+  ): PersistedTagTreeEntry {
+    return {
+      field_ids: [],
+      parent_id: null,
+      description: '',
+      color: '',
+      is_system: false,
+      created_at: 1,
+      updated_at: 1,
+      version: 0,
+      deleted_at: null,
+      effective_field_ids: [],
+      descendant_ids: [],
+      ...over,
+    }
+  }
+
+  function fieldDef(
+    over: Partial<PersistedFieldDefinition> & { id: string; title: string },
+  ): PersistedFieldDefinition {
+    return {
+      key: over.id,
+      type: 'string',
+      closed_values: null,
+      is_system: false,
+      created_at: 1,
+      updated_at: 1,
+      version: 0,
+      deleted_at: null,
+      default_value: null,
+      hide_when: 'never',
+      ...over,
+    }
+  }
+
+  function makeBlock(tags?: string[]): any {
+    return {
+      id: BLOCK_ID, pageId: PAGE_ID, parentId: null, pos: 0,
+      content: 'x', format: {}, type: 'text', tags, createdAt: 0, updatedAt: 0
+    }
+  }
+
+  function mountFor(block: any, children: TreeNode[] = []) {
+    return mount(Block, {
+      props: { node: { id: BLOCK_ID, block, children }, pageId: PAGE_ID, depth: 0 },
+      global: { stubs: { BulletRender: StubBulletRender, BlockDraggableList: StubBlockDraggableList } },
+    })
+  }
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    blockStore = useBlockStore()
+    // 标签树已加载：阻断 ensureLoaded 走 RPC，字段集合完全由本用例种子决定
+    useTagsStore().loaded = true
+  })
+
+  it('有子块（无字段）→ 显示 chevron', async () => {
+    const child = {
+      id: 'b2', pageId: PAGE_ID, parentId: BLOCK_ID, pos: 0,
+      content: '', format: {}, type: 'text', createdAt: 0, updatedAt: 0
+    }
+    const block = makeBlock()
+    blockStore.blocks = [block, child]
+    const wrapper = mountFor(block, [{ id: 'b2', block: child, children: [] }])
+    await flushPromises()
+    expect(wrapper.find('.bullet-chevron').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('折叠 + 有子块 → chevron 常亮（is-pinned）', async () => {
+    const child = {
+      id: 'b2', pageId: PAGE_ID, parentId: BLOCK_ID, pos: 0,
+      content: '', format: {}, type: 'text', createdAt: 0, updatedAt: 0
+    }
+    const block = makeBlock()
+    block.format = { collapsed: true }
+    blockStore.blocks = [block, child]
+    const wrapper = mountFor(block, [{ id: 'b2', block: child, children: [] }])
+    await flushPromises()
+    expect(wrapper.find('.bullet-chevron').classes()).toContain('is-pinned')
+    wrapper.unmount()
+  })
+
+  it('折叠但无子块（仅字段行）→ chevron 不常亮（折叠范围含字段，但箭头不暗示有子树）', async () => {
+    const tagsStore = useTagsStore()
+    tagsStore.entries = [treeEntry({ id: 't1', title: '标签', effective_field_ids: ['f1'] })]
+    tagsStore.fieldDefinitions = [fieldDef({ id: 'f1', key: 'note', title: '备注' })]
+    const block = makeBlock(['t1'])
+    block.format = { collapsed: true }
+    blockStore.blocks = [block]
+    const wrapper = mountFor(block)
+    await flushPromises()
+    expect(wrapper.find('.bullet-chevron').exists()).toBe(true)
+    expect(wrapper.find('.bullet-chevron').classes()).not.toContain('is-pinned')
+    wrapper.unmount()
+  })
+
+  it('有子块但未折叠 → chevron 不常亮（仍靠 hover 显现）', async () => {
+    const child = {
+      id: 'b2', pageId: PAGE_ID, parentId: BLOCK_ID, pos: 0,
+      content: '', format: {}, type: 'text', createdAt: 0, updatedAt: 0
+    }
+    const block = makeBlock()
+    blockStore.blocks = [block, child]
+    const wrapper = mountFor(block, [{ id: 'b2', block: child, children: [] }])
+    await flushPromises()
+    expect(wrapper.find('.bullet-chevron').classes()).not.toContain('is-pinned')
+    wrapper.unmount()
+  })
+
+  it('仅字段（0 子块 + 有可渲染字段行）→ 显示 chevron', async () => {
+    const tagsStore = useTagsStore()
+    tagsStore.entries = [treeEntry({ id: 't1', title: '标签', effective_field_ids: ['f1'] })]
+    tagsStore.fieldDefinitions = [fieldDef({ id: 'f1', key: 'note', title: '备注' })]
+    const block = makeBlock(['t1'])
+    blockStore.blocks = [block]
+    const wrapper = mountFor(block)
+    await flushPromises()
+    expect(wrapper.find('.bullet-chevron').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('既无子块又无字段行 → 不显示 chevron（不让 UI 撒谎）', async () => {
+    const block = makeBlock()
+    blockStore.blocks = [block]
+    const wrapper = mountFor(block)
+    await flushPromises()
+    expect(wrapper.find('.bullet-chevron').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('挂了标签但字段全被 hide_when 拦掉 → 0 可渲染行 ⇒ 不显示 chevron（守卫与渲染同源）', async () => {
+    const tagsStore = useTagsStore()
+    tagsStore.entries = [treeEntry({ id: 't1', title: '标签', effective_field_ids: ['f1'] })]
+    tagsStore.fieldDefinitions = [fieldDef({ id: 'f1', key: 'note', title: '备注', hide_when: 'always' })]
+    const block = makeBlock(['t1'])
+    blockStore.blocks = [block]
+    const wrapper = mountFor(block)
+    await flushPromises()
+    expect(wrapper.find('.bullet-chevron').exists()).toBe(false)
+    // 同源对照：字段区也不出空容器
+    expect(wrapper.find('.block-field-zone').exists()).toBe(false)
+    wrapper.unmount()
+  })
+})
+
+describe('入口胶囊字形：文本块标题级别', () => {
+  function mountContent(content: string) {
+    const blockStore = useBlockStore()
+    blockStore.blocks = [
+      { id: 'b1', pageId: 'p1', parentId: null, pos: 0, content, format: {}, type: 'text', createdAt: 0, updatedAt: 0 },
+    ]
+    const node: TreeNode = { id: 'b1', block: blockStore.blocks[0], children: [] }
+    return mount(Block, {
+      props: { node, pageId: 'p1', depth: 0 },
+      global: { stubs: { BulletRender: StubBulletRender, VueDraggable: StubVueDraggable } },
+    })
+  }
+
+  it.each([
+    ['# 一级标题', 'lucide-heading-1'],
+    ['## 二级标题', 'lucide-heading-2'],
+    ['### 三级标题', 'lucide-heading-3'],
+    ['- 无序项', 'lucide-list'],
+    ['1. 有序项', 'lucide-list-ordered'],
+    ['普通文本', 'lucide-type'],
+  ])('内容「%s」→ 胶囊字形 %s', async (content, iconClass) => {
+    const wrapper = mountContent(content)
+    await flushPromises()
+    expect(wrapper.find('.block-entry-icon svg').classes()).toContain(iconClass)
+    wrapper.unmount()
+  })
+})
+
+describe('入口菜单：文本样式行（普通文本 / H1–H3 / 有序 / 无序 / 高亮）', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    document.body.querySelectorAll('.block-entry-menu').forEach((n) => n.remove())
+    document.body.querySelectorAll('.callout-tone-row').forEach((n) => n.remove())
+  })
+
+  function mountBlock(
+    content: string,
+    type: 'text' | 'image' = 'text',
+    format: Record<string, unknown> = {},
+  ) {
+    const blockStore = useBlockStore()
+    blockStore.blocks = [
+      { id: 'b1', pageId: 'p1', parentId: null, pos: 0, content, format, type, createdAt: 0, updatedAt: 0 },
+    ]
+    const node: TreeNode = { id: 'b1', block: blockStore.blocks[0], children: [] }
+    return mount(Block, {
+      props: { node, pageId: 'p1', depth: 0 },
+      global: { stubs: { BulletRender: StubBulletRender, VueDraggable: StubVueDraggable } },
+    })
+  }
+
+  async function openMenu(
+    content: string,
+    type: 'text' | 'image' = 'text',
+    format: Record<string, unknown> = {},
+  ) {
+    const wrapper = mountBlock(content, type, format)
+    await flushPromises()
+    await wrapper.find('.block-entry-icon').trigger('click')
+    await flushPromises()
+    return wrapper
+  }
+
+  function styleButtons(): HTMLElement[] {
+    return Array.from(document.body.querySelectorAll<HTMLElement>('[data-text-style]'))
+  }
+
+  it('文本块菜单顶部是 7 格样式行，当前样式高亮', async () => {
+    const wrapper = await openMenu('## 二级标题')
+    const buttons = styleButtons()
+    expect(buttons.map((b) => b.dataset.textStyle)).toEqual(['text', 'h1', 'h2', 'h3', 'ol', 'ul', 'callout'])
+    expect(buttons[2].classList.contains('is-active')).toBe(true)
+    expect(buttons[0].classList.contains('is-active')).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('h4–h6 不点亮任何一格（不假装是其中一级）', async () => {
+    const wrapper = await openMenu('#### 四级标题')
+    expect(styleButtons().some((b) => b.classList.contains('is-active'))).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('有序列表项点亮「有序列表」格', async () => {
+    const wrapper = await openMenu('3. 第三项')
+    const active = styleButtons().filter((b) => b.classList.contains('is-active'))
+    expect(active.map((b) => b.dataset.textStyle)).toEqual(['ol'])
+    wrapper.unmount()
+  })
+
+  it('点 H1：正文补上 `# ` 前缀', async () => {
+    const blockStore = useBlockStore()
+    const wrapper = await openMenu('标题')
+    styleButtons()[1].click()
+    await flushPromises()
+    expect(blockStore.blocks[0].content).toBe('# 标题')
+    wrapper.unmount()
+  })
+
+  it('点「无序列表」：正文换成 `- ` 前缀', async () => {
+    const blockStore = useBlockStore()
+    const wrapper = await openMenu('条目')
+    styleButtons()[5].click()
+    await flushPromises()
+    expect(blockStore.blocks[0].content).toBe('- 条目')
+    wrapper.unmount()
+  })
+
+  it('点「有序列表」：从 `1. ` 起编号', async () => {
+    const blockStore = useBlockStore()
+    const wrapper = await openMenu('### 标题')
+    styleButtons()[4].click()
+    await flushPromises()
+    // 标题前缀整体换掉，不叠加
+    expect(blockStore.blocks[0].content).toBe('1. 标题')
+    wrapper.unmount()
+  })
+
+  it('列表项切回普通文本：去掉标记', async () => {
+    const blockStore = useBlockStore()
+    const wrapper = await openMenu('- 条目')
+    styleButtons()[0].click()
+    await flushPromises()
+    expect(blockStore.blocks[0].content).toBe('条目')
+    wrapper.unmount()
+  })
+
+  it('点「普通文本」：去掉标题前缀', async () => {
+    const blockStore = useBlockStore()
+    const wrapper = await openMenu('### 标题')
+    styleButtons()[0].click()
+    await flushPromises()
+    expect(blockStore.blocks[0].content).toBe('标题')
+    wrapper.unmount()
+  })
+
+  it('点「高亮」：落 format.callout 默认注意色，正文一个字不动', async () => {
+    const blockStore = useBlockStore()
+    const wrapper = await openMenu('重点段落')
+    styleButtons()[6].click()
+    await flushPromises()
+    expect(blockStore.blocks[0].format.callout).toBe('warn')
+    expect(blockStore.blocks[0].content).toBe('重点段落')
+    wrapper.unmount()
+  })
+
+  it('标题上点「高亮」：前缀同时降为正文（互斥一步到位）', async () => {
+    const blockStore = useBlockStore()
+    const wrapper = await openMenu('## 二级标题')
+    styleButtons()[6].click()
+    await flushPromises()
+    expect(blockStore.blocks[0].content).toBe('二级标题')
+    expect(blockStore.blocks[0].format.callout).toBe('warn')
+    wrapper.unmount()
+  })
+
+  it('高亮块再点「高亮」：取消（同一格即开关）', async () => {
+    const blockStore = useBlockStore()
+    const wrapper = await openMenu('重点', 'text', { callout: 'warn' })
+    styleButtons()[6].click()
+    await flushPromises()
+    expect(blockStore.blocks[0].format.callout).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('高亮块点「普通文本」：高亮一并清掉', async () => {
+    const blockStore = useBlockStore()
+    const wrapper = await openMenu('重点', 'text', { callout: 'danger' })
+    styleButtons()[0].click()
+    await flushPromises()
+    expect(blockStore.blocks[0].format.callout).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('高亮块渲染出语义壳与可点的语义图标', async () => {
+    const wrapper = await openMenu('重点', 'text', { callout: 'danger' })
+    expect(wrapper.find('.block-content').classes()).toContain('is-callout-danger')
+    expect(wrapper.find('.callout-tone-btn').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('无高亮的块不出现语义图标', async () => {
+    const wrapper = await openMenu('普通段落')
+    expect(wrapper.find('.callout-tone-btn').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('点语义图标：浮层给出四种语义，选「完成」即切换', async () => {
+    const blockStore = useBlockStore()
+    const wrapper = await openMenu('重点', 'text', { callout: 'warn' })
+    await wrapper.find('.callout-tone-btn').trigger('click')
+    await flushPromises()
+    const items = Array.from(document.body.querySelectorAll<HTMLElement>('.callout-tone-item'))
+    expect(items.map((item) => item.getAttribute('aria-label'))).toEqual(['提示', '注意', '完成', '禁止'])
+    items[2].click()
+    await flushPromises()
+    expect(blockStore.blocks[0].format.callout).toBe('success')
+    wrapper.unmount()
+  })
+
+  it('改级别只换前缀、不重复叠加，且不丢行内格式', async () => {
+    const blockStore = useBlockStore()
+    const wrapper = await openMenu('# 标题')
+    // 模拟正文第二字起加粗（marks 坐标相对完整 content，含 `# ` 前缀）
+    blockStore.blocks[0].format = { inlineMarks: [{ start: 2, end: 4, bold: true }] }
+    styleButtons()[3].click()
+    await flushPromises()
+    expect(blockStore.blocks[0].content).toBe('### 标题')
+    // 前缀长 2 → 4（delta +2）：marks 跟着平移，断言值不丢
+    expect(blockStore.blocks[0].format.inlineMarks).toEqual([{ start: 4, end: 6, bold: true }])
+    wrapper.unmount()
+  })
+
+  it('点当前级别是无操作（不留空动作）', async () => {
+    const blockStore = useBlockStore()
+    const wrapper = await openMenu('## 标题')
+    styleButtons()[2].click()
+    await flushPromises()
+    expect(blockStore.blocks[0].content).toBe('## 标题')
+    wrapper.unmount()
+  })
+
+  it('内容只有 `# `（标题还没打字）时点 H2：整段换前缀，不拼成 `## # `', async () => {
+    const blockStore = useBlockStore()
+    const wrapper = await openMenu('# ')
+    styleButtons()[2].click()
+    await flushPromises()
+    expect(blockStore.blocks[0].content).toBe('## ')
+    wrapper.unmount()
+  })
+
+  it('点已是「有序列表」的格不重置序号', async () => {
+    const blockStore = useBlockStore()
+    const wrapper = await openMenu('3. 第三项')
+    styleButtons()[4].click()
+    await flushPromises()
+    // 只比 `next === current` 会把「点自己那一格」判成变更、把 3. 打回 1.
+    expect(blockStore.blocks[0].content).toBe('3. 第三项')
+    wrapper.unmount()
+  })
+
+  it('非文本块不出现样式行', async () => {
+    const wrapper = await openMenu('', 'image')
+    expect(document.body.querySelector('.block-entry-menu')).toBeTruthy()
+    expect(styleButtons()).toHaveLength(0)
     wrapper.unmount()
   })
 })

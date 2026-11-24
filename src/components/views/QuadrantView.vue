@@ -1,25 +1,31 @@
 <script setup lang="ts" generic="T">
-import { computed, nextTick, ref } from 'vue'
-import type { QuadrantConfig } from '../../core/view'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+
+import type { Registry, SortRule } from '../../core/query'
 import { sortItems } from '../../core/query'
-import type { SortRule, Registry } from '../../core/query'
+import type { QuadrantConfig } from '../../core/view'
 import type { BlockCard } from '../../wasm/types'
-import { resolveRelativeExpr } from '../../utils/date-parser'
 import BulletRender from '../Block/handlers/bullet/BulletRender.vue'
 import Icon from '../Icons/Icon.vue'
+import PriorityQuadrant from '../Icons/PriorityIcons/PriorityQuadrant.vue'
 
 /**
  * 任务四象限视图（艾森豪威尔矩阵）。
- * 卡片按 priority 四值落格，行=重要/不重要（上→下）、列=不紧急/不紧急（左→右）：
+ * 卡片按 priority 四值落格。**轴向：列 = 紧急（左→右递增）、行 = 重要（上→下递增）**
+ * —— 与块行象限网格图标（`Icons/PriorityIcons/PriorityQuadrant.vue`）同一套读法，
+ * 同一字段禁止两种轴向：
  *   左上 Medium  重要不紧急 → 计划做
  *   右上 Urgent  重要且紧急 → 立即做
  *   左下 Low     不重要不紧急 → 减少
  *   右下 High    不重要但紧急 → 委托
- * 拖拽卡片到另一象限即改写其 priority（复用消费方 onCellChange → propertyStore.setProperty）。
+ * 视觉形态：**统一矩阵** —— 四象限共用一个带边框容器，内部以十字分隔线切格；
+ * 四色语义只落在象限头部的象限图标上，其余界面保持中性色。
+ * 任务项为无框列表行（分隔线切行），行内层级：标题 → 标签 → 辅助信息（截止日）。
+ * 拖拽卡片到另一象限即改写其 priority（复用消费方 onCellChange → fieldValueStore.setFieldValue）。
  * 系统默认筛选（组件内置，无需 tab 存储 query）：含 priority 且 status 命中——
  * status 是 Todo / 是 Doing /（是 Done 且 updatedAt 在昨天及之后）；无 priority 或久前完成的 Done 不显示。
  * 系统默认排序：status asc → updatedAt desc；工具栏设了排序规则时按规则（复用引擎 sortItems）。
- * 组件零业务耦合：只消费 items（泛型）与 BlockCard 形状，事件经 cell-change / navigate 上抛。
+ * 组件消费 items（泛型）与 BlockCard 形状，事件经 cell-change / navigate 上抛；
  */
 const props = defineProps<{
   /** 已过滤+排序的扁平列表（与看板/表格共用）；组件内按 status/priority 二次分拣。 */
@@ -81,11 +87,16 @@ function resolveUpdatedAtString(item: T): string | undefined {
   if (ts == null) return undefined
   const dt = new Date(ts)
   if (Number.isNaN(dt.getTime())) return undefined
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:${pad(dt.getMinutes())}:${pad(dt.getSeconds())}`
+  return toLocalDatetimeString(dt)
 }
 
-/** 落格资格：含 priority 且 status 命中系统默认筛选（含「Done 须昨日后」）。 */
+/** 本地 datetime 串（YYYY-MM-DDTHH:mm:ss），与注册表 updatedAt getter（toLocalDatetime）同构，可字典序比较。 */
+function toLocalDatetimeString(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+}
+
+/** 落格资格：含 priority 且 status ∈ Todo/Doing/近 24h Done（2026-10-13 口径修订：Done 完成后 24 小时内可见）。 */
 function qualifies(item: T): boolean {
   const card = asCard(item)
   const pr = card.properties?.['priority']
@@ -95,10 +106,11 @@ function qualifies(item: T): boolean {
   const s = String(st)
   if (s === 'Todo' || s === 'Doing') return true
   if (s === 'Done') {
-    // 镜像引擎 op:'after' + relativeDate('yesterday')：updatedAt > 昨日日期串（含昨日起更新）
+    // updatedAt > 当前时刻减 24h：滚动窗口，非自然日（status 置 Done 即写 updated_at，近似「完成时刻」）。
     const updated = resolveUpdatedAtString(item)
-    const y = resolveRelativeExpr('yesterday') ?? ''
-    return updated != null && String(updated) > String(y)
+    if (updated == null) return false
+    const cutoff = toLocalDatetimeString(new Date(Date.now() - 24 * 60 * 60 * 1000))
+    return updated > cutoff
   }
   return false
 }
@@ -128,17 +140,32 @@ const visibleItems = computed<T[]>(() =>
 interface Quadrant {
   priority: string
   title: string
+  /** 行动词：象限的核心产品概念，以轻 Badge 形态呈现（与描述分离）。 */
   action: string
-  /** 主题色（用于象限背景柔染与顶边强调），5xx 级别，明暗主题均可读。 */
+  /** 行动描述：Badge 下的补充说明（次级信息，纯文本弱化）。 */
+  desc: string
+  /** 主题色（仅用于象限头部图标），5xx 级别，明暗主题均可读。 */
   tint: string
+  /** 象限图标点亮格（与屏幕格位一致，见 PriorityQuadrant）。 */
+  cell: 'tl' | 'tr' | 'bl' | 'br'
 }
 // tint 取项目内置优先级配色（useBlockQueryRegistry 的 PRIORITY_COLORS），
-// 与表格/看板中优先级圆点、block 背景染色同色系，保证视觉一致（内联以零业务耦合）。
+// 与表格/看板圆点、块行象限网格图标共用同一组 --priority-*-fg，保证跨视图同档同色。
+// 色板按档位固定，不随象限轴向变动 —— 轴向只决定图标点亮哪一格。
+// **数组顺序即屏幕位置**：`grid-template-columns: 1fr 1fr` + 先横后纵展开为
+// 数组第1 项 → 左上、第 2 项 → 右上、第 3 项 → 左下、第 4 项 → 右下。
+// 轴向：列 = 紧急（左→右递增）、行 = 重要（上→下递增），与块行象限网格图标
+// （Icons/PriorityIcons/PriorityQuadrant.vue）同一套读法。
+//   左上 Medium 重要不紧急（重要 + 不紧急）
+//   右上 Urgent 重要且紧急（重要 + 紧急）
+//   左下 Low    不重要不紧急（不重要 + 不紧急）
+//   右下 High   不重要但紧急（不重要 + 紧急）
+// ⚠️ 改此顺序必须同步块行图标的 PRIORITY_QUADRANT，否则两处格位会相反。
 const QUADRANTS: Quadrant[] = [
-  { priority: 'Medium', title: '重要不紧急', action: '计划做', tint: '#3B82F6' },
-  { priority: 'Urgent', title: '重要且紧急', action: '立即做', tint: '#DC2626' },
-  { priority: 'Low', title: '不重要不紧急', action: '减少', tint: '#9CA3AF' },
-  { priority: 'High', title: '不重要但紧急', action: '委托', tint: '#F59E0B' },
+  { priority: 'Medium', title: '重要不紧急', action: '计划做', desc: '长期规划，持续投入', tint: 'var(--priority-medium-fg)', cell: 'tl' },
+  { priority: 'Urgent', title: '重要且紧急', action: '立即做', desc: '立即处理，避免延误', tint: 'var(--priority-urgent-fg)', cell: 'tr' },
+  { priority: 'Low', title: '不重要不紧急', action: '减少', desc: '适当放下，聚焦核心', tint: 'var(--priority-low-fg)', cell: 'bl' },
+  { priority: 'High', title: '不重要但紧急', action: '委托', desc: '授权他人，提高效率', tint: 'var(--priority-high-fg)', cell: 'br' },
 ]
 const QUADRANT_KEYS = QUADRANTS.map((q) => q.priority)
 
@@ -146,6 +173,7 @@ function priorityOf(item: T): string | undefined {
   const v = asCard(item).properties?.['priority']
   return v == null || v === '' ? undefined : String(v)
 }
+
 
 /** 截止日（与注册表 deadline getter 同义：deadline kind 优先，回退 schedule）。 */
 function cardDeadline(item: T): string | undefined {
@@ -179,6 +207,17 @@ function statusKey(item: T): string {
   return 'status-' + s.toLowerCase()
 }
 
+// ── 状态图标交互：点击循环切换（与表格 status 角色列 / PropertyInline 的 Todo→Doing→Done→Todo 一致）──
+const STATUS_CYCLE = ['Todo', 'Doing', 'Done'] as const
+
+/** 点击状态图标：循环到下一状态，经 cellChange 上抛（消费方按 key='status' 落库并刷新）。 */
+function cycleStatus(item: T) {
+  const cur = String(asCard(item).properties?.['status'] ?? '')
+  const idx = (STATUS_CYCLE as readonly string[]).indexOf(cur)
+  const next = idx === -1 ? STATUS_CYCLE[0] : STATUS_CYCLE[(idx + 1) % STATUS_CYCLE.length]
+  emit('cellChange', idOf(item), 'status', next)
+}
+
 // 象限内排序：工具栏设了排序规则则按规则（复用引擎 sortItems，与表格/看板一致）；
 // 否则回落「系统默认排序」status asc → updatedAt desc（沿用「重要紧急视图」默认规则）。
 // 两套路径都基于已分桶结果独立排序。
@@ -206,8 +245,11 @@ function sortWithRules(list: T[], rules: SortRule[]): T[] {
   return rules === DEFAULT_QUADRANT_SORT ? sortByDefault(list) : sortByCreatedAt(list)
 }
 
-// 预先分桶（单次遍历 + 每桶排序），避免模板内重复计算
-const buckets = computed<Record<string, T[]>>(() => {
+// 规范分桶（实时）：visibility 过滤 + 按 priority 分桶 + 按规则排序。
+// 仅用于「挂载时拍快照」与「新进入卡片的落位顺序」，渲染层不直接用它驱动顺序。
+// 注：状态变更（cycleStatus）会刷新 updated_at 并以 status 为主键重排，导致卡片在同
+// 象限内跳位 —— 见下方冻结逻辑（2026-10-13 诉求：矩阵内改状态不立即重排）。
+const canonicalBuckets = computed<Record<string, T[]>>(() => {
   const map: Record<string, T[]> = { Medium: [], Urgent: [], Low: [], High: [] }
   for (const i of visibleItems.value) {
     const p = priorityOf(i)
@@ -220,6 +262,86 @@ const buckets = computed<Record<string, T[]>>(() => {
   }
   return map
 })
+
+// ── 状态变更冻结排序（2026-10-13 诉求）──
+// 矩阵视图内改任务状态：卡片原地不动、不立即重排；切走其他视图/页面再切回（组件卸载重挂）
+// 时按最新数据自然重排。实现：挂载时拍「各象限 id 顺序」快照；渲染以此快照为基准——
+// 当前可见且曾在快照中的卡保持原序，新进入矩阵的卡（如旧 Done 循环回 Todo）按规范序追加到末尾。
+// visibility（qualifies / 父子嵌套）仍实时，故「该进/该出矩阵的卡」立即生效，仅象限内重排被冻结。
+// 工具栏排序规则变更时也重拍快照，使「用户主动改排序」立即生效；普通数据刷新/搜索不重拍，保证停留稳定。
+const frozenOrder = ref<Record<string, string[]>>({ Medium: [], Urgent: [], Low: [], High: [] })
+
+function snapshotOrder() {
+  const snap: Record<string, string[]> = { Medium: [], Urgent: [], Low: [], High: [] }
+  for (const k of QUADRANT_KEYS) snap[k] = canonicalBuckets.value[k].map(idOf)
+  frozenOrder.value = snap
+}
+
+onMounted(snapshotOrder)
+// 排序规则变更 → 重拍快照（用户主动改排序立即生效）；状态/数据变更不触发，保持冻结
+watch(
+  () => props.sort,
+  () => snapshotOrder(),
+  { deep: true },
+)
+
+// 渲染分桶：冻结顺序 = 快照原序（仅保留当前可见） + 新进入卡按规范序追加。
+// 这是模板实际消费的桶，替代原 canonicalBuckets 直接渲染。
+const renderBuckets = computed<Record<string, T[]>>(() => {
+  const out: Record<string, T[]> = { Medium: [], Urgent: [], Low: [], High: [] }
+  for (const k of QUADRANT_KEYS) {
+    const frozen = frozenOrder.value[k]
+    const live = canonicalBuckets.value[k]
+    const liveIds = new Set(live.map(idOf))
+    const result: T[] = []
+    // 1. 快照中仍可见的卡：保持原序（冻结重排的核心）
+    for (const id of frozen) {
+      if (!liveIds.has(id)) continue
+      const it = itemById.value.get(id)
+      if (it) result.push(it)
+    }
+    // 2. 新进入矩阵的卡（不在快照中）：按规范序追加到末尾（含新增任务 / 重新达标卡）
+    for (const it of live) {
+      if (!frozen.includes(idOf(it))) result.push(it)
+    }
+    out[k] = result
+  }
+  return out
+})
+
+// ── 新增任务的插入动效 ──
+// 新增链路是「上抛 addItem → 消费方建块 → refresh 回流 props.items」，组件拿不到新 block id，
+// 故用「基线差集」识别新出现的顶层卡片：仅当本视图刚上抛过新增（pendingAdd）时才标记入场态，
+// 首屏加载 / 切换查询出现的卡片只更新基线不动画。入场标记在动画结束后清除（仅播放一次）。
+const ENTER_ANIM_MS = 300
+let pendingAdd = false
+let enterTimer: ReturnType<typeof setTimeout> | null = null
+const knownTopIds = new Set<string>()
+const enteringIds = ref<string[]>([])
+
+const topLevelIds = computed(() => QUADRANT_KEYS.flatMap((k) => renderBuckets.value[k].map((i) => idOf(i))))
+
+watch(
+  topLevelIds,
+  (ids) => {
+    const fresh = ids.filter((id) => !knownTopIds.has(id))
+    for (const id of ids) knownTopIds.add(id)
+    if (!pendingAdd || fresh.length === 0) return
+    pendingAdd = false
+    if (enterTimer !== null) clearTimeout(enterTimer)
+    enteringIds.value = fresh
+    enterTimer = setTimeout(() => {
+      enteringIds.value = []
+      enterTimer = null
+    }, ENTER_ANIM_MS)
+  },
+  { immediate: true },
+)
+
+onUnmounted(() => {
+  if (enterTimer !== null) clearTimeout(enterTimer)
+})
+
 // ── 子任务树（最多 3 层：卡片 1 层 → 子任务 2 层 → 孙任务 3 层）──
 // 数据源为扁平 BlockCard（含 parent_id）；子任务 = 活跃任务且其父级同为活跃任务。
 // 子任务不要求 priority（不落格），仅在父卡片内嵌套展示；有 priority 的子任务不再重复落格。
@@ -301,6 +423,7 @@ async function commitAdd() {
   const priority = addingFor.value
   const title = addDraft.value.trim()
   if (!priority || !title) return
+  pendingAdd = true // 置位待回流标记：新卡片回流时播放插入动效
   emit('addItem', priority, title)
   addDraft.value = '' // 连续录入：保留输入行
 }
@@ -424,16 +547,8 @@ function onCardClick(item: T) {
 
 <template>
   <div class="quadrant-view">
-    <div
-      class="q-axis q-axis-y"
-      aria-hidden="true"
-    >
-      <span class="q-axis-label">重要</span>
-      <span class="q-axis-line" />
-      <span class="q-axis-label">不重要</span>
-    </div>
-
-    <div class="q-grid">
+    <!-- 统一矩阵：一个带边框容器，内部十字分隔线切出四格（无外露轴线） -->
+    <div class="q-matrix">
       <section
         v-for="q in QUADRANTS"
         :key="q.priority"
@@ -443,36 +558,50 @@ function onCardClick(item: T) {
         :data-priority="q.priority"
       >
         <header class="q-head">
-          <span class="q-title">{{ q.title }}</span>
-          <span class="q-action">{{ q.action }}</span>
-          <span class="q-count">{{ buckets[q.priority].length }}</span>
-          <button
-            type="button"
-            class="q-add-head"
-            :class="{ active: addingFor === q.priority }"
-            @click="startAdd(q.priority)"
-          >
-            <svg
-              class="q-add-plus"
-              width="14"
-              height="14"
-              viewBox="0 0 14 14"
-              fill="none"
-            ><path
-              d="M7 2.5V11.5M2.5 7H11.5"
-              stroke="currentColor"
-              stroke-width="1.6"
-              stroke-linecap="round"
-            /></svg>
-            <span>新建任务</span>
-          </button>
+          <div class="q-head-row">
+            <PriorityQuadrant
+              class="q-head-icon"
+              :quadrant="q.cell"
+              :size="14"
+              :stroke-width="2"
+              :color="q.tint"
+            />
+            <span class="q-title">{{ q.title }}</span>
+            <span class="q-action">{{ q.action }}</span>
+            <span class="q-count">{{ renderBuckets[q.priority].length }}</span>
+            <button
+              type="button"
+              class="q-add-head"
+              :class="{ active: addingFor === q.priority }"
+              title="新建任务"
+              @click="startAdd(q.priority)"
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 14 14"
+                fill="none"
+              ><path
+                d="M7 2.5V11.5M2.5 7H11.5"
+                stroke="currentColor"
+                stroke-width="1.6"
+                stroke-linecap="round"
+              /></svg>
+            </button>
+          </div>
+          <div class="q-desc">
+            {{ q.desc }}
+          </div>
         </header>
         <div class="q-cards">
           <div
             v-if="addingFor === q.priority"
             class="q-add-box"
           >
-            <Icon name="status-todo" />
+            <Icon
+              name="status-todo"
+              :size="24"
+            />
             <input
               :ref="setAddInputRef"
               v-model="addDraft"
@@ -490,18 +619,28 @@ function onCardClick(item: T) {
             回车添加 · Esc 收起 · 可连续录入
           </div>
           <article
-            v-for="card in buckets[q.priority]"
+            v-for="card in renderBuckets[q.priority]"
             :key="idOf(card)"
             class="q-card"
-            :class="{ dragging: dragId === idOf(card), done: isDone(card) }"
+            :class="{ dragging: dragId === idOf(card), done: isDone(card), enter: enteringIds.includes(idOf(card)) }"
             @pointerdown="onPointerDown(card, $event)"
             @click="onCardClick(card)"
           >
             <div class="q-card-main">
-              <Icon
-                class="q-status"
-                :name="statusKey(card)"
-              />
+              <button
+                type="button"
+                class="q-status-btn"
+                title="切换状态"
+                aria-label="切换状态"
+                @pointerdown.stop
+                @click.stop="cycleStatus(card)"
+              >
+                <Icon
+                  class="q-status"
+                  :name="statusKey(card)"
+                  :size="24"
+                />
+              </button>
               <BulletRender
                 class="q-content"
                 :content="asCard(card).content_preview || idOf(card)"
@@ -526,10 +665,20 @@ function onCardClick(item: T) {
                 @pointerdown.stop
                 @click.stop="onOpenSub(node.item)"
               >
-                <Icon
-                  class="q-status"
-                  :name="statusKey(node.item)"
-                />
+                <button
+                  type="button"
+                  class="q-status-btn"
+                  title="切换状态"
+                  aria-label="切换状态"
+                  @pointerdown.stop
+                  @click.stop="cycleStatus(node.item)"
+                >
+                  <Icon
+                    class="q-status"
+                    :name="statusKey(node.item)"
+                    :size="24"
+                  />
+                </button>
                 <BulletRender
                   class="q-content"
                   :content="asCard(node.item).content_preview || idOf(node.item)"
@@ -543,17 +692,45 @@ function onCardClick(item: T) {
               </div>
             </div>
           </article>
+          <!-- 空态：主角按钮引导新增，兼顾拖拽落格提示 -->
+          <div
+            v-if="!renderBuckets[q.priority].length && addingFor !== q.priority"
+            class="q-empty"
+          >
+            <svg
+              class="q-empty-icon"
+              width="22"
+              height="22"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            ><path d="M22 12h-6l-2 3h-4l-2-3H2" /><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" /></svg>
+            <span class="q-empty-title">暂无任务</span>
+            <span class="q-empty-hint">拖拽任务到此处，或</span>
+            <button
+              type="button"
+              class="q-empty-add"
+              @click="startAdd(q.priority)"
+            >
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 14 14"
+                fill="none"
+              ><path
+                d="M7 2.5V11.5M2.5 7H11.5"
+                stroke="currentColor"
+                stroke-width="1.6"
+                stroke-linecap="round"
+              /></svg>
+              <span>新建任务</span>
+            </button>
+          </div>
         </div>
       </section>
-    </div>
-
-    <div
-      class="q-axis q-axis-x"
-      aria-hidden="true"
-    >
-      <span class="q-axis-label">不紧急</span>
-      <span class="q-axis-line" />
-      <span class="q-axis-label">紧急</span>
     </div>
 
     <!-- 拖拽 ghost：跟随指针的悬浮卡片，给 Pointer Events 拖拽一个可见载体 -->
@@ -565,6 +742,7 @@ function onCardClick(item: T) {
       <Icon
         class="q-status"
         :name="ghost.status"
+        :size="15"
       />
       <BulletRender
         class="q-content"
@@ -577,188 +755,158 @@ function onCardClick(item: T) {
 
 <style lang="scss" scoped>
 .quadrant-view {
-  display: grid;
-  grid-template-columns: 22px 1fr;
-  grid-template-rows: 1fr 22px;
-  gap: 8px;
   height: 100%;
   padding: 4px;
   background: var(--bg-base);
 }
 
-/* 显式坐标轴：Y=重要/不重要（上→下），X=不紧急/紧急（左→右） */
-.q-axis {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--text-tertiary);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-}
-
-.q-axis-y {
-  grid-column: 1;
-  grid-row: 1;
-  flex-direction: column;
-  padding: 4px 0;
-}
-
-.q-axis-y .q-axis-line {
-  flex: 1;
-  width: 1px;
-  background: var(--border);
-}
-
-.q-axis-x {
-  grid-column: 2;
-  grid-row: 2;
-  padding: 0 4px;
-}
-
-.q-axis-x .q-axis-line {
-  flex: 1;
-  height: 1px;
-  background: var(--border);
-}
-
-/* 2×2 网格：行=重要/不重要（上→下），列=不紧急/紧急（左→右） */
-.q-grid {
-  grid-column: 2;
-  grid-row: 1;
+/* 统一矩阵容器：一格边框包住四象限，内部以 1px 十字分隔线切格。
+   格子内容顺序由 QUADRANTS 数组决定（先横后纵），故数组须与上方注释的格位一致。 */
+.q-matrix {
+  height: 100%;
   min-height: 0;
   display: grid;
   grid-template-columns: 1fr 1fr;
   grid-template-rows: 1fr 1fr;
-  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 10px);
+  background: var(--bg-base);
+  overflow: hidden;
 }
 
 .q-cell {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md, 10px);
+  min-width: 0;
   background: var(--bg-base);
-  overflow: hidden;
-  transition: box-shadow 120ms ease, background 120ms ease;
+  transition: background var(--dur-fast) var(--ease-out);
 }
 
-/* 四象限柔染背景 + 同色顶边强调；改用 rgba 叠色（不依赖 color-mix），
-   明暗主题通用、跨 webview 稳定。tint 已烘焙为带透明度实色，盖在主题底色上。 */
-.q-quadrant {
-  border-top: 4px solid var(--q-tint);
-
-  .q-action {
-    color: var(--q-tint);
-    background: rgba(59, 130, 246, 0.16); // 默认 Medium 蓝，下方按象限覆盖
-  }
-
-  .q-count {
-    color: var(--q-tint);
-    background: rgba(59, 130, 246, 0.12);
-  }
+/* 内部十字分隔线：左列格带右边线、下行格带上边线。
+   外框已取消轴线，十字线承担矩阵结构主责，强度须 > 外框（var(--border) ≈ 7% 白）。
+   text-primary 18% 混合（暗色 ≈ #3A3A3E）：10% 与外框仅差 7/255 不可辨，
+   实测拉到 18% 才有明确的「内 > 外」层级。 */
+.q-cell:nth-child(odd) {
+  border-right: 1px solid color-mix(in srgb, var(--text-primary) 18%, transparent);
 }
 
-/* 优先级视觉梯度：立即做(Urgent) 最突出，减少(Low) 最弱 */
-.q-quadrant[data-priority='Medium'] {
-  background:
-    linear-gradient(rgba(59, 130, 246, 0.11), rgba(59, 130, 246, 0.11)),
-    var(--bg-base);
-  .q-head { background: linear-gradient(rgba(59, 130, 246, 0.15), rgba(59, 130, 246, 0.15)), var(--bg-base2); }
-}
-.q-quadrant[data-priority='Urgent'] {
-  background:
-    linear-gradient(rgba(220, 38, 38, 0.16), rgba(220, 38, 38, 0.16)),
-    var(--bg-base);
-  box-shadow: inset 0 1px 0 rgba(220, 38, 38, 0.35);
-  .q-head { background: linear-gradient(rgba(220, 38, 38, 0.22), rgba(220, 38, 38, 0.22)), var(--bg-base2); }
-  .q-action { background: rgba(220, 38, 38, 0.22); }
-  .q-count { background: rgba(220, 38, 38, 0.14); }
-}
-.q-quadrant[data-priority='High'] {
-  background:
-    linear-gradient(rgba(245, 158, 11, 0.12), rgba(245, 158, 11, 0.12)),
-    var(--bg-base);
-  .q-head { background: linear-gradient(rgba(245, 158, 11, 0.14), rgba(245, 158, 11, 0.14)), var(--bg-base2); }
-  .q-action { background: rgba(245, 158, 11, 0.18); }
-  .q-count { background: rgba(245, 158, 11, 0.12); }
-}
-.q-quadrant[data-priority='Low'] {
-  background:
-    linear-gradient(rgba(156, 163, 175, 0.09), rgba(156, 163, 175, 0.09)),
-    var(--bg-base);
-  .q-head { background: linear-gradient(rgba(156, 163, 175, 0.11), rgba(156, 163, 175, 0.11)), var(--bg-base2); }
-  .q-action { background: rgba(156, 163, 175, 0.18); }
-  .q-count { background: rgba(156, 163, 175, 0.12); }
+.q-cell:nth-child(n + 3) {
+  border-top: 1px solid color-mix(in srgb, var(--text-primary) 18%, transparent);
 }
 
+/* 象限头部：图标承载四色语义，其余中性色；纵向两行 = 标题行 + 行动描述行 */
 .q-head {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 9px 12px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-base2);
+  flex-direction: column;
+  gap: 3px;
+  background: var(--surface-muted);
+  padding: 10px 14px 7px;
 }
 
+.q-head-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.q-head-icon {
+  flex-shrink: 0;
+}
+
+// 象限标题：与任务正文同级（--editor-font-size），靠 600 字重区分层级（同看板列头约定）
 .q-title {
-  font-size: var(--text-sm);
+  font-size: var(--editor-font-size);
   font-weight: 600;
   color: var(--text-primary);
 }
 
+// 行动词 Badge：象限的核心行动指令（计划做/立即做/减少/委托），
+// 用象限 tint 的极淡底 + tint 前景做轻量强调，其余界面保持中性色
 .q-action {
   font-size: var(--text-xs);
-  color: var(--accent);
-  background: var(--accent-subtle, rgba(129, 140, 248, 0.12));
-  padding: 1px 7px;
-  border-radius: 10px;
+  line-height: 1;
+  color: var(--q-tint);
+  background: color-mix(in srgb, var(--q-tint) 12%, transparent);
+  padding: 3px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+// 行动描述：Badge 之下的补充说明，纯文本弱化
+.q-desc {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  line-height: 1.3;
 }
 
 .q-count {
-  margin-left: auto;
-  font-size: var(--text-xs);
+  font-size: 11px;
+  line-height: 1;
   color: var(--text-tertiary);
-  background: var(--bg-base);
-  padding: 1px 6px;
-  border-radius: 10px;
+  background: var(--bg-base2);
+  padding: 3px 7px;
+  border-radius: 9px;
 }
 
+/* 新增入口：header 右侧图标按钮 + 内联输入行 */
+.q-add-head {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+
+  &:hover,
+  &.active {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+}
+
+/* 任务列表：无框行 + 分隔线，弱化卡片边框感 */
 .q-cards {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 8px;
+  padding: 0 14px 10px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
 }
 
 .q-card {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 8px 10px;
-  min-width: 160px;
-  background: var(--bg-base2);
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  gap: 2px;
+  padding: 9px 8px;
+  border-radius: var(--radius-sm, 4px);
   cursor: grab;
   // 触屏下让 Pointer Events 接管手势（禁用浏览器原生滚动/缩放抢占），鼠标无影响
   touch-action: none;
-  transition: box-shadow 120ms ease, border-color 120ms ease, opacity 120ms ease, transform 120ms ease;
+  transition: background var(--dur-fast) var(--ease-out), opacity var(--dur-fast) var(--ease-out);
 
   &:hover {
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
-    border-color: var(--accent);
+    background: var(--bg-hover); // 维度①：扁平列表行的悬停微反馈（矩阵卡片非浮起面，不做光照）
+  }
+
+  &:not(:last-child) {
+    border-bottom: 1px solid var(--border);
+  }
+
+  &:hover {
+    background: var(--bg-hover);
   }
 
   &.dragging {
     opacity: 0.4;
     background: transparent;
-    border-style: dashed;
-    border-color: var(--accent);
     cursor: grabbing;
   }
 
@@ -771,21 +919,51 @@ function onCardClick(item: T) {
   }
 }
 
-// 卡片主体行（原整卡的行式布局；子任务区独立于拖拽热区）
+// 新插入任务的行入场：新增卡片标记 enter 时播放一次（enter-only，与页面转场同曲线）
+.q-card.enter {
+  animation: q-card-enter var(--dur-slow) var(--ease-out);
+}
+
+@keyframes q-card-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+// 卡片主体行（标题层：状态图标 + 标题 + 截止日）
 .q-card-main {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   min-width: 0;
+}
+
+// 辅助信息层：截止日为纯文本弱化（逾期才点亮红色）
+.q-deadline {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+
+  &.overdue {
+    color: var(--error, #dc2626);
+    font-weight: 600;
+  }
 }
 
 // 子任务区：左侧竖线营造树形缩进；行内点击打开子任务、不参与拖拽
 .q-subtasks {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
   margin: 2px 0 0 4px;
-  padding: 6px 0 2px 8px;
+  padding: 4px 0 2px 8px;
   border-left: 2px solid var(--border);
 }
 
@@ -795,7 +973,7 @@ function onCardClick(item: T) {
   gap: 6px;
   padding: 3px 6px;
   border-radius: 6px;
-  font-size: var(--text-xs);
+  font-size: var(--editor-font-size);
   color: var(--text-secondary);
   cursor: pointer;
 
@@ -804,7 +982,7 @@ function onCardClick(item: T) {
   }
 
   .q-content {
-    font-size: var(--text-xs);
+    font-size: var(--editor-font-size);
     color: var(--text-secondary);
   }
 
@@ -822,10 +1000,36 @@ function onCardClick(item: T) {
   flex-shrink: 0;
 }
 
+/* 状态图标按钮：点击循环切换状态（与表格 status 角色列同约定）。
+   负外边距抵消 padding，在不改变图标视觉位置的前提下放大点击热区。 */
+.q-status-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 3px;
+  margin: -3px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+
+  &:hover {
+    background: var(--bg-hover);
+  }
+
+  &:active {
+    transform: scale(0.88);
+  }
+}
+
+// 任务文本字号与普通页面 block 正文一致（--editor-font-size，见 _block.scss .block-text）
 .q-content {
   flex: 1;
   min-width: 0;
-  font-size: var(--text-sm);
+  font-size: var(--editor-font-size);
   color: var(--text-primary);
   line-height: 1.4;
   display: -webkit-box;
@@ -841,7 +1045,7 @@ function onCardClick(item: T) {
   :deep(h5),
   :deep(h6) {
     margin: 0;
-    font-size: var(--text-sm);
+    font-size: var(--editor-font-size);
     font-weight: 400;
     line-height: 1.4;
     color: var(--text-primary);
@@ -852,49 +1056,11 @@ function onCardClick(item: T) {
   }
 }
 
-.q-deadline {
-  flex-shrink: 0;
-  font-size: 11px;
-  font-weight: 600;
-  padding: 1px 5px;
-  border-radius: 4px;
-  border: 1px solid var(--border);
-  color: var(--text-secondary);
-
-  &.overdue {
-    color: var(--error, #dc2626);
-    border-color: var(--error, #dc2626);
-  }
-}
-
-/* 新增入口：header 内「新建任务」按钮（置于 q-count 右侧）+ 内联输入行 */
-.q-add-head {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  margin-left: 8px;
-  padding: 2px 8px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: transparent;
-  color: var(--text-tertiary);
-  font-size: var(--text-xs);
-  font-family: inherit;
-  cursor: pointer;
-  transition: border-color 120ms ease, color 120ms ease, background 120ms ease;
-
-  &:hover,
-  &.active {
-    border-color: var(--accent);
-    color: var(--accent);
-    background: rgba(99, 102, 241, 0.1);
-  }
-}
-
 .q-add-box {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
+  margin: 6px 0 2px;
   padding: 8px 10px;
   border: 1px solid var(--accent);
   border-radius: 8px;
@@ -908,7 +1074,7 @@ function onCardClick(item: T) {
   background: transparent;
   border: none;
   outline: none;
-  font-size: var(--text-sm);
+  font-size: var(--editor-font-size);
   font-family: inherit;
   color: var(--text-primary);
 
@@ -918,12 +1084,59 @@ function onCardClick(item: T) {
 }
 
 .q-add-hint {
-  padding: 0 2px;
+  padding: 4px 10px 0;
   color: var(--text-tertiary);
   font-size: var(--text-xs);
 }
 
-// 拖拽悬停的放置目标高亮（inset 以避免被 .q-cell 的 overflow:hidden 裁掉）
+/* 空态：图标 + 文案 + 主角按钮（颜色语义回归中性） */
+.q-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 24px 12px;
+  color: var(--text-tertiary);
+}
+
+.q-empty-icon {
+  opacity: 0.6;
+}
+
+.q-empty-title {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.q-empty-hint {
+  font-size: var(--text-xs);
+}
+
+.q-empty-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 6px;
+  padding: 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out);
+
+  &:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: rgba(99, 102, 241, 0.1);
+  }
+}
+
+// 拖拽悬停的放置目标高亮（inset 以避免被容器 overflow:hidden 裁掉）
 .q-cell.drop-hover {
   box-shadow: inset 0 0 0 2px var(--q-tint);
 }

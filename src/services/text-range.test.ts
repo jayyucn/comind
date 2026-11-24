@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach } from 'vitest'
-import { normalizeTextRange, textRangeToText } from './text-range'
+import { normalizeTextRange, snapTextRangeToUnits, textRangeToText } from './text-range'
 import { useRelationshipTypes } from '../composables/useRelationshipTypes'
 import { cleanupRelationshipTypes } from '../../tests/core-client'
 import type { Block } from '../types/block'
@@ -11,7 +11,7 @@ function makeBlock(overrides: Partial<Block> & Pick<Block, 'id' | 'content'>): B
     pageId: 'page-1',
     parentId: null,
     pos: 1000,
-    type: 'bullet',
+    type: 'text',
     format: {},
     createdAt: 0,
     updatedAt: 0,
@@ -25,7 +25,7 @@ function blocks(items: Array<{ id: string; content: string; type?: Block['type']
     makeBlock({
       id: it.id,
       content: it.content,
-      type: it.type ?? 'bullet',
+      type: it.type ?? 'text',
       parentId: it.parentId ?? null,
       pos: it.pos ?? (i + 1) * 1000,
     })
@@ -72,7 +72,7 @@ describe('textRangeToText', () => {
       { id: 'a', content: 'start' },
       { id: 'img', content: '![alt](url)', type: 'image' },
       { id: 'code', content: 'const x = 1', type: 'code' },
-      { id: 'h', content: '# Title', type: 'bullet' },
+      { id: 'h', content: '# Title', type: 'text' },
       { id: 'z', content: 'end' },
     ])
     expect(textRangeToText(bs, range(offset('a', 0), offset('z', 3)))).toBe(
@@ -258,5 +258,86 @@ describe('textRangeToText — 渲染偏移 → encoded 偏移（#93）', () => {
     const bs = blocks([{ id: 'a', content: 'aaa' }])
     expect(textRangeToText(bs, range(offset('a', 0), offset('a', 2)))).toBe('aa')
     expect(textRangeToText(bs, range(offset('a', 99), offset('a', 0)))).toBe('aaa')
+  })
+})
+
+/**
+ * 文本选区端点吸附出 inline 原子单元（回归：真机右→左拖到 chip 中间按 Backspace 留 `#任`）。
+ *
+ * 渲染文本 `这是测试任务 #任务 后面的文字` 的偏移：
+ * 0..5 `这是测试任务`、6 空格、**7..9 `#任务`**、10 空格、11..15 `后面的文字`。
+ * 故 chip 单元 = [7, 10)，端点落在 (7, 10) 开区间内即算「切到 chip 中间」。
+ */
+describe('snapTextRangeToUnits', () => {
+  const CONTENT = '这是测试任务 #任务 后面的文字'
+  const TAG_UNITS = (blockId: string) => (blockId === 'a' ? [{ start: 7, end: 10 }] : [])
+
+  test('反向拖拽：head 落在 chip 内部 → 吸附到 chip 起点（整 chip 入选）', () => {
+    // 真机现场：anchor 13（chip 右侧）→ head 9（`务` 之前），原来切出 "务 后面"
+    const bs = blocks([{ id: 'a', content: CONTENT }])
+    const snapped = snapTextRangeToUnits(bs, range(offset('a', 13), offset('a', 9)), TAG_UNITS)
+    expect(snapped.head.offset).toBe(7)
+    expect(snapped.anchor.offset).toBe(13) // anchor 不碰单元，保持不动
+  })
+
+  test('正向拖拽：head 落在 chip 内部 → 吸附到 chip 终点', () => {
+    const bs = blocks([{ id: 'a', content: CONTENT }])
+    const snapped = snapTextRangeToUnits(bs, range(offset('a', 6), offset('a', 9)), TAG_UNITS)
+    expect(snapped.head.offset).toBe(10)
+    expect(snapped.anchor.offset).toBe(6)
+  })
+
+  test('两端都落在同一 chip 内部 → 整 chip 入选', () => {
+    const bs = blocks([{ id: 'a', content: CONTENT }])
+    const snapped = snapTextRangeToUnits(bs, range(offset('a', 8), offset('a', 9)), TAG_UNITS)
+    expect(snapped.anchor.offset).toBe(7)
+    expect(snapped.head.offset).toBe(10)
+  })
+
+  test('方向性保留：反向选区吸附后 anchor 仍是靠后的那端', () => {
+    const bs = blocks([{ id: 'a', content: CONTENT }])
+    const snapped = snapTextRangeToUnits(bs, range(offset('a', 9), offset('a', 6)), TAG_UNITS)
+    expect(snapped.anchor.offset).toBe(10) // anchor 原在 head 之后，仍是 end 端点
+    expect(snapped.head.offset).toBe(6)
+  })
+
+  test('端点不碰 chip → 原样返回（同一引用，不做无谓改动）', () => {
+    const bs = blocks([{ id: 'a', content: CONTENT }])
+    const original = range(offset('a', 10), offset('a', 13))
+    expect(snapTextRangeToUnits(bs, original, TAG_UNITS)).toBe(original)
+  })
+
+  test('选区已完整包含 chip → 不收窄、原样返回', () => {
+    const bs = blocks([{ id: 'a', content: CONTENT }])
+    const original = range(offset('a', 6), offset('a', 11))
+    expect(snapTextRangeToUnits(bs, original, TAG_UNITS)).toBe(original)
+  })
+
+  test('折叠端点落在 chip 内（无内容可删）→ 不凭空造出选区', () => {
+    const bs = blocks([{ id: 'a', content: CONTENT }])
+    const original = range(offset('a', 8), offset('a', 8))
+    expect(snapTextRangeToUnits(bs, original, TAG_UNITS)).toBe(original)
+  })
+
+  test('多个 chip：两端各自吸附到所在单元外侧', () => {
+    // `#任务 x #日常`：chip1 [0,3)、chip2 [6,9)
+    const bs = blocks([{ id: 'a', content: '#任务 x #日常' }])
+    const units = () => [{ start: 0, end: 3 }, { start: 6, end: 9 }]
+    const snapped = snapTextRangeToUnits(bs, range(offset('a', 1), offset('a', 7)), units)
+    expect(snapped.anchor.offset).toBe(0)
+    expect(snapped.head.offset).toBe(9)
+  })
+
+  test('跨块：末块端点落在 chip 内同样吸附', () => {
+    const bs = blocks([
+      { id: 'a', content: 'aaa' },
+      { id: 'b', content: CONTENT },
+    ])
+    // 末块端点 = end 端点 → 外扩到 chip 终点
+    const snapped = snapTextRangeToUnits(bs, range(offset('a', 1), offset('b', 9)), (id) =>
+      id === 'b' ? [{ start: 7, end: 10 }] : [],
+    )
+    expect(snapped.anchor.offset).toBe(1)
+    expect(snapped.head.offset).toBe(10) // 整 chip 入选
   })
 })

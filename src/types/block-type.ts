@@ -1,6 +1,8 @@
+import type { Editor } from '@tiptap/vue-3'
 import type { Component } from 'vue'
 import type { Ref } from 'vue'
-import type { Editor } from '@tiptap/vue-3'
+
+import type { InlineMarkRange } from '../utils/inline-marks'
 import type { Block } from './block'
 
 export interface BlockTypeHandler {
@@ -8,6 +10,16 @@ export interface BlockTypeHandler {
   label: string
   editorComponent: Component
   renderComponent: Component
+  /**
+   * 块左侧入口胶囊里的类型字形。所有类型都渲染同一个胶囊（`.block-entry-icon`：
+   * 字形 + 拖拽握把），字形同时充当：块菜单按钮（点击）+ 拖拽手柄（按下拖动）。
+   * 缺省 = 文本字形（`Type`）。
+   */
+  entryIcon?: Component
+  /** 入口胶囊的 title / aria-label */
+  entryLabel?: string
+  /** 入口相对块顶的下偏移（CSS 长度）：让图标压在本类型首行（如表头行）上 */
+  entryTop?: string
   /** 类型特化钩子，可选。返回该类型实例需要的事件处理器 */
   setupBlock?: (ctx: BlockSetupContext) => BlockTypeHooks | void
 }
@@ -26,14 +38,14 @@ export interface BlockSetupContext {
   blockId: Ref<string>
   block: Ref<Block>
   pageId: string
-  getProperty: (key: string) => string | undefined
-  getPropertiesMap: () => Record<string, unknown>
-  setProperty: (key: string, value: unknown) => Promise<void>
+  getFieldValue: (key: string) => string | undefined
+  getFieldValuesMap: () => Record<string, unknown>
+  setFieldValue: (key: string, value: unknown) => Promise<void>
   // Store 采用最小接口 / unknown 收窄，避免 types 文件与 stores 之间潜在的循环类型依赖。
   // handler 内部仅调用已知方法（blockStore.updateBlockContent / pageStore.pages 等）。
   blockStore: BlockStoreLike
   editorStore: unknown
-  propertyStore: unknown
+  fieldValueStore: unknown
   pageStore: PageStoreLike
   navigateToPage: (title: string) => Promise<void>
 }
@@ -57,7 +69,11 @@ export interface BlockTypeHooks {
 export interface BlockTypeEditorExposed {
   syncContent: (content: string, cursorPos?: number) => void
   focus: (pos?: number | 'start' | 'end') => void
+  /** 恢复一段选区（撤销/重做）；from === to 即折叠光标。无编辑态的渲染组件不实现 */
+  focusRange?: (from: number, to: number) => void
   getText: () => string
+  /** 正文 + 行内格式（偏移相对返回的 text） */
+  getContent?: () => { text: string; marks: InlineMarkRange[] }
   markSaved: () => void
   getEditor: () => Editor
   cancelDebouncedSave?: () => void

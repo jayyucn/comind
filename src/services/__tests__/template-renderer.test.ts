@@ -11,15 +11,15 @@ const baseTemplate: NormalizedTemplate = {
   icon: '📝',
   source: 'builtin',
   blocks: [
-    { type: 'bullet', content: 'Hello' },
+    { type: 'text', content: 'Hello' },
     { type: 'heading', content: 'Section', headingLevel: 2 },
     { type: 'property', propertyKey: '时间', content: '{{date}} {{time}}' },
-    { type: 'bullet', content: '{{name}}' },
-    { type: 'bullet', content: '{{page_title}}' },
-    { type: 'bullet', content: '{{iso_date}}' },
-    { type: 'bullet', content: '{{clipboard}}' },
+    { type: 'text', content: '{{name}}' },
+    { type: 'text', content: '{{page_title}}' },
+    { type: 'text', content: '{{iso_date}}' },
+    { type: 'text', content: '{{clipboard}}' },
     { type: 'heading', content: 'Title {{cursor}}', headingLevel: 2 },
-    { type: 'bullet', content: '{{cursor}}' },
+    { type: 'text', content: '{{cursor}}' },
   ],
 }
 
@@ -35,7 +35,7 @@ const baseContext: TemplateContext = {
 
 const baseAnchor: Block = {
   id: 'anchor', pageId: 'page-1', parentId: null, pos: 1000,
-  content: 'anchor', format: {}, type: 'bullet',
+  content: 'anchor', format: {}, type: 'text',
   properties: {}, createdAt: 0, updatedAt: 0
 }
 
@@ -111,10 +111,10 @@ describe('TemplateRenderer.render', () => {
     const tmpl: NormalizedTemplate = {
       ...baseTemplate,
       blocks: [{
-        type: 'bullet', content: 'parent',
+        type: 'text', content: 'parent',
         children: [
-          { type: 'bullet', content: 'child1' },
-          { type: 'bullet', content: 'child2' },
+          { type: 'text', content: 'child1' },
+          { type: 'text', content: 'child2' },
         ]
       }]
     }
@@ -218,16 +218,16 @@ describe('TemplateRenderer edge cases', () => {
     const deepTemplate: NormalizedTemplate = {
       ...baseTemplate,
       blocks: [{
-        type: 'bullet',
+        type: 'text',
         content: 'level 1',
         children: [{
-          type: 'bullet',
+          type: 'text',
           content: 'level 2',
           children: [{
-            type: 'bullet',
+            type: 'text',
             content: 'level 3',
             children: [{
-              type: 'bullet',
+              type: 'text',
               content: 'level 4'
             }]
           }]
@@ -268,9 +268,9 @@ describe('TemplateRenderer edge cases', () => {
     const multiTemplate: NormalizedTemplate = {
       ...baseTemplate,
       blocks: [
-        { type: 'bullet', content: 'A' },
-        { type: 'bullet', content: 'B' },
-        { type: 'bullet', content: 'C' },
+        { type: 'text', content: 'A' },
+        { type: 'text', content: 'B' },
+        { type: 'text', content: 'C' },
       ]
     }
     const drafts = TemplateRenderer.render(multiTemplate, baseContext, baseAnchor)
@@ -309,7 +309,7 @@ describe('TemplateRenderer - additional edge cases', () => {
 
   const baseAnchor: Block = {
     id: 'anchor', pageId: 'page-1', parentId: null, pos: 1000,
-    content: 'anchor', format: {}, type: 'bullet',
+    content: 'anchor', format: {}, type: 'text',
     properties: {}, createdAt: 0, updatedAt: 0
   }
 
@@ -352,7 +352,7 @@ describe('TemplateRenderer - additional edge cases', () => {
       description: 'test',
       icon: '📝',
       source: 'builtin',
-      blocks: [{ type: 'bullet', content: '{{cursor}}' }],
+      blocks: [{ type: 'text', content: '{{cursor}}' }],
     }
     const drafts = TemplateRenderer.render(template, baseContext, baseAnchor)
     expect(drafts.length).toBe(1)
@@ -404,7 +404,7 @@ describe('TemplateRenderer - additional edge cases', () => {
       icon: '📝',
       source: 'builtin',
       blocks: [
-        { type: 'bullet', content: '' },
+        { type: 'text', content: '' },
         { type: 'heading', content: '', headingLevel: 2 },
         { type: 'property', propertyKey: 'key', content: '' },
       ],
@@ -426,8 +426,8 @@ describe('TemplateRenderer - additional edge cases', () => {
       icon: '📝',
       source: 'builtin',
       blocks: [
-        { type: 'bullet', content: 'A' },
-        { type: 'bullet', content: 'B' },
+        { type: 'text', content: 'A' },
+        { type: 'text', content: 'B' },
       ],
     }
     const drafts = TemplateRenderer.render(template, baseContext, largePosAnchor)
@@ -445,14 +445,14 @@ describe('TemplateRenderer - additional edge cases', () => {
       icon: '📝',
       source: 'builtin',
       blocks: [
-        { type: 'bullet', content: '1' },
-        { type: 'bullet', content: '2', children: [
-          { type: 'bullet', content: '2.1' },
-          { type: 'bullet', content: '2.2', children: [
-            { type: 'bullet', content: '2.2.1' },
+        { type: 'text', content: '1' },
+        { type: 'text', content: '2', children: [
+          { type: 'text', content: '2.1' },
+          { type: 'text', content: '2.2', children: [
+            { type: 'text', content: '2.2.1' },
           ] },
         ] },
-        { type: 'bullet', content: '3' },
+        { type: 'text', content: '3' },
       ],
     }
     const drafts = TemplateRenderer.render(template, baseContext, baseAnchor)

@@ -17,6 +17,7 @@
 import type { CoreClient } from '../wasm/client'
 import type { RecurrenceRule } from '../utils/date-ref'
 import { serializeDateRef } from '../utils/date-ref'
+import { decodeFieldValueData } from '../utils/field-value-codec'
 
 export interface MigrationResult {
   totalScanned: number
@@ -28,7 +29,7 @@ export interface MigrationResult {
 /**
  * 日期属性的 date 值 → iso 格式
  */
-function parsePropertyDate(value: string): string {
+function parseDateFieldValue(value: string): string {
   // 旧格式可能是 'YYYY-MM-DD' 或 ISO 8601 时间戳
   const trimmed = value.trim().slice(0, 16) // 截断时间部分
   if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) {
@@ -80,25 +81,28 @@ export async function migrateDateProperties(client: CoreClient): Promise<Migrati
 
         try {
           // 获取该 block 的所有属性
-          const props = await client.getProperties(block.id)
+          const props = await client.getFieldValues(block.id)
           if (!props || props.length === 0) continue
 
-          // 查找日期属性和 recurrence
-          const deadlineProp = props.find(p => p.key === 'deadline' && p.is_deleted !== 1)
-          const scheduledProp = props.find(p => p.key === 'scheduled' && p.is_deleted !== 1)
-          const recurrenceProp = props.find(p => p.key === 'recurrence' && p.is_deleted !== 1)
+          // 查找日期字段值和 recurrence
+          const deadlineProp = props.find(p => p.key === 'deadline' && p.deleted_at === null)
+          const scheduledProp = props.find(p => p.key === 'scheduled' && p.deleted_at === null)
+          const recurrenceProp = props.find(p => p.key === 'recurrence' && p.deleted_at === null)
 
           const dateProp = deadlineProp || scheduledProp
-          if (!dateProp || !dateProp.value) continue
+          if (!dateProp || !dateProp.value_json) continue
 
           // 如果 content 已含 dateRef，跳过（幂等）
           if (hasDateRefInContent(block.content)) continue
 
           // 如果 content 为空，用 dateRef 作为全文
           const kind = deadlineProp ? 'deadline' : 'schedule'
-          const iso = parsePropertyDate(dateProp.value)
-          const recurrence = recurrenceProp?.value && recurrenceProp.value !== 'none'
-            ? recurrenceProp.value
+          const iso = parseDateFieldValue(String(decodeFieldValueData(dateProp.value_json, dateProp.value_type)))
+          const recurrenceValue = recurrenceProp
+            ? String(decodeFieldValueData(recurrenceProp.value_json, recurrenceProp.value_type))
+            : ''
+          const recurrence = recurrenceValue && recurrenceValue !== 'none'
+            ? recurrenceValue
             : 'none'
 
           const dateRefText = serializeDateRef({
@@ -126,11 +130,11 @@ export async function migrateDateProperties(client: CoreClient): Promise<Migrati
           }])
 
           // 删除旧的属性
-          await client.deleteProperty(block.id, dateProp.key)
+          await client.deleteFieldValue(block.id, dateProp.key)
           result.deletedProperties++
 
           if (recurrenceProp) {
-            await client.deleteProperty(block.id, 'recurrence')
+            await client.deleteFieldValue(block.id, 'recurrence')
             result.deletedProperties++
           }
 

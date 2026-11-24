@@ -152,7 +152,7 @@ function onKeydown(e: KeyboardEvent): void {
   border-radius: var(--radius-sm);
   font-size: var(--text-sm);
   color: var(--text-secondary);
-  transition: all 100ms ease;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
 
   &:hover:not(:disabled) {
     background: var(--bg-hover);

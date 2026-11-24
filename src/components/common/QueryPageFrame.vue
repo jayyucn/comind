@@ -1,17 +1,19 @@
 <script setup lang="ts" generic="T">
 import { computed, ref } from 'vue'
+
 import type { CellRegistry } from '../../components/views/types'
-import type { FieldDescriptor, Group, ReferenceableRecord, Registry, SortRule, ViewQuery } from '../../core/query'
-import type { ViewTypeOption } from '../../core/view/management'
-import type { BoardConfig, CalendarConfig, GalleryConfig, QuadrantConfig, TableColumnConfig, TableConfig } from '../../core/view'
 import { useChipBarOrchestration } from '../../composables/useChipBarOrchestration'
+import type { FieldDescriptor, Group, ReferenceableRecord, Registry, SortRule, ViewQuery } from '../../core/query'
+import type { BoardConfig, CalendarConfig, GalleryConfig, QuadrantConfig, TableColumnConfig, TableConfig } from '../../core/view'
+import type { ViewTypeOption } from '../../core/view/management'
 import { useScreenViewStore } from '../../stores/screenView'
+import { orderFieldsByColumns } from '../query/field-order'
+import FieldManagerPanel from '../query/FieldManagerPanel.vue'
+import QueryChipBar from '../query/QueryChipBar.vue'
+import QueryToolbar from '../query/QueryToolbar.vue'
 import BasePopover from './BasePopover.vue'
 import NamedViewBar from './NamedViewBar.vue'
 import PageTitle from './PageTitle.vue'
-import QueryChipBar from '../query/QueryChipBar.vue'
-import FieldManagerPanel from '../query/FieldManagerPanel.vue'
-import QueryToolbar from '../query/QueryToolbar.vue'
 
 defineOptions({ name: 'QueryPageFrame' })
 
@@ -24,18 +26,43 @@ defineOptions({ name: 'QueryPageFrame' })
  * 零业务依赖（ADR-0009）：不 import 任何视图组件 / 实体 store / registry。
  */
 const props = defineProps<{
-  /** 页面标题（PageTitle）。 */
-  title: string
-  /** 页面副标题（PageTitle，如「32 个任务」）。 */
-  subtitle: string
+  /**
+   * 不渲染 PageTitle（`.page-title-container`）。
+   * 嵌入块内时宿主已提供上下文（正文位置即标题），再来一个大标题是重复信息。
+   */
+  hideTitle?: boolean
+  /**
+   * 嵌入模式：高度交给宿主容器，而非整页 `height: 100%`。
+   * 宿主以 `max-height` + `overflow: hidden` 给出上限；内容超出时由 `.lib-body` 内部滚动
+   * （外壳保留 `overflow: hidden`，滚动仍发生在主内容区，不会溢出到块外）。
+   */
+  embedded?: boolean
+  /** 页面标题（PageTitle）。`hideTitle` 为真时可省略。 */
+  title?: string
+  /** 页面副标题（PageTitle，如「32 个任务」）。`hideTitle` 为真时可省略。 */
+  subtitle?: string
   /** screen_view 命名空间（NamedViewBar / 命名视图 store）。兼作查询引擎实体命名空间（ADR-0023 D3）。 */
   entityKey: string
+  /**
+   * 命名视图 namespace 覆盖（缺省与 entityKey 同值）：同一查询实体要**多套独立视图配置**时用
+   * （tag 聚合页按标签各持一套配置，且不与任务中心争抢同一个 screen_view 命名空间）。
+   * 只影响命名视图落库键；字段注册表 / 芯片行的实体命名空间仍用 entityKey。
+   */
+  screenViewKey?: string
   /** 该实体可选的视图类型（注入 NamedViewBar；同时决定外壳渲染哪几个视图，类型创建后固定）。 */
   viewTypes: ViewTypeOption[]
   defaultViewName?: string
   defaultViewType?: string
   /** 可筛选/排序/分组的字段清单（QueryChipBar + 三个视图）。 */
   fields: FieldDescriptor[]
+  /**
+   * 字段管理面板的**候选字段池**（缺省 = `fields`）——本页列模板允许出现的字段。
+   * 页面（先例：tag 聚合页）的列模板只由固定子集派生时注入它，避免面板把与页面无关的
+   * 全量字段列为候选（无字段的 tag 曾列出 19 个无关内置字段）。
+   * 只影响面板；`fields` 不动 —— 看板按 groupBy、日历按 dateRefKind 解析描述符，
+   * 收窄 `fields` 会让看板退化成单列、日历失去落格字段。
+   */
+  candidateFields?: FieldDescriptor[]
   /** 字段注册表（QueryChipBar 高级筛选需要）。 */
   registry: Registry
   /** 跨记录引用候选记录列表（业务无关，从业务层注入；缺省时 recordRef 不暴露）。 */
@@ -71,8 +98,8 @@ const emit = defineEmits<{
   'update:search': [value: string]
 }>()
 
-// 命名视图 store（按 entityKey 隔离；NamedViewBar 内部同 key 单例复用）
-const store = useScreenViewStore(props.entityKey, {
+// 命名视图 store（按 namespace 隔离；NamedViewBar 内部同 key 单例复用）
+const store = useScreenViewStore(props.screenViewKey ?? props.entityKey, {
   defaultViewName: props.defaultViewName,
   defaultViewType: props.defaultViewType,
 })
@@ -133,18 +160,22 @@ function openFieldsPanel(e: MouseEvent) {
   fieldsPanelOpen.value = true
 }
 
+// 列管理动作的统一约定：transform 的基准是**本页当前实际渲染的配置**（props.tableConfig）。
+// 不传的话 store 只能按「持久化 config ?? 实体 defaultConfig ?? 空列集」推断 —— 未注入 defaultConfig
+// 的命名空间（tag 聚合页：列模板由 tag 字段异步派生）会退化成空列集，一次列宽拖拽就把
+// `{"columns":[]}` 落库，渲染层随即失去自己的默认列回退（表格零列，看着像数据被清空）。
 function onToggleVisibility(key: string, visible: boolean) {
   store.patchActiveTabConfig((cfg) => ({
     ...cfg,
     columns: cfg.columns.map((c) => (c.key === key ? { ...c, visible } : c)),
-  }))
+  }), props.tableConfig)
 }
 
 function onReorder(keys: string[]) {
   store.patchActiveTabConfig((cfg) => {
     const map = new Map(cfg.columns.map((c) => [c.key, c]))
     return { ...cfg, columns: keys.map((k) => map.get(k)).filter((c): c is TableColumnConfig => !!c) }
-  })
+  }, props.tableConfig)
 }
 
 // 列宽拖拽缩放（ADR-0013 边界联动）：一次性写回本列与相邻下一列的变更，保持总宽恒定。
@@ -155,7 +186,7 @@ function onColumnResize(changes: { key: string; width: number }[]) {
       ...cfg,
       columns: cfg.columns.map((c) => (widths.has(c.key) ? { ...c, width: widths.get(c.key)! } : c)),
     }
-  })
+  }, props.tableConfig)
 }
 
 // 表头菜单：列对齐（左/中/右）→ 写回 TableColumnConfig.align
@@ -163,7 +194,7 @@ function onColumnAlign(key: string, align: 'left' | 'center' | 'right') {
   store.patchActiveTabConfig((cfg) => ({
     ...cfg,
     columns: cfg.columns.map((c) => (c.key === key ? { ...c, align } : c)),
-  }))
+  }), props.tableConfig)
 }
 
 // 表头菜单：重置列宽 → 清除该列 width（undefined 在序列化时被丢弃，回落到组件默认列宽）
@@ -171,31 +202,66 @@ function onColumnReset(key: string) {
   store.patchActiveTabConfig((cfg) => ({
     ...cfg,
     columns: cfg.columns.map((c) => (c.key === key ? { ...c, width: undefined } : c)),
-  }))
+  }), props.tableConfig)
 }
 
 function onAddGlobal(key: string) {
   store.patchAllTabConfigs((cfg) => {
     if (cfg.columns.some((c) => c.key === key)) return cfg
     return { ...cfg, columns: [...cfg.columns, { key, visible: true }] }
-  })
+  }, props.tableConfig)
 }
 
 function onRemoveGlobal(key: string) {
-  store.patchAllTabConfigs((cfg) => ({ ...cfg, columns: cfg.columns.filter((c) => c.key !== key) }))
+  store.patchAllTabConfigs((cfg) => ({ ...cfg, columns: cfg.columns.filter((c) => c.key !== key) }), props.tableConfig)
 }
+
+/**
+ * 字段面板的「已用字段」= 本页**实际渲染**的列。
+ * 表格在场时以 `props.tableConfig` 为准（与 TableView 渲染的是同一份）；
+ * 非表格视图退回 `store.activeTabColumns`（旧行为，block/page 命名空间有 defaultConfig 兜底）。
+ * 不能一律用 `store.activeTabColumns`：它按 store 侧回退解析，未注入 defaultConfig 的命名空间
+ * （tag 聚合页，tab config 为空串）会得到空列集 —— 面板会显示「一个字段都没用」，
+ * 而表格其实渲染着整份 tag 字段模板（真机实证 2026-09-23）。
+ */
+const activeColumns = computed<TableColumnConfig[]>(
+  () => props.tableConfig?.columns ?? store.activeTabColumns,
+)
+
+/**
+ * 查询工具条的四个入口（筛选/排序/分组/字段管理）共用的字段呈现顺序：
+ * **当前视图已用的列字段优先**（按列顺序），其余字段排在后面保持注册表原序。
+ * 只在呈现层排序——`fields` / `candidateFields` 原样透给视图与引擎，列渲染顺序仍由 columns 决定。
+ */
+const toolbarFields = computed(() => orderFieldsByColumns(props.fields, activeColumns.value.map((c) => c.key)))
+const toolbarCandidateFields = computed(() =>
+  props.candidateFields
+    ? orderFieldsByColumns(props.candidateFields, activeColumns.value.map((c) => c.key))
+    : undefined,
+)
 </script>
 
 <template>
-  <div class="query-page-frame">
+  <div
+    class="query-page-frame"
+    :class="{ 'is-embedded': embedded }"
+  >
+    <!-- 面包屑（可选）：需位于大标题之上的导航，由消费方注入（如标签聚合页「标签 / #x」） -->
+    <slot name="breadcrumb" />
+
     <PageTitle
-      :title="title"
-      :subtitle="subtitle"
+      v-if="!hideTitle"
+      :title="title ?? ''"
+      :subtitle="subtitle ?? ''"
     />
+
+    <!-- 标题下扩展区（可选）：大标题与视图管理条之间的自有内容（如标签聚合页的统计卡） -->
+    <slot name="heading-extra" />
 
     <!-- 视图管理（Screen→Tab 两级 + 查询工具条 + 未保存提示均内聚于 NamedViewBar） -->
     <NamedViewBar
       :entity-key="entityKey"
+      :screen-view-key="screenViewKey"
       :view-types="viewTypes"
       :default-view-name="defaultViewName"
       :default-view-type="defaultViewType"
@@ -222,8 +288,9 @@ function onRemoveGlobal(key: string) {
       @close="fieldsPanelOpen = false"
     >
       <FieldManagerPanel
-        :fields="fields"
-        :columns="store.activeTabColumns"
+        :fields="toolbarFields"
+        :candidate-fields="toolbarCandidateFields"
+        :columns="activeColumns"
         @toggle-visibility="onToggleVisibility"
         @reorder="onReorder"
         @add-global="onAddGlobal"
@@ -235,7 +302,7 @@ function onRemoveGlobal(key: string) {
     <QueryChipBar
       ref="chipBarRef"
       :model-value="store.workingQuery"
-      :fields="fields"
+      :fields="toolbarFields"
       :registry="registry"
       :entity-type="entityKey"
       :cross-record-sources="crossRecordSources"
@@ -267,19 +334,39 @@ function onRemoveGlobal(key: string) {
   height: 100%;
   overflow: hidden;
   padding: 0 var(--space-8);
+
+  /* 嵌入块内：宿主（.query-block）用 max-height + flex column 给出上限，
+     外壳不再声明 100% 高度 —— 内容少时按内容收缩，超出时 .lib-body 内部滚动。
+     padding 归宿主（块已有描边与内缩），否则外壳的左右留白与块边界叠成双层。 */
+  &.is-embedded {
+    height: auto;
+    flex: 1 1 auto;
+    min-height: 0;
+    padding: 0;
+
+    /* 嵌入块的滚动全在主内容区：上下留白必须从 padding 换成 margin。
+       padding 属于滚动容器的可滚动区域，滚动时内容会画进这条留白里——
+       块内 sticky 表头上方那条 12px 带会露出半截行文字（真机实证）；
+       margin 在滚动口之外，内容到边缘即被裁掉。
+       横轴余量（ADR-0013 比例列宽的 1~2px 越界）直接裁掉，免得块内多出一条拖不动的横条。 */
+    .lib-body {
+      padding: 0;
+      margin: 12px 0 0;
+      overflow-x: hidden;
+    }
+  }
 }
 
+/* 主内容区不自带边框：视图自身即卡片（表格描边圆角、看板列、日历格），
+   外壳再框一层会让卡片落进框里形成「框里套卡」（ADR-0050 D7 聚合页设计稿）。
+   内边距保留：board / calendar 等视图靠它留白，且卡片与外缘的间隙即页面底。
+   （嵌入模式下这条留白必须换成 margin，见 `.is-embedded` 的说明。） */
 .lib-body {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  border-left: 1px solid var(--border);
-  border-right: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
-  padding: 12px 16px;
-  margin-bottom: var(--space-4);
-  border-bottom-left-radius: var(--radius-md);
-  border-bottom-right-radius: var(--radius-md);
+  padding: 12px 0;
+  // margin-bottom: var(--space-4);
 }
 
 .view-empty {

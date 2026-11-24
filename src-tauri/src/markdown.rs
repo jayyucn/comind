@@ -1,9 +1,9 @@
 use comind_core::{
     services::{
-        BlockService, PageService, PropertyService, RelationshipTypeService, TemplateService,
+        BlockService, FieldValueService, PageService, RelationshipTypeService, TemplateService,
     },
     storage::StorageAdapter,
-    types::{Block, BlockTree, Page, Property, RelationshipType, UserTemplate},
+    types::{Block, BlockTree, FieldValue, Page, RelationshipType, UserTemplate},
 };
 use crate::assets::{rewrite_assets_for_export, rewrite_assets_for_import};
 use regex::Regex;
@@ -73,7 +73,7 @@ struct PageMetadata {
     pub created_at: i64,
     pub updated_at: i64,
     #[serde(default)]
-    pub properties: Vec<Property>,
+    pub properties: Vec<FieldValue>,
 }
 
 fn sanitize_filename(title: &str) -> String {
@@ -99,11 +99,11 @@ fn parse_block_content(line: &str) -> (String, String, String) {
         let r#type = if content.contains("::") {
             "property"
         } else {
-            "bullet"
+            "text"
         };
         (content, format, r#type.to_string())
     } else {
-        (line.to_string(), "{}".to_string(), "bullet".to_string())
+        (line.to_string(), "{}".to_string(), "text".to_string())
     }
 }
 
@@ -128,12 +128,61 @@ fn parse_link(content: &str) -> Vec<(String, Option<String>)> {
     links
 }
 
-fn serialize_block_tree(tree: &BlockTree, properties: &[Property]) -> String {
+/// 表格块 → GFM 行（`|` 转义、tab/换行替换为空格；无表头时补空表头行 + 分隔行）
+fn table_markdown_lines(format: &str) -> Vec<String> {
+    let value: serde_json::Value = match serde_json::from_str(format) {
+        Ok(v) => v,
+        Err(_) => return Vec::new(),
+    };
+    let table = match value.get("table") {
+        Some(t) => t,
+        None => return Vec::new(),
+    };
+    let rows = match table.get("rows").and_then(|r| r.as_array()) {
+        Some(r) if !r.is_empty() => r,
+        _ => return Vec::new(),
+    };
+
+    let sanitize = |cell: &serde_json::Value| -> String {
+        let text = cell.as_str().unwrap_or("").to_string();
+        text.replace(['\t', '\r', '\n'], " ").replace('|', "\\|")
+    };
+
+    let matrix: Vec<Vec<String>> = rows
+        .iter()
+        .map(|row| {
+            row.as_array()
+                .map(|cells| cells.iter().map(&sanitize).collect())
+                .unwrap_or_default()
+        })
+        .collect();
+    let col_count = matrix.iter().map(|r| r.len()).max().unwrap_or(1).max(1);
+    let has_header = table.get("header").and_then(|h| h.as_bool()).unwrap_or(true);
+
+    let line = |cells: &[String]| format!("| {} |", cells.join(" | "));
+    let separator = format!(
+        "| {} |",
+        vec!["---"; col_count].join(" | ")
+    );
+
+    let mut lines = Vec::new();
+    if has_header {
+        lines.push(line(&matrix[0]));
+        lines.extend(matrix.iter().skip(1).map(|row| line(row)));
+    } else {
+        lines.push(line(&vec![String::new(); col_count]));
+        lines.extend(matrix.iter().map(|row| line(row)));
+    }
+    lines.insert(1, separator);
+    lines
+}
+
+fn serialize_block_tree(tree: &BlockTree, properties: &[FieldValue]) -> String {
     let mut lines = Vec::new();
 
     fn dfs(
         tree: &BlockTree,
-        properties: &[Property],
+        properties: &[FieldValue],
         block_ids: &[String],
         depth: usize,
         lines: &mut Vec<String>,
@@ -142,7 +191,11 @@ fn serialize_block_tree(tree: &BlockTree, properties: &[Property]) -> String {
             let block = tree.block_map.get(block_id).unwrap();
             let indent = "  ".repeat(depth);
 
-            if block.r#type == "heading" {
+            if block.r#type == "table" {
+                for table_line in table_markdown_lines(&block.format) {
+                    lines.push(format!("{}{}", indent, table_line));
+                }
+            } else if block.r#type == "heading" {
                 let format: serde_json::Value =
                     serde_json::from_str(&block.format).unwrap_or_default();
                 let level = format.get("level").and_then(|v| v.as_i64()).unwrap_or(1);
@@ -162,7 +215,7 @@ fn serialize_block_tree(tree: &BlockTree, properties: &[Property]) -> String {
     lines.join("\n")
 }
 
-fn serialize_page_metadata(page: &Page, properties: &[Property]) -> String {
+fn serialize_page_metadata(page: &Page, properties: &[FieldValue]) -> String {
     let metadata = PageMetadata {
         id: page.id.clone(),
         r#type: page.r#type.clone(),
@@ -215,7 +268,7 @@ pub fn export_all(
 
         let mut properties = Vec::new();
         for block_id in &all_block_ids {
-            let props = PropertyService::get_by_block_id(storage, block_id)?;
+            let props = FieldValueService::get_by_block_id(storage, block_id)?;
             properties.extend(props);
         }
 
@@ -306,7 +359,7 @@ pub fn export_changed(
 
         let mut properties = Vec::new();
         for block_id in &all_block_ids {
-            let props = PropertyService::get_by_block_id(storage, block_id)?;
+            let props = FieldValueService::get_by_block_id(storage, block_id)?;
             properties.extend(props);
         }
 
@@ -399,7 +452,7 @@ pub fn import_all(
             if page.deleted == 0 {
                 let blocks = BlockService::get_by_page_id(storage, &page.id)?;
                 for block in &blocks {
-                    PropertyService::delete_by_block_id(storage, &block.id)?;
+                    FieldValueService::delete_by_block_id(storage, &block.id)?;
                     comind_core::services::LinkService::delete_by_source_block_id(
                         storage, &block.id,
                     )?;
@@ -508,7 +561,7 @@ pub fn import_all(
             if strategy == "merge" {
                 let blocks = BlockService::get_by_page_id(storage, &existing.id)?;
                 for block in &blocks {
-                    PropertyService::delete_by_block_id(storage, &block.id)?;
+                    FieldValueService::delete_by_block_id(storage, &block.id)?;
                     comind_core::services::LinkService::delete_by_source_block_id(
                         storage, &block.id,
                     )?;
@@ -599,6 +652,7 @@ pub fn import_all(
                 &format,
                 &r#type,
                 None,
+                true,
             )?;
 
             parent_stack.push(block.id.clone());
@@ -607,15 +661,13 @@ pub fn import_all(
         }
 
         for prop in &metadata.properties {
-            PropertyService::create(
+            FieldValueService::create(
                 storage,
                 &prop.block_id,
                 &prop.key,
-                &prop.value,
-                &prop.r#type,
-                prop.sort_order,
-                prop.is_hidden,
-                prop.schema_version,
+                &prop.value_json,
+                &prop.value_type,
+                prop.seq,
             )?;
             properties_imported += 1;
         }

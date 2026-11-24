@@ -10,8 +10,16 @@ pub trait BlockRepository {
     fn get_children_including_deleted(&self, parent_id: &str) -> Result<Vec<Block>, Box<dyn Error>>;
     /// 批量按 ID 查询 block（用于 checkAndFire 批量化，避免 N+1 IPC）
     fn get_by_ids(&self, ids: &[String]) -> Result<Vec<Block>, Box<dyn Error>>;
-    /// 撤销软删除：将 deleted_at 置 NULL（版本 +1、刷新 updated_at），返回复活后的块。
+    /// 按 ID 查询**含软删**块（不过滤 `deleted_at`）。
+    ///
+    /// 只服务于「剪切后粘贴」的搬移判定：要区分「这块是我刚剪的（仍软删）」与
+    /// 「这块还活着（复制，或已被回收站恢复）」，而 `get_by_id` 对软删块报 NotFound，
+    /// 两者都会落到同一条错误分支，判不出来。
+    fn get_by_id_including_deleted(&self, id: &str) -> Result<Block, Box<dyn Error>>;    /// 撤销软删除：将 deleted_at 置 NULL（版本 +1、刷新 updated_at），返回复活后的块。
     fn undelete(&mut self, id: &str) -> Result<Block, Box<dyn Error>>;
+    /// 仅刷新 updated_at（不 bump version）——字段值写入的派生时间戳收口。
+    /// 返回刷新后的块；软删块（get_by_id 过滤 deleted_at）报 NotFound。
+    fn touch_updated_at(&mut self, id: &str) -> Result<Block, Box<dyn Error>>;
     fn create(&mut self, block: &Block) -> Result<Block, Box<dyn Error>>;
     fn update(&mut self, block: &Block) -> Result<Block, Box<dyn Error>>;
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>>;
@@ -45,23 +53,6 @@ pub trait LinkRepository {
     fn delete_by_target_page_id(&mut self, target_page_id: &str) -> Result<(), Box<dyn Error>>;
 }
 
-pub trait PropertyRepository {
-    fn get_all(&self) -> Result<Vec<Property>, Box<dyn Error>>;
-    fn get_by_id(&self, id: &str) -> Result<Property, Box<dyn Error>>;
-    fn get_by_block_id(&self, block_id: &str) -> Result<Vec<Property>, Box<dyn Error>>;
-    /// Batch variant — one query for all blocks on a page (avoids N+1 in render path).
-    fn get_by_block_ids(&self, block_ids: &[String]) -> Result<Vec<Property>, Box<dyn Error>>;
-    fn get_by_block_id_and_key(&self, block_id: &str, key: &str) -> Result<Option<Property>, Box<dyn Error>>;
-    /// 反查：按 key + values 查询匹配的 block_id 列表（用于查询未完成任务）
-    fn query_block_ids_by_key_value(&self, key: &str, values: &[String]) -> Result<Vec<String>, Box<dyn Error>>;
-    fn create(&mut self, property: &Property) -> Result<Property, Box<dyn Error>>;
-    fn update(&mut self, property: &Property) -> Result<Property, Box<dyn Error>>;
-    /// Insert or update by (block_id, key) — eliminates read-then-write race.
-    fn upsert(&mut self, property: &Property) -> Result<Property, Box<dyn Error>>;
-    fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>>;
-    fn delete_by_block_id(&mut self, block_id: &str) -> Result<(), Box<dyn Error>>;
-}
-
 pub trait RelationshipTypeRepository {
     fn get_by_id(&self, id: &str) -> Result<RelationshipType, Box<dyn Error>>;
     fn get_by_type(&self, r#type: &str) -> Result<Option<RelationshipType>, Box<dyn Error>>;
@@ -69,6 +60,67 @@ pub trait RelationshipTypeRepository {
     fn create(&mut self, rt: &RelationshipType) -> Result<RelationshipType, Box<dyn Error>>;
     fn update(&mut self, rt: &RelationshipType) -> Result<RelationshipType, Box<dyn Error>>;
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>>;
+}
+
+pub trait TagRepository {
+    fn get_by_id(&self, id: &str) -> Result<Tag, Box<dyn Error>>;
+    fn get_by_title(&self, title: &str) -> Result<Option<Tag>, Box<dyn Error>>;
+    /// 含软删行（title UNIQUE 被软删行占用时的查找，联动复挂用）。
+    fn get_by_title_including_deleted(&self, title: &str) -> Result<Option<Tag>, Box<dyn Error>>;
+    /// 撤销软删（grill 决策 #7：复挂复活，不重建）。
+    fn undelete(&mut self, id: &str) -> Result<(), Box<dyn Error>>;
+    fn get_all(&self) -> Result<Vec<Tag>, Box<dyn Error>>;
+    fn create(&mut self, tag: &Tag) -> Result<Tag, Box<dyn Error>>;
+    fn update(&mut self, tag: &Tag) -> Result<Tag, Box<dyn Error>>;
+    fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>>;
+}
+
+pub trait FieldDefinitionRepository {
+    fn get_by_id(&self, id: &str) -> Result<FieldDefinition, Box<dyn Error>>;
+    fn get_by_key(&self, key: &str) -> Result<Option<FieldDefinition>, Box<dyn Error>>;
+    fn get_all(&self) -> Result<Vec<FieldDefinition>, Box<dyn Error>>;
+    fn create(&mut self, fd: &FieldDefinition) -> Result<FieldDefinition, Box<dyn Error>>;
+    fn update(&mut self, fd: &FieldDefinition) -> Result<FieldDefinition, Box<dyn Error>>;
+    fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>>;
+    /// 级联软删入口：以显式戳软删定义本体（D9 + undo 裁定，见 entity 注释）。
+    fn soft_delete_at(&mut self, id: &str, now: i64) -> Result<(), Box<dyn Error>>;
+    /// 含软删行读取（撤销路径专用）。
+    fn get_by_id_including_deleted(&self, id: &str) -> Result<FieldDefinition, Box<dyn Error>>;
+    fn undelete(&mut self, id: &str) -> Result<(), Box<dyn Error>>;
+    /// 被软删的预设字段定义（is_preset=1 且 deleted_at 非空）—— 恢复按钮可见性用。
+    fn get_deleted_presets(&self) -> Result<Vec<FieldDefinition>, Box<dyn Error>>;
+    /// 批量复活被软删的预设（清 deleted_at）；返回被复活 id 列表（sync 登记用）。
+    /// 只动 is_preset=1 且已软删的行，绝不覆盖活跃编辑。
+    fn restore_presets(&mut self) -> Result<Vec<String>, Box<dyn Error>>;
+}
+
+pub trait FieldValueRepository {
+    fn get_by_id(&self, id: &str) -> Result<FieldValue, Box<dyn Error>>;
+    fn get_by_block_id(&self, block_id: &str) -> Result<Vec<FieldValue>, Box<dyn Error>>;
+    fn get_by_block_ids(&self, block_ids: &[String]) -> Result<Vec<FieldValue>, Box<dyn Error>>;
+    fn get_all(&self) -> Result<Vec<FieldValue>, Box<dyn Error>>;
+    fn get_by_field_definition_id(&self, field_definition_id: &str) -> Result<Vec<FieldValue>, Box<dyn Error>>;
+    /// 含软删行（撤销恢复按 id 复活用）。
+    fn get_by_id_including_deleted(&self, id: &str) -> Result<Option<FieldValue>, Box<dyn Error>>;
+    /// 撤销软删。
+    fn undelete(&mut self, id: &str) -> Result<(), Box<dyn Error>>;
+    fn create(&mut self, fv: &FieldValue) -> Result<FieldValue, Box<dyn Error>>;
+    fn update(&mut self, fv: &FieldValue) -> Result<FieldValue, Box<dyn Error>>;
+    fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>>;
+    fn delete_by_block_id(&mut self, block_id: &str) -> Result<(), Box<dyn Error>>;
+    /// 级联软删：按定义软删其全部值，整批共享 `now` 以便精确 undo。
+    /// 返回**实际受影响的行数**（ADR D9：「删除前告知受影响条目数」）。
+    fn soft_delete_by_field_definition(
+        &mut self,
+        field_definition_id: &str,
+        now: i64,
+    ) -> Result<usize, Box<dyn Error>>;
+    /// 复活某一批次（删除戳 == `deleted_at`）的值。
+    fn restore_by_field_definition(
+        &mut self,
+        field_definition_id: &str,
+        deleted_at: i64,
+    ) -> Result<(), Box<dyn Error>>;
 }
 
 pub trait TemplateRepository {
@@ -84,16 +136,6 @@ pub trait SearchRepository {
     fn search(&self, query: &str, limit: usize) -> Result<Vec<SearchResult>, Box<dyn Error>>;
     fn update_index(&mut self, block_id: &str, content: &str, title: &str) -> Result<(), Box<dyn Error>>;
     fn delete_from_index(&mut self, block_id: &str) -> Result<(), Box<dyn Error>>;
-}
-
-pub trait BlockVersionRepository {
-    fn get_by_id(&self, id: &str) -> Result<BlockVersion, Box<dyn Error>>;
-    fn get_by_block_id(&self, block_id: &str) -> Result<Vec<BlockVersion>, Box<dyn Error>>;
-    fn get_latest_version(&self, block_id: &str) -> Result<Option<BlockVersion>, Box<dyn Error>>;
-    fn create(&mut self, version: &BlockVersion) -> Result<BlockVersion, Box<dyn Error>>;
-    fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>>;
-    fn delete_by_block_id(&mut self, block_id: &str) -> Result<(), Box<dyn Error>>;
-    fn delete_older_than(&mut self, block_id: &str, timestamp: i64) -> Result<(), Box<dyn Error>>;
 }
 
 pub trait NotificationRepository {
@@ -155,9 +197,13 @@ pub trait SavedFilterRepository {
 
 pub trait ScreenViewRepository {
     fn get_all_by_entity(&self, entity: &str) -> Result<Vec<ScreenView>, Box<dyn Error>>;
+    /// 全表列举（不分实体）—— 孤儿命名空间核销用；业务读取一律走 `get_all_by_entity`。
+    fn get_all(&self) -> Result<Vec<ScreenView>, Box<dyn Error>>;
     fn get_by_id(&self, id: &str) -> Result<ScreenView, Box<dyn Error>>;
     fn create(&mut self, view: &ScreenView) -> Result<ScreenView, Box<dyn Error>>;
     fn update(&mut self, view: &ScreenView) -> Result<ScreenView, Box<dyn Error>>;
+    /// 改写命名空间归属（孤儿标记 / 复原）。`update` 不碰 entity 列，故单列一条。
+    fn set_entity(&mut self, id: &str, entity: &str, updated_at: i64) -> Result<(), Box<dyn Error>>;
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>>;
     /// 批量原子重排 `(entity, parent_id)` 下子项顺序（ADR-0044，Tabs 拖拽持久化）。
     fn reorder(&mut self, entity: &str, parent_id: &str, ordered_ids: &[String]) -> Result<(), Box<dyn Error>>;
@@ -200,11 +246,12 @@ pub trait StorageAdapter {
     fn blocks(&mut self) -> &mut dyn BlockRepository;
     fn pages(&mut self) -> &mut dyn PageRepository;
     fn links(&mut self) -> &mut dyn LinkRepository;
-    fn properties(&mut self) -> &mut dyn PropertyRepository;
     fn relationship_types(&mut self) -> &mut dyn RelationshipTypeRepository;
+    fn tags(&mut self) -> &mut dyn TagRepository;
+    fn field_definitions(&mut self) -> &mut dyn FieldDefinitionRepository;
+    fn field_values(&mut self) -> &mut dyn FieldValueRepository;
     fn templates(&mut self) -> &mut dyn TemplateRepository;
     fn search(&mut self) -> &mut dyn SearchRepository;
-    fn block_versions(&mut self) -> &mut dyn BlockVersionRepository;
     fn notifications(&mut self) -> &mut dyn NotificationRepository;
     fn date_refs(&mut self) -> &mut dyn DateRefRepository;
     fn saved_filters(&mut self) -> &mut dyn SavedFilterRepository;

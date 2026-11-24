@@ -1,17 +1,17 @@
 <script setup lang="ts">
+import { ExternalLink, FileText, X } from 'lucide-vue-next'
 import { computed, onBeforeUnmount, onMounted, provide, reactive, ref, toRef, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { ExternalLink, FileText, X } from 'lucide-vue-next'
-import Block from './index.vue'
-import IdeasSnapshotNode from '../Ideas/IdeasSnapshotNode.vue'
-import { useBlockStore } from '../../stores/blocks'
+
+import { buildSubtree, buildTree, syncTreeToStore } from '../../composables/useBlockTree'
+import { hasModalOpen } from '../../composables/useModalKeyboard'
 import { useBlockCardStore } from '../../stores/blockCard'
+import { useBlockStore } from '../../stores/blocks'
 import { useEditorStore } from '../../stores/editor'
 import { usePageStore } from '../../stores/pages'
-import { hasModalOpen } from '../../composables/useModalKeyboard'
-import { buildSubtree, buildTree, syncTreeToStore } from '../../composables/useBlockTree'
-import { applyDropTarget } from './composables/useBlockDragDrop'
-import type { DragEndIntent } from './composables/useBlockDragDrop'
+import type { TreeNode } from '../../types/block'
+import type { IdeasSnapshotData } from '../../utils/ideas-snapshot'
+import IdeasSnapshotNode from '../Ideas/IdeasSnapshotNode.vue'
 import {
   SNAPSHOT_MODAL_KEY,
   SNAPSHOT_PROPS_KEY,
@@ -19,8 +19,9 @@ import {
   type SnapshotPropsMap,
   type SnapshotTreeState,
 } from '../Ideas/snapshotContext'
-import type { IdeasSnapshotData } from '../../utils/ideas-snapshot'
-import type { TreeNode } from '../../types/block'
+import type { DragEndIntent } from './composables/useBlockDragDrop'
+import { applyDropTarget } from './composables/useBlockDragDrop'
+import Block from './index.vue'
 
 /**
  * 单 block 编辑弹窗（仿 PageDrawer）：列表（任务中心/看板/日历…）点卡片后，
@@ -390,7 +391,7 @@ onBeforeUnmount(() => {
   background: var(--bg-base);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-modal);
+  box-shadow: var(--shadow-floating);
 }
 
 .modal-header {
@@ -467,9 +468,9 @@ onBeforeUnmount(() => {
   color: var(--text-tertiary);
   border-radius: var(--radius-sm);
   transition:
-    background-color 0.12s ease,
-    color 0.12s ease,
-    transform 0.08s ease;
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -547,16 +548,25 @@ onBeforeUnmount(() => {
   }
 }
 
-.block-modal-enter-active,
-.block-modal-leave-active {
-  transition: opacity 0.18s ease;
+// 弹层家族统一编排（ADR-0053）：遮罩淡入淡出；面板 slow 入（上浮+缩放）/ base 出（快而轻）
+.block-modal-enter-active {
+  transition: opacity var(--dur-slow) var(--ease-out);
 }
 
-.block-modal-enter-active .block-modal,
+.block-modal-leave-active {
+  transition: opacity var(--dur-base) var(--ease-in);
+}
+
+.block-modal-enter-active .block-modal {
+  transition:
+    transform var(--dur-slow) var(--ease-out),
+    opacity var(--dur-slow) var(--ease-out);
+}
+
 .block-modal-leave-active .block-modal {
   transition:
-    transform 0.2s cubic-bezier(0.16, 1, 0.3, 1),
-    opacity 0.18s ease;
+    transform var(--dur-base) var(--ease-in),
+    opacity var(--dur-base) var(--ease-in);
 }
 
 .block-modal-enter-from,
@@ -564,9 +574,13 @@ onBeforeUnmount(() => {
   opacity: 0;
 }
 
-.block-modal-enter-from .block-modal,
+.block-modal-enter-from .block-modal {
+  transform: translateY(4px) scale(0.97);
+  opacity: 0;
+}
+
 .block-modal-leave-to .block-modal {
-  transform: translateY(12px) scale(0.97);
+  transform: translateY(2px) scale(0.98);
   opacity: 0;
 }
 

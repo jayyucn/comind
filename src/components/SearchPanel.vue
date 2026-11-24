@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { initCoreClient } from '../wasm/client'
+
+import { popModal, pushModal } from '../composables/useModalKeyboard'
 import type { SearchResult } from '../types/search'
-import { pushModal, popModal } from '../composables/useModalKeyboard'
+import { initCoreClient } from '../wasm/client'
 
 let clientPromise: ReturnType<typeof initCoreClient> | null = null
 
@@ -273,7 +274,7 @@ function getResultTypeLabel(result: SearchResult): string {
   max-height: 500px;
   background: var(--bg-base);
   border-radius: 12px;
-  box-shadow: var(--shadow-modal);
+  box-shadow: var(--shadow-floating);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -297,7 +298,7 @@ function getResultTypeLabel(result: SearchResult): string {
   background: var(--bg-sidebar);
   color: var(--text-primary);
   outline: none;
-  transition: border-color 0.2s;
+  transition: border-color var(--dur-base) var(--ease-out);
 
   &:focus {
     border-color: var(--accent);
@@ -351,7 +352,7 @@ function getResultTypeLabel(result: SearchResult): string {
   gap: 12px;
   padding: 10px 16px;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background var(--dur-fast) var(--ease-out);
 
   &:hover,
   &.active {

@@ -1,0 +1,420 @@
+<script setup lang="ts">
+import { ref, computed, watch, nextTick } from 'vue'
+import { useEditorStore } from '../../stores/editor'
+import { useFieldValueStore } from '../../stores/fieldValue'
+import { useBlockCardStore } from '../../stores/blockCard'
+import type { FieldValueData } from '../../types/field-definition'
+import { getAllFieldDefinitions } from '../../types/field-definition'
+import { decodeFieldValueData } from '../../utils/field-value-codec'
+import BasePopover from '@/components/common/BasePopover.vue'
+import DatePicker from '@/components/common/DatePicker.vue'
+import EnumSelect, { type EnumOption } from '@/components/common/EnumSelect.vue'
+
+const editorStore = useEditorStore()
+const fieldValueStore = useFieldValueStore()
+const blockCardStore = useBlockCardStore()
+
+const builtInFields = getAllFieldDefinitions()
+
+const visible = computed(() => editorStore.quickFieldValueEditor?.visible ?? false)
+const blockId = computed(() => editorStore.quickFieldValueEditor?.blockId ?? '')
+const key = computed(() => editorStore.quickFieldValueEditor?.key ?? '')
+const position = computed(() => editorStore.quickFieldValueEditor?.position ?? null)
+
+const textInputRef = ref<HTMLInputElement | null>(null)
+const tagInputRef = ref<HTMLInputElement | null>(null)
+
+const currentDef = computed(() => {
+  return builtInFields.find(p => p.key === key.value)
+})
+
+const currentValue = computed(() => {
+  const fv = fieldValueStore.getBlockFieldValue(blockId.value, key.value)
+  return fv ? decodeFieldValueData(fv.value_json, fv.value_type) : ''
+})
+
+const tagList = computed(() => {
+  const val = currentValue.value
+  return Array.isArray(val) ? val : []
+})
+
+const newTag = ref('')
+const textValue = ref('')
+
+/** 枚举（closedValues）分派：值区平铺通用枚举组件（inline），点一次选项即落库。 */
+function handleSelectClosedValue(value: string | undefined) {
+  if (value === undefined) return
+  saveValue(value)
+}
+
+/** 编译期封闭选项 → EnumSelect 数据源（value/label/icon/description 原样映射）。 */
+const closedOptions = computed<EnumOption[]>(() =>
+  (currentDef.value?.closedValues ?? []).map((cv) => ({
+    value: String(cv.value),
+    label: cv.label,
+    icon: cv.icon ?? null,
+    description: cv.description ?? null,
+  })),
+)
+
+/** DatePicker（single）回传收窄：清除时为 undefined，落库空串与原生 date input 一致。 */
+function handleDateChange(v: string | [string, string] | undefined) {
+  saveValue(typeof v === 'string' ? v : '')
+}
+
+function addTag() {
+  if (newTag.value.trim()) {
+    const newTags = [...tagList.value, newTag.value.trim()]
+    saveValue(newTags)
+    newTag.value = ''
+  }
+}
+
+function removeTag(tag: string) {
+  const newTags = tagList.value.filter(t => t !== tag)
+  saveValue(newTags)
+}
+
+function handleTextChange(e: Event) {
+  const target = e.target as HTMLInputElement
+  textValue.value = target.value
+}
+
+function handleTextSave() {
+  saveValue(textValue.value)
+}
+
+/** 以"搜索框+已有值列表"弹层交互的内置属性（project / area） */
+const pickerKey = computed<string | null>(() => {
+  const k = currentDef.value?.key
+  return k === 'project' || k === 'area' ? k : null
+})
+
+const pickerTitle = computed(() => currentDef.value?.title ?? '')
+const pickerIcon = computed(() => (pickerKey.value === 'project' ? '📁' : '🌐'))
+const pickerPlaceholder = computed(() => `搜索${pickerTitle.value}或输入新${pickerTitle.value}名`)
+const pickerEmptyHint = computed(() =>
+  refUsage.value.length === 0
+    ? `暂无${pickerTitle.value}，输入名称回车创建`
+    : `无匹配${pickerTitle.value}，回车创建「${textValue.value.trim()}」`
+)
+
+interface RefUsage {
+  name: string
+  count: number
+}
+
+/** 从全量块快照派生已有值：去重 + 计数，次数降序、同频按名称 */
+const refUsage = computed<RefUsage[]>(() => {
+  const key = pickerKey.value
+  if (!key) return []
+  const usage = new Map<string, number>()
+  for (const card of blockCardStore.cards) {
+    const val = (card.properties ?? {})[key]
+    if (typeof val === 'string' && val.trim()) {
+      usage.set(val, (usage.get(val) ?? 0) + 1)
+    }
+  }
+  return [...usage.entries()]
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+})
+
+const filteredRefs = computed<RefUsage[]>(() => {
+  const q = textValue.value.trim().toLowerCase()
+  if (!q) return refUsage.value
+  return refUsage.value.filter(p => p.name.toLowerCase().includes(q))
+})
+
+const highlightIndex = ref(-1)
+
+function moveHighlight(delta: number) {
+  const len = filteredRefs.value.length
+  if (len === 0) return
+  const base = highlightIndex.value === -1 ? (delta > 0 ? -1 : 0) : highlightIndex.value
+  highlightIndex.value = ((base + delta) % len + len) % len
+}
+
+function onPickerInput(e: Event) {
+  handleTextChange(e)
+  highlightIndex.value = -1
+}
+
+function handlePickerKeydown(e: KeyboardEvent) {
+  const k = e.key
+  if (k === 'ArrowDown' || k === 'ArrowUp') {
+    e.preventDefault()
+    e.stopPropagation()
+    moveHighlight(k === 'ArrowDown' ? 1 : -1)
+    return
+  }
+  if (k === 'Enter') {
+    e.preventDefault()
+    e.stopPropagation()
+    const highlighted = highlightIndex.value >= 0 ? filteredRefs.value[highlightIndex.value] : undefined
+    if (highlighted) {
+      saveValue(highlighted.name)
+    } else if (textValue.value.trim()) {
+      saveValue(textValue.value.trim())
+    }
+  }
+}
+
+async function saveValue(value: FieldValueData) {
+  // status ↔ priority 成对（priority 写入补默认 status=Todo）由
+  // fieldValueStore.setFieldValue 写入收口处理，此处不再调 ensureTodo
+  // （ensureTodo 会往 content 挂 #任务，优先级设置不应改动内容）。
+  await fieldValueStore.setFieldValue(blockId.value, key.value, value, currentDef.value?.type)
+  editorStore.hideQuickFieldValueEditor()
+}
+
+// 无锚点时回退到视口居中，保持原 quick-editor 居中行为（生产调用方均会传 position）
+const popoverPosition = computed(() => {
+  return position.value ?? { x: window.innerWidth / 2, y: window.innerHeight / 2 }
+})
+
+watch(visible, async (v) => {
+  if (!v) return
+  if (pickerKey.value) {
+    textValue.value = (currentValue.value as string) || ''
+    highlightIndex.value = -1
+    // 保证"已有值"来自全量快照（懒加载/脏刷新由 blockCardStore 负责）
+    blockCardStore.getCards()
+    await nextTick()
+    textInputRef.value?.focus()
+    textInputRef.value?.select()
+  } else if (currentDef.value?.type === 'string' && !currentDef.value?.closedValues) {
+    textValue.value = (currentValue.value as string) || ''
+    await nextTick()
+    textInputRef.value?.focus()
+    textInputRef.value?.select()
+  } else if (currentDef.value?.type === 'array') {
+    newTag.value = ''
+    await nextTick()
+    tagInputRef.value?.focus()
+  }
+})
+</script>
+
+<template>
+  <BasePopover
+    :visible="visible && !!currentDef"
+    :position="popoverPosition"
+    @close="editorStore.hideQuickFieldValueEditor()"
+  >
+    <template v-if="currentDef">
+      <!-- Closed Values Dropdown (status, priority)：通用枚举组件 inline 平铺 -->
+      <template v-if="currentDef.closedValues">
+        <EnumSelect
+          class="quick-enum"
+          inline
+          :options="closedOptions"
+          :model-value="typeof currentValue === 'string' ? currentValue : undefined"
+          @update:model-value="handleSelectClosedValue"
+        />
+      </template>
+
+      <!-- Date Picker -->
+      <template v-else-if="currentDef.type === 'date'">
+        <div class="date-editor">
+          <DatePicker
+            :model-value="typeof currentValue === 'string' ? currentValue : ''"
+            @update:model-value="handleDateChange"
+          />
+        </div>
+      </template>
+
+      <!-- Tags Input -->
+      <template v-else-if="currentDef.type === 'array'">
+        <div class="tags-editor">
+          <div
+            v-if="tagList.length > 0"
+            class="tags-list"
+          >
+            <span
+              v-for="tag in tagList"
+              :key="tag"
+              class="tag-item"
+            >
+              {{ tag }}
+              <button
+                class="tag-remove"
+                @click.stop="removeTag(tag)"
+              >×</button>
+            </span>
+          </div>
+          <input
+            ref="tagInputRef"
+            v-model="newTag"
+            type="text"
+            placeholder="输入标签，回车添加"
+            @keydown.enter.prevent.stop="addTag"
+            @click.stop
+          >
+        </div>
+      </template>
+
+      <!-- Ref-List Picker (project/area：搜索已有值 / 回车新建) -->
+      <template v-else-if="pickerKey">
+        <input
+          ref="textInputRef"
+          type="text"
+          :value="textValue"
+          :placeholder="pickerPlaceholder"
+          class="text-input project-search"
+          @input="onPickerInput"
+          @keydown="handlePickerKeydown"
+          @click.stop
+        >
+        <div class="project-list">
+          <div
+            v-for="(p, idx) in filteredRefs"
+            :key="p.name"
+            class="quick-option project-option"
+            :class="{ selected: p.name === currentValue, highlighted: idx === highlightIndex }"
+            @mousedown.prevent
+            @click.stop="saveValue(p.name)"
+            @mouseenter="highlightIndex = idx"
+          >
+            <span class="option-icon">{{ pickerIcon }}</span>
+            <div class="option-text">
+              <span class="option-label">{{ p.name }}</span>
+            </div>
+          </div>
+          <div
+            v-if="filteredRefs.length === 0"
+            class="project-empty"
+          >
+            {{ pickerEmptyHint }}
+          </div>
+        </div>
+      </template>
+
+      <!-- Text Input (其他 string 属性) -->
+      <template v-else>
+        <input
+          ref="textInputRef"
+          type="text"
+          :value="textValue"
+          class="text-input"
+          placeholder="输入内容，回车保存"
+          @input="handleTextChange"
+          @keydown.enter.prevent.stop="handleTextSave"
+          @click.stop
+        >
+      </template>
+    </template>
+  </BasePopover>
+</template>
+
+<style scoped>
+.quick-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out);
+}
+
+.quick-option:hover {
+  background: var(--accent-subtle, rgba(59, 130, 246, 0.08));
+}
+
+.quick-option.selected {
+  background: var(--accent-subtle, rgba(59, 130, 246, 0.12));
+}
+
+.option-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  font-size: var(--text-sm);
+}
+
+.option-text {
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+}
+
+.option-label {
+  font-size: var(--text-sm);
+}
+
+.text-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  box-sizing: border-box;
+}
+
+/* 日期字段：与 .tags-editor 同一内边距节奏，避免触发按钮贴住弹层边角 */
+.date-editor {
+  padding: 8px 12px;
+}
+
+.tags-editor {
+  padding: 8px 12px;
+}
+
+.tags-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.tag-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  background: var(--accent-subtle, rgba(59, 130, 246, 0.12));
+  border-radius: 4px;
+  font-size: var(--text-sm);
+}
+
+.tag-remove {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: var(--text-sm);
+  padding: 0;
+  color: #6b7280;
+}
+
+.tag-remove:hover {
+  color: #374151;
+}
+
+.tags-editor input {
+  width: 100%;
+  padding: 6px 0;
+  border: none;
+  outline: none;
+  font-size: var(--text-sm);
+}
+
+.project-list {
+  max-height: 208px;
+  overflow-y: auto;
+  border-top: 1px solid var(--border);
+}
+
+.project-option.highlighted {
+  background: var(--accent-subtle, rgba(59, 130, 246, 0.08));
+}
+
+.project-empty {
+  padding: 10px 12px;
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
+}
+</style>

@@ -95,7 +95,7 @@ function pageRow(id: string, blockId: string | null): Page {
 }
 
 function mkBlock(id: string, pageId: string, parentId: string | null, pos: number, content = ''): Block {
-  return { id, pageId, parentId, pos, content, format: {}, type: 'bullet', createdAt: 0, updatedAt: 0 }
+  return { id, pageId, parentId, pos, content, format: {}, type: 'text', createdAt: 0, updatedAt: 0 }
 }
 
 let mounted: VueWrapper | null = null

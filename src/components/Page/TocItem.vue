@@ -185,7 +185,7 @@ onBeforeUnmount(() => {
 .chev {
   flex-shrink: 0;
   color: var(--text-tertiary);
-  transition: transform 120ms ease;
+  transition: transform var(--dur-fast) var(--ease-out);
 
   &.open {
     transform: rotate(90deg);
@@ -207,7 +207,7 @@ onBeforeUnmount(() => {
   cursor: pointer;
   border-radius: var(--radius-sm);
   opacity: 0;
-  transition: opacity 100ms ease, color 100ms ease;
+  transition: opacity var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
 
   &:hover {
     color: var(--accent);

@@ -1,0 +1,401 @@
+import { describe, test, expect, beforeEach, vi } from 'vitest'
+import { setActivePinia, createPinia } from 'pinia'
+import { useFieldValueStore } from './fieldValue'
+import { useBlockCardStore } from './blockCard'
+import { useBlockStore } from './blocks'
+import { usePageStore } from './pages'
+import { decodeFieldValueData } from '../utils/field-value-codec'
+import type { CoreClient } from '../wasm/client'
+
+// Store 已全面委托 Rust CoreClient（4.2/S6 迁移）；此处 mock client 验证
+// store 的缓存/映射/编解码编排。Rust 形状（snake_case、deleted_at 为 null|时间戳）。
+const { mockClient } = vi.hoisted(() => {
+  const mockClient = {
+    getFieldValues: vi.fn(async () => [] as unknown[]),
+    setFieldValue: vi.fn(async () => ({})),
+    deleteFieldValue: vi.fn(async () => {}),
+    getDateRefsByBlock: vi.fn(async () => []),
+    calculateNextRecurrence: vi.fn(async (iso: string) => iso),
+    getBlock: vi.fn(async () => ({
+      id: 'block-1',
+      page_id: 'page-1',
+      parent_id: null,
+      pos: 0,
+      content: '',
+      format: '{}',
+      type: 'text',
+      created_at: 0,
+      updated_at: 0,
+    })),
+  }
+  return { mockClient }
+})
+
+vi.mock('../wasm/client', () => ({
+  initCoreClient: vi.fn(() => Promise.resolve(mockClient)),
+  getCoreClient: vi.fn(() => mockClient),
+}))
+
+function makeFieldValue(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'prop-1',
+    block_id: 'block-1',
+    field_definition_id: 'fd-1',
+    key: 'priority',
+    value_json: 'high',
+    value_type: 'string',
+    seq: 0,
+    created_at: Date.now(),
+    updated_at: Date.now(),
+    version: 0,
+    deleted_at: null,
+    ...overrides,
+  }
+}
+
+beforeEach(() => {
+  setActivePinia(createPinia())
+  vi.clearAllMocks()
+  // clearAllMocks 不清除 mockImplementation；显式复位这两个 client 方法，
+  // 避免前一个用例的 mockResolvedValue 泄漏到下一个（getFieldValues 尤其影响字段缓存）。
+  vi.mocked(mockClient.getFieldValues).mockReset()
+  vi.mocked(mockClient.getFieldValues).mockResolvedValue([] as never)
+  vi.mocked(mockClient.setFieldValue).mockReset()
+  vi.mocked(mockClient.setFieldValue).mockResolvedValue({} as never)
+})
+
+describe('useFieldValueStore', () => {
+  describe('builtInFields', () => {
+    test('返回内置字段定义', () => {
+      const store = useFieldValueStore()
+      expect(store.builtInFields.length).toBeGreaterThan(0)
+    })
+  })
+
+  describe('getFieldDef', () => {
+    test('获取字段定义', () => {
+      const store = useFieldValueStore()
+      const def = store.getFieldDef('priority')
+      expect(def).toBeDefined()
+      expect(def?.key).toBe('priority')
+    })
+
+    test('获取不存在的字段定义返回 undefined', () => {
+      const store = useFieldValueStore()
+      const def = store.getFieldDef('non-existent')
+      expect(def).toBeUndefined()
+    })
+  })
+
+  describe('getBlockFieldValues', () => {
+    test('初始返回空数组', () => {
+      const store = useFieldValueStore()
+      const values = store.getBlockFieldValues('block-1')
+      expect(values).toEqual([])
+    })
+
+    test('获取已加载的字段值', async () => {
+      vi.mocked(mockClient.getFieldValues).mockResolvedValue([makeFieldValue()] as never)
+
+      const store = useFieldValueStore()
+      await store.loadBlockFieldValues('block-1')
+      const values = store.getBlockFieldValues('block-1')
+      expect(values.length).toBe(1)
+    })
+  })
+
+  describe('getBlockFieldValue', () => {
+    test('通过 key 获取字段值', async () => {
+      vi.mocked(mockClient.getFieldValues).mockResolvedValue([makeFieldValue()] as never)
+
+      const store = useFieldValueStore()
+      await store.loadBlockFieldValues('block-1')
+      const value = store.getBlockFieldValue('block-1', 'priority')
+      expect(value?.key).toBe('priority')
+      expect(decodeFieldValueData(value!.value_json, value!.value_type)).toBe('high')
+    })
+
+    test('获取不存在的字段值返回 undefined', async () => {
+      vi.mocked(mockClient.getFieldValues).mockResolvedValue([] as never)
+
+      const store = useFieldValueStore()
+      await store.loadBlockFieldValues('block-1')
+      const value = store.getBlockFieldValue('block-1', 'non-existent')
+      expect(value).toBeUndefined()
+    })
+  })
+
+  describe('loadBlockFieldValues', () => {
+    test('加载字段值并缓存', async () => {
+      vi.mocked(mockClient.getFieldValues).mockResolvedValue([makeFieldValue()] as never)
+
+      const store = useFieldValueStore()
+      expect(store.loading).toBe(false)
+      const values = await store.loadBlockFieldValues('block-1')
+      expect(store.loading).toBe(false)
+      expect(values.length).toBe(1)
+      expect(mockClient.getFieldValues).toHaveBeenCalledWith('block-1')
+    })
+  })
+
+  describe('loadMultiBlockFieldValues', () => {
+    test('批量加载多个 block 的字段值', async () => {
+      vi.mocked(mockClient.getFieldValues)
+        .mockResolvedValueOnce([makeFieldValue()] as never)
+        .mockResolvedValueOnce([makeFieldValue({ id: 'prop-2', block_id: 'block-2', key: 'status', value_json: 'active', value_type: 'string' })] as never)
+
+      const store = useFieldValueStore()
+      await store.loadMultiBlockFieldValues(['block-1', 'block-2'])
+      expect(mockClient.getFieldValues).toHaveBeenCalledWith('block-1')
+      expect(mockClient.getFieldValues).toHaveBeenCalledWith('block-2')
+      expect(store.getBlockFieldValues('block-1').length).toBe(1)
+      expect(store.getBlockFieldValues('block-2').length).toBe(1)
+    })
+  })
+
+  describe('setFieldValue', () => {
+    test('设置字段值并用返回 row 就地合并缓存（string 值直通不 JSON 编码）', async () => {
+      const newValue = makeFieldValue({ value_json: 'medium' })
+      vi.mocked(mockClient.setFieldValue).mockResolvedValue(newValue as never)
+      vi.mocked(mockClient.getFieldValues).mockResolvedValue([newValue] as never)
+
+      const store = useFieldValueStore()
+      const result = await store.setFieldValue('block-1', 'priority', 'medium', 'string')
+      expect(result).toMatchObject({ id: 'prop-1', key: 'priority', value_json: 'medium', value_type: 'string' })
+      // codec 单源（#117）：string 类型直通，不 JSON 编码
+      expect(mockClient.setFieldValue).toHaveBeenCalledWith('block-1', 'priority', 'medium', 'string')
+    })
+
+    test('写入后就地合并缓存，不再全量重拉 getFieldValues（回显零第二往返）', async () => {
+      vi.mocked(mockClient.getFieldValues).mockResolvedValue([] as never)
+      vi.mocked(mockClient.setFieldValue).mockResolvedValue(makeFieldValue({ value_json: 'High' }) as never)
+
+      const store = useFieldValueStore()
+      await store.loadBlockFieldValues('block-1')
+      vi.mocked(mockClient.getFieldValues).mockClear()
+
+      await store.setFieldValue('block-1', 'priority', 'High', 'string')
+
+      expect(mockClient.getFieldValues).not.toHaveBeenCalled()
+      expect(store.getBlockFieldValue('block-1', 'priority')?.value_json).toBe('High')
+    })
+
+    test('块首次获得 status（创建任务）→ 一并补默认 priority=Low', async () => {
+      const store = useFieldValueStore()
+      await store.setFieldValue('block-1', 'status', 'Todo', 'string')
+
+      expect(mockClient.setFieldValue).toHaveBeenCalledWith('block-1', 'status', 'Todo', 'string')
+      expect(mockClient.setFieldValue).toHaveBeenCalledWith('block-1', 'priority', 'Low', 'string')
+    })
+
+    test('块已有 priority → 首次获得 status 时不覆盖手写值', async () => {
+      vi.mocked(mockClient.getFieldValues).mockResolvedValue([
+        makeFieldValue({ key: 'priority', value_json: 'High' }),
+      ] as never)
+      const store = useFieldValueStore()
+      await store.loadBlockFieldValues('block-1')
+
+      await store.setFieldValue('block-1', 'status', 'Todo', 'string')
+
+      expect(mockClient.setFieldValue).not.toHaveBeenCalledWith('block-1', 'priority', 'Low', 'string')
+    })
+
+    test('块已有 status（状态切换，非创建）→ 不补 priority', async () => {
+      vi.mocked(mockClient.getFieldValues).mockResolvedValue([
+        makeFieldValue({ key: 'status', value_json: 'Doing' }),
+      ] as never)
+      const store = useFieldValueStore()
+      await store.loadBlockFieldValues('block-1')
+
+      await store.setFieldValue('block-1', 'status', 'Done', 'string')
+
+      expect(mockClient.setFieldValue).not.toHaveBeenCalledWith('block-1', 'priority', 'Low', 'string')
+    })
+
+    // ── 缓存冷启动回归（2026-10-13）──
+    // TaskHub 矩阵视图等入口的 refresh 只拉 BlockCard 投影，不经 fieldValue 缓存；
+    // 用户点卡片状态图标切 Done 时缓存未预热，becomesTask/补写判据曾以空缓存
+    // 误判「块尚无 priority」→ 补写 Low 覆盖库里 Medium，任务从「重要不紧急」
+    // 跳进「不重要不紧急」象限。修复：setFieldValue 写前对未预热 block 先读库。
+    test('缓存未预热（TaskHub 首写）→ 切 Done 不覆盖库里已有 priority', async () => {
+      vi.mocked(mockClient.getFieldValues).mockResolvedValue([
+        makeFieldValue({ key: 'status', value_json: 'Todo' }),
+        makeFieldValue({ id: 'prop-2', key: 'priority', value_json: 'Medium' }),
+      ] as never)
+      const store = useFieldValueStore()
+      // 不调 loadBlockFieldValues —— 模拟 TaskHub 点状态图标的真实时序
+
+      await store.setFieldValue('block-1', 'status', 'Done', 'string')
+
+      expect(mockClient.setFieldValue).toHaveBeenCalledWith('block-1', 'status', 'Done', 'string')
+      expect(mockClient.setFieldValue).not.toHaveBeenCalledWith('block-1', 'priority', 'Low', 'string')
+      // 预热读入的 priority 行保持库里原值，未被补写覆盖
+      expect(store.getBlockFieldValue('block-1', 'priority')?.value_json).toBe('Medium')
+    })
+
+    test('缓存未预热（TaskHub 首写）→ 拖拽改象限不把库里 Doing 打回 Todo', async () => {
+      vi.mocked(mockClient.getFieldValues).mockResolvedValue([
+        makeFieldValue({ key: 'status', value_json: 'Doing' }),
+      ] as never)
+      const store = useFieldValueStore()
+
+      await store.setFieldValue('block-1', 'priority', 'Medium', 'string')
+
+      expect(mockClient.setFieldValue).toHaveBeenCalledWith('block-1', 'priority', 'Medium', 'string')
+      expect(mockClient.setFieldValue).not.toHaveBeenCalledWith('block-1', 'status', 'Todo', 'string')
+    })
+
+    // ── status ↔ priority 成对（写入收口双向对偶）──
+    // /todo → 补 priority=Low（上方 becomesTask 分支，已有用例）；
+    // /low 等优先级写入 → 补 status=Todo。均只写字段值，不改 content、不挂 #任务 tag。
+
+    test('写入 priority 且块尚无 status → 补默认 status=Todo（成对，/low 默认设 todo）', async () => {
+      const store = useFieldValueStore()
+      await store.setFieldValue('block-1', 'priority', 'Low', 'string')
+
+      expect(mockClient.setFieldValue).toHaveBeenCalledWith('block-1', 'priority', 'Low', 'string')
+      expect(mockClient.setFieldValue).toHaveBeenCalledWith('block-1', 'status', 'Todo', 'string')
+    })
+
+    test('块已有 status → 写 priority 不重置 status（/low 不把 Doing/Done 打回 Todo）', async () => {
+      vi.mocked(mockClient.getFieldValues).mockResolvedValue([
+        makeFieldValue({ key: 'status', value_json: 'Doing' }),
+      ] as never)
+      const store = useFieldValueStore()
+      await store.loadBlockFieldValues('block-1')
+      vi.mocked(mockClient.setFieldValue).mockClear()
+
+      await store.setFieldValue('block-1', 'priority', 'Low', 'string')
+
+      expect(mockClient.setFieldValue).toHaveBeenCalledTimes(1)
+      expect(mockClient.setFieldValue).not.toHaveBeenCalledWith('block-1', 'status', expect.anything(), expect.anything())
+    })
+
+    test('成对写入递归安全：/low 补 status 时不再反向重复补 priority', async () => {
+      const store = useFieldValueStore()
+      await store.setFieldValue('block-1', 'priority', 'Low', 'string')
+
+      // priority 一次 + 成对补的 status 一次；status 写入的 becomesTask 分支看到
+      // priority 已在场（先 merge 再补），不得再写第三笔 priority
+      expect(mockClient.setFieldValue).toHaveBeenCalledTimes(2)
+      const priorityCalls = vi.mocked(mockClient.setFieldValue).mock.calls.filter(c => c[1] === 'priority')
+      expect(priorityCalls).toHaveLength(1)
+    })
+  })
+
+  describe('deleteFieldValue', () => {
+    test('删除字段值并就地移除缓存（按 key 删除，不再全量重拉）', async () => {
+      vi.mocked(mockClient.getFieldValues).mockResolvedValue([makeFieldValue()] as never)
+
+      const store = useFieldValueStore()
+      await store.loadBlockFieldValues('block-1')
+      vi.mocked(mockClient.getFieldValues).mockClear()
+
+      await store.deleteFieldValue('prop-1', 'block-1')
+      expect(mockClient.deleteFieldValue).toHaveBeenCalledWith('block-1', 'priority')
+      expect(mockClient.getFieldValues).not.toHaveBeenCalled()
+      expect(store.getBlockFieldValue('block-1', 'priority')).toBeUndefined()
+    })
+
+    // 删值同样改变卡片投影（看板分组 / 表格单元格都读 BlockCard.properties）。
+    // 原实现只改 fieldValue 缓存、连脏都不标 ⇒ 视图无从得知，删掉的值在表格里继续显示。
+    test('删除字段值标记卡片投影脏（与 setFieldValue 同口径）', async () => {
+      vi.mocked(mockClient.getFieldValues).mockResolvedValue([makeFieldValue()] as never)
+
+      const store = useFieldValueStore()
+      await store.loadBlockFieldValues('block-1')
+
+      const blockCardStore = useBlockCardStore()
+      expect(blockCardStore.dirtyIds.has('block-1')).toBe(false)
+
+      await store.deleteFieldValue('prop-1', 'block-1')
+      expect(blockCardStore.dirtyIds.has('block-1')).toBe(true)
+    })
+  })
+
+  describe('clearBlockCache', () => {
+    test('清除 block 缓存', async () => {
+      vi.mocked(mockClient.getFieldValues).mockResolvedValue([makeFieldValue()] as never)
+
+      const store = useFieldValueStore()
+      await store.loadBlockFieldValues('block-1')
+      expect(store.getBlockFieldValues('block-1').length).toBe(1)
+
+      store.clearBlockCache('block-1')
+      expect(store.getBlockFieldValues('block-1')).toEqual([])
+    })
+  })
+
+  // T4（multiSelect 多选枚举）：值是选项 id 数组，落库走 JSON 编码（value_type=multiSelect），
+  // 读取经 decode 还原数组——钉死「数组落库且同步不丢」（#139 同步修复的回归网）。
+  describe('multiSelect 数组落库往返', () => {
+    test('setFieldValue：数组按 JSON 编码落库，缓存行读回 decode 保真', async () => {
+      vi.mocked(mockClient.setFieldValue).mockImplementation(async (_blockId, key, valueJson, valueType) =>
+        makeFieldValue({ key: key as string, value_json: valueJson as string, value_type: valueType as string }) as never,
+      )
+
+      const store = useFieldValueStore()
+      await store.setFieldValue('block-1', 'labels', ['a', 'b'], 'multiSelect')
+
+      expect(mockClient.setFieldValue).toHaveBeenCalledWith('block-1', 'labels', '["a","b"]', 'multiSelect')
+      const row = store.getBlockFieldValue('block-1', 'labels')
+      expect(row?.value_type).toBe('multiSelect')
+      expect(decodeFieldValueData(row!.value_json, row!.value_type)).toEqual(['a', 'b'])
+    })
+
+    test('重复写入：以最新数组为准（缓存就地替换，不叠加不丢）', async () => {
+      vi.mocked(mockClient.setFieldValue).mockImplementation(async (_blockId, key, valueJson, valueType) =>
+        makeFieldValue({ key: key as string, value_json: valueJson as string, value_type: valueType as string }) as never,
+      )
+
+      const store = useFieldValueStore()
+      await store.setFieldValue('block-1', 'labels', ['a', 'b'], 'multiSelect')
+      await store.setFieldValue('block-1', 'labels', ['a', 'c'], 'multiSelect')
+
+      const row = store.getBlockFieldValue('block-1', 'labels')
+      expect(decodeFieldValueData(row!.value_json, row!.value_type)).toEqual(['a', 'c'])
+    })
+  })
+
+  // 与内容改动一致：字段值写入也应把所属页顶到「最近」列表首位（内存层 updatedAt 同步）。
+  describe('字段值写入同步页最近列表（touchPage）', () => {
+    function seedBlock() {
+      const blockStore = useBlockStore()
+      blockStore.blocks.push({
+        id: 'block-1',
+        pageId: 'page-1',
+        parentId: null,
+        pos: 0,
+        content: '',
+        format: {},
+        type: 'text',
+        createdAt: 0,
+        updatedAt: 0,
+      } as never)
+    }
+
+    test('setFieldValue 后所属页被 touch', async () => {
+      seedBlock()
+      const pageStore = usePageStore()
+      const touchSpy = vi.spyOn(pageStore, 'touchPage')
+
+      const store = useFieldValueStore()
+      await store.setFieldValue('block-1', 'labels', ['a'], 'multiSelect')
+
+      expect(touchSpy).toHaveBeenCalledWith('page-1')
+    })
+
+    test('deleteFieldValue 后所属页被 touch', async () => {
+      seedBlock()
+      vi.mocked(mockClient.getFieldValues).mockResolvedValue([makeFieldValue({ id: 'prop-1', key: 'labels' })] as never)
+      const pageStore = usePageStore()
+      const touchSpy = vi.spyOn(pageStore, 'touchPage')
+
+      const store = useFieldValueStore()
+      await store.loadBlockFieldValues('block-1')
+      await store.deleteFieldValue('prop-1', 'block-1')
+
+      expect(touchSpy).toHaveBeenCalledWith('page-1')
+    })
+  })
+})

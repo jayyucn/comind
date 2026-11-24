@@ -1,39 +1,40 @@
 <script setup lang="ts">
-import type { PropertyValue } from '@/types/property'
+import type { FieldValueData } from '@/types/field-definition'
 import { CalendarDays, Columns, LayoutGrid, Table } from 'lucide-vue-next'
 import { computed, markRaw, onMounted, ref } from 'vue'
-import { createQueryEngine } from '../../core/query'
-import { blockDefaultConfig, BLOCK_ENTITY, getBlockRegistry } from '../../composables/useBlockQueryRegistry'
+import { BLOCK_ENTITY, blockDefaultConfig, getBlockRegistry } from '../../composables/useBlockQueryRegistry'
 import type { ViewQuery } from '../../core/query'
+import { createQueryEngine } from '../../core/query'
 import { parseLayoutConfig, type BoardConfig, type CalendarConfig, type QuadrantConfig, type TableConfig } from '../../core/view'
 import type { ViewTypeOption } from '../../core/view/management'
 import { useBlockCardStore } from '../../stores/blockCard'
 import { useBlockStore } from '../../stores/blocks'
 import { useEditorStore } from '../../stores/editor'
+import { useFieldValueStore } from '../../stores/fieldValue'
 import { usePageStore } from '../../stores/pages'
-import { usePropertyStore } from '../../stores/property'
 import { useScreenViewStore } from '../../stores/screenView'
 import type { BlockCard } from '../../wasm/types'
 import QueryPageFrame from '../common/QueryPageFrame.vue'
 import PageDrawer from '../Page/PageDrawer.vue'
 import BlockContentCell from '../views/BlockContentCell.vue'
-import TableView from '../views/TableView.vue'
 import BoardView from '../views/BoardView.vue'
 import CalendarView from '../views/CalendarView.vue'
 import QuadrantView from '../views/QuadrantView.vue'
+import TableView from '../views/TableView.vue'
 import type { CellRegistry } from '../views/types'
+import { isQuadrantCard } from './quadrant-filter'
 
 const blockCardStore = useBlockCardStore()
 // 命名视图 store（与 QueryPageFrame 内部同 key 单例共享；此处仅读取 currentViewType/currentTab）。
 // 首建注入实体默认布局（blockDefaultConfig）——seed/create 时写入 Block 正确的 config（ADR-0023 上游修复）。
 const screenViewStore = useScreenViewStore('block', { defaultConfig: blockDefaultConfig })
-const propertyStore = usePropertyStore()
+const fieldValueStore = useFieldValueStore()
 // 四象限新增任务：block 经编辑器 store 创建（走既有 _scheduleSave 通路），页面自动建/复用
 const blockStore = useBlockStore()
 const pageStore = usePageStore()
 const editorStore = useEditorStore()
 
-// 通用查询引擎注册表（组合根单例，内置字段 + 自定义 property 已注册）
+// 通用查询引擎注册表（组合根单例，内置字段 + 自定义字段已注册）
 const registry = getBlockRegistry()
 // 统一引擎：实体类型在工厂创建时绑定（ADR-0022 Q7）
 const blockEngine = createQueryEngine<BlockCard>(BLOCK_ENTITY)
@@ -45,7 +46,7 @@ const blockViewTypes: ViewTypeOption[] = [
   { key: 'table', label: '表格', icon: Table },
   { key: 'board', label: '看板', icon: Columns },
   { key: 'calendar', label: '日历', icon: CalendarDays },
-  { key: 'quadrant', label: '四象限', icon: LayoutGrid },
+  { key: 'quadrant', label: '矩阵', icon: LayoutGrid },
 ]
 
 // 自定义单元格注册表（ADR-0010）：content 列用富预览组件接管渲染。组件须 markRaw 避免被 Vue 误设为响应式。
@@ -61,6 +62,13 @@ const viewQuery = computed<ViewQuery>(() => screenViewStore.workingQuery)
 const currentViewType = computed(() => screenViewStore.currentViewType)
 
 const currentTab = computed(() => screenViewStore.currentTab)
+
+// 四象限：与 tag 解耦 —— 只要 block 具备 priority + status 即视为任务入格，
+// 不要求挂载 #任务（用户既有任务即使未挂任务 tag 也应出现在矩阵）。
+// 与 searchedCards（D4 任务 tag 口径，服务于表格/看板/日历）并列、互不影响。
+const quadrantSource = computed<BlockCard[]>(() =>
+  blockCardStore.cards.filter((c) => isQuadrantCard(c, searchQuery.value)),
+)
 
 // 视图布局配置（列序/列宽/卡片徽章/日历落格字段）。
 // 优先读持久化的 ScreenViewRust.config（解析校验 viewKind 一致），否则回退实体注册点默认（BLOCK_DEFAULT_*）。
@@ -83,11 +91,14 @@ const quadrantConfig = computed<QuadrantConfig | undefined>(() => {
   return (parseLayoutConfig(currentTab.value?.config, 'quadrant') as QuadrantConfig | null) ?? (blockDefaultConfig('quadrant') as QuadrantConfig)
 })
 
-// 数据源：排除 status 为空的 blocks（普通非任务段落），再做搜索子串过滤
-// （与 PagesLibrary 对 title 过滤同构；status 以 property 存于 card.properties['status']）
+// 数据源（任务中心全视图共同口径，2026-10-13 口径修订，取代 ADR-0050 D4 的 tag 闭包口径）：
+// (1) status 非空（字段写入即任务，不要求挂 #任务——与四象限 isQuadrantCard 的 tag 无关口径一致）；
+// (2) content 非空（空 content 块无标题语义，视图回退显示 block id）。
+// 再做搜索子串过滤（与 PagesLibrary 对 title 过滤同构；status 以字段值存于 card.properties['status']）。
 const searchedCards = computed<BlockCard[]>(() => {
   const q = searchQuery.value.trim().toLowerCase()
   return blockCardStore.cards.filter((c) => {
+    if (!(c.content_preview ?? '').trim()) return false
     const status = c.properties?.['status']
     if (status === undefined || status === null || status === '') return false
     if (!q) return true
@@ -113,7 +124,7 @@ onMounted(async () => {
 
 // Handle status change from child views
 async function handleStatusChange(blockId: string, newStatus: string) {
-  await propertyStore.setProperty(blockId, 'status', newStatus)
+  await fieldValueStore.setFieldValue(blockId, 'status', newStatus)
   await refresh()
 }
 
@@ -129,15 +140,18 @@ async function handleQuadrantAdd(priority: string, title: string) {
     await blockStore.loadPageBlocks(page.id)
   }
   const block = await blockStore.createBlock({ pageId: page.id, content: title })
-  // createBlock 落库是防抖的；block_properties.block_id 外键依赖 block 行先存在，
-  // 必须先 flushSave 强制持久化，否则紧跟的 setProperty 触发 FOREIGN KEY constraint failed
+  // createBlock 落库是防抖的；field_value.block_id 外键依赖 block 行先存在，
+  // 必须先 flushSave 强制持久化，否则紧跟的 setFieldValue 触发 FOREIGN KEY constraint failed
   await blockStore.flushSave(block.id)
-  await propertyStore.setProperty(block.id, 'status', 'Todo')
-  await propertyStore.setProperty(block.id, 'priority', priority)
+  // 先写象限 priority（避开 ensureTodo「首次成为任务补默认 Low」的多写一次），
+  // 再 ensureTodo —— D2 原子意图：确保 #任务 挂载进 content + status=Todo。
+  // 挂载必须在写 status 前完成：D4 过滤按 tags，未挂载的块写完 status 也不入列。
+  await fieldValueStore.setFieldValue(block.id, 'priority', priority)
+  await fieldValueStore.ensureTodo(block.id)
   await refresh()
 }
 
-// 通用表格单元格编辑：done/status 走状态更新，其余走属性更新（TableView 零任务代码，由字段元数据驱动；ADR-0007）
+// 通用表格单元格编辑：done/status 走状态更新，其余走字段值更新（TableView 零任务代码，由字段元数据驱动；ADR-0007）
 async function onCellChange(blockId: string, key: string, value: unknown) {
   if (key === 'done') {
     await handleStatusChange(blockId, value ? 'Done' : 'Todo')
@@ -147,11 +161,11 @@ async function onCellChange(blockId: string, key: string, value: unknown) {
     await handleStatusChange(blockId, String(value))
     return
   }
-  await propertyStore.setProperty(blockId, key, value as PropertyValue)
+  await fieldValueStore.setFieldValue(blockId, key, value as FieldValueData)
   // 设置优先级（与 /schedule 一致）：block 尚无 status 时自动补 Todo
   if (key === 'priority') {
-    // fire-and-forget：补 Todo 失败不影响属性写入与卡片刷新，避免未处理异常阻断编辑
-    propertyStore.ensureTodo(blockId).catch(() => {})
+    // fire-and-forget：补 Todo 失败不影响字段值写入与卡片刷新，避免未处理异常阻断编辑
+    fieldValueStore.ensureTodo(blockId).catch(() => {})
   }
   await refresh()
 }
@@ -251,7 +265,7 @@ function handleCellClick(blockId: string, fieldKey: string) {
     </template>
     <template #quadrant="{ context }">
       <QuadrantView
-        :items="context.items"
+        :items="quadrantSource"
         :id-key="context.idKey"
         :config="context.quadrantConfig"
         :sort="context.sort"

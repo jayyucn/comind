@@ -13,26 +13,53 @@
  * - handleDragEnd 将 tree 变更同步回 store（parentId + pos）
  * - store 结构变更通过结构签名 watch（#118 D2）触发 syncFromStore 重建树
  */
+import { TextSelection } from '@tiptap/pm/state'
 import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
+
 import { buildTree, syncTreeToStore } from '../composables/useBlockTree'
 import type { CrossBlockSelection } from '../composables/useCrossBlockSelection'
 import { useCrossBlockSelection } from '../composables/useCrossBlockSelection'
 import { UNDO_FLASH_MS, useRestoreFlash } from '../composables/useRestoreFlash'
 import { ensureStack } from '../composables/useUndoHistory'
-import { runUndoOrRedo } from '../composables/useUndoRestore'
-import { COMIND_BLOCK_MIME, resolveClipboardForest } from '../services/external-paste-parse'
+import { linkCrossPageMove, runUndoOrRedo } from '../composables/useUndoRestore'
+import { COMIND_BLOCK_MIME, resolveClipboardPayload } from '../services/external-paste-parse'
+import { onLayoutChange } from '../services/layout-change'
 import { ensureWikiLinkTargets, notifyCreatedPages } from '../services/paste-ensure-wiki-targets'
-import { blockOffsetFromPoint, selectionClientRects } from '../services/selection-geometry'
+import {
+  firstNonPlainUnitInRange,
+  NON_PLAIN_UNIT_LABEL,
+  renderedOffsetToEncodedOffset,
+} from '../services/render-text'
+import { blockOffsetFromPoint, selectionClientRects, type SelectionRect } from '../services/selection-geometry'
+import { normalizeTextRange } from '../services/text-range'
 import { useBlockStore } from '../stores/blocks'
 import { useEditorStore } from '../stores/editor'
 import { usePageStore } from '../stores/pages'
-import type { TreeNode } from '../types/block'
+import type { Block, TreeNode } from '../types/block'
+import { type BlockAlign,blockAlignOf } from '../utils/block-align'
 import { sortByDocumentOrderIds } from '../utils/block-helpers'
+import {
+  clearInlineMarkRange,
+  type InlineMarkAttrs,
+  type InlineMarkKey,
+  type InlineMarkRange,
+  rangeColorToken,
+  rangeHasAttr,
+  readInlineMarks,
+  sameInlineMarks,
+  setInlineMarkRange,
+} from '../utils/inline-marks'
+import { padUnitForContent } from '../utils/inline-unit-pad'
+import { pageNameRejectionHint, validatePageName } from '../utils/page-name'
 import { resolveUndoScopeBlockPage, takeOverUndoRedo } from '../utils/undo-chord'
 import BlockDraggableList from './Block/components/BlockDraggableList.vue'
 import BlockDropIndicator from './Block/components/BlockDropIndicator.vue'
+import TaskProgressBar from './Block/components/TaskProgressBar.vue'
 import type { DragEndIntent } from './Block/composables/useBlockDragDrop'
 import { applyDropTarget, useSharedDropIndicator } from './Block/composables/useBlockDragDrop'
+import { useParentTaskStatusSync } from './Block/composables/useParentTaskStatusSync'
+import { useChildTaskProgress } from './Block/composables/useTaskProgress'
+import InlineFormatToolbar from './InlineFormatToolbar.vue'
 
 const props = defineProps<{
   /** 页面 ID，用于过滤 Block */
@@ -60,6 +87,15 @@ function syncFromStore() {
   tree.value = buildTree(blockStore.blocks, props.pageId, rootBlockId.value)
 }
 
+// ── 根级任务进度（需求 2）：顶层 block 是页面根 block 的子 block，
+//    其中含任务项（status 字段，Canceled/Archived 除外）时，进度条显示在列表顶部。
+//    纯派生 computed：删除最后一个 block 后树重建为空 → 进度条自动移除（需求 4）。──
+const { progress: rootTaskProgress } = useChildTaskProgress(tree)
+
+// ── 父任务状态自动同步（需求 5）：任务 block 的子任务全完成 → 父自动 Done；
+//    出现未完成子任务（含全部完成后新建）→ 父自动 Doing。防抖 watch 驱动。──
+useParentTaskStatusSync(() => props.pageId)
+
 // ── 拖拽结束：先按落位意图校正 tree（Sortable 的吸附结果不等同于判定意图），再同步回 store ──
 function handleDragEnd(intent?: DragEndIntent | null) {
   if (intent) applyDropTarget(tree.value, intent.draggedId, intent.target)
@@ -70,6 +106,16 @@ function handleDragEnd(intent?: DragEndIntent | null) {
     blockStore.scheduleSave(id)
   }
   blockStore.reconcileCollapse(affected.emptied, affected.gained)
+  // 拖动是唯一绕过 store 的跨父/换序入口 ⇒ 有序段要重排。作用域只取被碰到的父组：
+  // 同级换序不会进 gained/emptied，所以还要从 changed 的块反推它们现在的父块。
+  const touchedParents = new Set<string | null>()
+  for (const id of changed) {
+    const block = blockStore.getBlock(id)
+    if (block) touchedParents.add(block.parentId)
+  }
+  for (const id of affected.gained) touchedParents.add(id)
+  for (const id of affected.emptied) touchedParents.add(id)
+  blockStore.scheduleOrderedListReindex(props.pageId, { parents: touchedParents })
 }
 
 // ── 双击底部留白区域创建新 block ──
@@ -132,10 +178,9 @@ function handleDocMouseMove(e: MouseEvent) {
 /**
  * 最近一次点击交互的 block 及是否位于属性区。
  * 属性区/bullet 等不可聚焦元素点击后焦点落回 body，keydown 的 e.target 不再是
- * BlockList 内元素——Ctrl+A 等接管需回退到该状态判断 BlockList 上下文。
+ * BlockList 内元素——Ctrl+Shift+A 等接管需回退到该状态判断 BlockList 上下文。
  */
 let lastClickedBlockId: string | null = null
-let lastClickedInPropertyArea = false
 
 /**
  * 点击位置是否在当前块选区（anchorIds，含选中块的后代子树）内。
@@ -156,18 +201,25 @@ function isInSelectedArea(target: HTMLElement): boolean {
 }
 
 function handleDocMouseUp(e: MouseEvent) {
-  // 记录最近点击交互（供 Ctrl+A 焦点丢失到 body 时回退判断上下文）
+  // 行内格式工具条（Teleport 到 body）上的交互不改写选区：否则按钮的 mouseup 会被
+  // 当成「点击选区外」而清掉文本选区，工具条/调色板在 click 触发前就消失。
+  // 二级浮层（对齐下拉 / 取色面板）同样是 Teleport 出去的独立节点，必须一并豁免 ——
+  // 少豁免一次，点「居中」时选区先被清掉，`rangeSegments` 当场变空 ⇒ 点了个寂寞。
+  const toolbarTarget = e.target as HTMLElement | null
+  if (toolbarTarget && typeof toolbarTarget.closest === 'function'
+    && toolbarTarget.closest('.inline-format-toolbar, .floating-submenu')) {
+    return
+  }
+  // 记录最近点击交互（供 Ctrl+Shift+A 焦点丢失到 body 时回退判断上下文）
   const mouseTarget = e.target as HTMLElement | null
   if (mouseTarget && typeof mouseTarget.closest === 'function') {
     const blockEl = mouseTarget.closest('[data-block-id]') as HTMLElement | null
     const bid = blockEl?.dataset.blockId ?? null
     if (bid && blockStore.getBlock(bid)?.pageId === props.pageId) {
       lastClickedBlockId = bid
-      lastClickedInPropertyArea = !!mouseTarget.closest('.block-properties, .block-row-properties')
     } else {
       // 点击非本页区域（sidebar、弹层、留白等）→ 清标记，避免误判
       lastClickedBlockId = null
-      lastClickedInPropertyArea = false
     }
   }
   // 文本选区拖拽结束：固化选区
@@ -202,10 +254,10 @@ function handleDocMouseUp(e: MouseEvent) {
     selection.finalizeSelection()
   } else {
     const blockId = selection.dragStartBlockId.value
-    const fromProperty = selection.trackingFromProperty.value
+    const fromFieldValue = selection.trackingFromFieldValue.value
     selection.clearTracking()
-    // 属性区起点（ADR-0035 D6）只做块选区，单击不激活编辑器
-    if (!fromProperty) {
+    // 字段区起点（ADR-0035 D6）只做块选区，单击不激活编辑器
+    if (!fromFieldValue) {
       editorStore.activateBlock(blockId)
     }
   }
@@ -221,7 +273,7 @@ function isInSidebar(e: { target: EventTarget | null }): boolean {
  * 事件目标是否在可编辑输入区（input/textarea/非 TipTap contenteditable）内。
  * 这些区域保留控件自身的键盘/粘贴默认行为（全选文本、删字符、粘贴文本），
  * 不被 BlockList 的主文档接管劫持（如 SearchPanel 搜索框、BlockTaskItem 编辑、PageItem 重命名）。
- * TipTap 编辑区（.ProseMirror）不豁免——Ctrl+A/Backspace 等由 BlockList 接管。
+ * TipTap 编辑区（.ProseMirror）不豁免——Ctrl+Shift+A/Backspace 等由 BlockList 接管。
  */
 function isInEditableInput(e: { target: EventTarget | null }): boolean {
   const target = e.target as HTMLElement | null
@@ -243,9 +295,13 @@ function isNoEditTextBlock(id: string): boolean {
  * 按当前选区类型复制（文本选区优先——两类选区互斥，只会命中其一）；无选区时不做任何事。
  * Ctrl+C 与 Ctrl+X 共用同一分流，保证复制口径单源。
  */
-function copySelectionToClipboard(): void {
+/**
+ * 复制/剪切选中块到剪贴板。
+ * 块选区走块剪贴板（`op` 决定粘贴时能否搬移，ADR-0025 D4b）；文本选区只有纯文本，无意图可言。
+ */
+function copySelectionToClipboard(op: 'cut' | 'copy' = 'copy'): void {
   if (selection.textRange.value) selection.copyTextToClipboard(props.pageId)
-  else if (selection.anchorIds.size > 0) selection.copyToClipboard()
+  else if (selection.anchorIds.size > 0) void selection.copyToClipboard(op)
 }
 
 /**
@@ -304,10 +360,28 @@ async function deleteSelectedBlocks(): Promise<void> {
   }
   // paint 完成后才从 store 删除（含 cleanupAfterDelete 的 cross-page link 降级）
   setTimeout(() => {
-    selection.deleteSelected().then(() => {
+    selection.deleteSelected().then(async () => {
       if (keptId) {
         // 全选删除后页面只剩被保留的空 block：清选区并进入编辑态，光标落其内便于续写
         selection.clearSelection()
+        if (editorStore.activeBlockId === keptId) {
+          // 保留块正处编辑态（用户通常就在其中一块里按的 Ctrl+Shift+A）：activateBlock
+          // 对已激活块是 no-op，挂载中的编辑器有两条残留路径——
+          // ① PM 选区（Ctrl+A 的 Text/AllSelection）映射穿过整篇替换后仍是全选 ⇒
+          //    原生 ::selection 罩住清空后的空行 = 行首紫带（2026-10-22 用户截图）；
+          // ② 在途打字防抖 / 卸载保存会把尚未落库的旧正文写回（实测删除后旧内容复活）。
+          // 先把 PM 文档同步为 store 终值并折叠选区（此后卸载保存与防抖读到空串，无写回），
+          // 再走失活→nextTick→重激活强制重挂载（与 handleBackspaceEmpty 同款配方）：
+          // 新编辑器从 store 初始化，focusActiveEditor 折叠光标到行首。
+          const ae = editorStore.activeEditor
+          if (ae && typeof ae.commands?.setContent === 'function') {
+            const finalContent = blockStore.getBlock(keptId)?.content ?? ''
+            ae.commands.setContent(finalContent)
+            ae.commands.setTextSelection(1)
+          }
+          editorStore.deactivateBlock()
+          await nextTick()
+        }
         editorStore.activateBlock(keptId, 1)
       } else if (landingId) {
         // 常规多选删除：激活邻近块（上优先，其次下），与单块 Backspace 同口径（不带光标位）
@@ -316,6 +390,34 @@ async function deleteSelectedBlocks(): Promise<void> {
       }
     })
   }, 0)
+}
+
+/**
+ * 收口 PM 原生删除（Ctrl+A 全文档 AllSelection）后残留的非折叠选区。
+ *
+ * PM 的 AllSelection 在整篇替换后映射仍是一段非折叠区间（实测删除后 1.5s 仍
+ * `isCollapsed === false`，矩形覆盖整行）⇒ 浏览器按 `::selection` 在清空后的空段落
+ * 上画整行色带（2026-10-22 用户截图）。仅当 PM 选区确实非折叠时才动作——
+ * 常规块内文本删除后 PM 自身已折叠，此函数届时是 no-op。
+ */
+function collapseResidualNativeSelection() {
+  const ae = editorStore.activeEditor
+  if (!ae || ae.isDestroyed) return
+  const { state, view } = ae
+  const pmSel = state?.selection
+  if (!pmSel || pmSel.empty || !view) return
+  // 折到映射后的区间末端（钳进文档范围，避免越界位置抛错）
+  const to = Math.min(pmSel.to, state.doc.content.size)
+  if (to < 0) return
+  // 走 PM 事务而非 commands.setTextSelection：后者会触发 scrollIntoView，
+  // 在无布局环境（jsdom 单测）抛 getClientRects（既有约定见 DateRefExtension）。
+  try {
+    view.dispatch(state.tr.setSelection(TextSelection.near(state.doc.resolve(to))))
+  } catch {
+    // 位置失效（极端并发改写）时退化为 DOM 层折叠，至少消掉可见色带
+    const domSel = window.getSelection()
+    if (domSel && !domSel.isCollapsed) domSel.collapseToEnd()
+  }
 }
 
 async function handleDocKeyDown(e: KeyboardEvent) {
@@ -331,11 +433,15 @@ async function handleDocKeyDown(e: KeyboardEvent) {
   // Ctrl/Cmd+X（不带 Shift/Alt）：剪切的字面授权只有这一 chord，其余组合交还原生行为
   const isCutKey = (e.key === 'x' || e.key === 'X') && (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey
   if (e.key === 'Backspace' || e.key === 'Delete' || isCutKey) {
-    // 键盘删除/剪切分派表：{Backspace, Delete, Ctrl+X} × {文本选区, 块选区}（#95 / #96）。
-    // 两类选区语义一致：选中即被支配。文本选区优先——与 Ctrl+C 同一口径（互斥，只会命中其一）。
-    // 剪切 = 先复制后删除：复制函数在首个 await 前同步快照选区内容，先于删除的落库变更。
-    // 无选区时不接管（preventDefault 都不做），保留编辑器/浏览器原生命中剪切。
-    if (isCutKey) copySelectionToClipboard()
+    // 键盘删除/剪切分派表：{Backspace, Delete, Ctrl+X} × {格选区, 文本选区, 块选区}（#95 / #96）。
+    // 格选区最具体，先判——表格是原子块，选中即清空格内容（表结构不变）。
+    if (selection.cellSelection.value) {
+      e.preventDefault()
+      if (isCutKey) await selection.copyCellSelectionToClipboard(props.pageId)
+      await selection.deleteCellSelection(props.pageId)
+      return
+    }
+    if (isCutKey) copySelectionToClipboard('cut')
     if (selection.textRange.value) {
       e.preventDefault()
       const deleted = await selection.deleteTextSelection(props.pageId)
@@ -349,8 +455,21 @@ async function handleDocKeyDown(e: KeyboardEvent) {
       await deleteSelectedBlocks()
       return
     }
+    // 无 comind 选区：Backspace/Delete 交 PM 原生处理（Ctrl+A 全文档 AllSelection 亦走此路）。
+    // PM 删除后 AllSelection 映射穿过整篇替换仍非折叠 ⇒ 原生 ::selection 罩住清空后的空段落，
+    // 画出整行色带（2026-10-22 用户截图）。PM 事务落地后把选区折到末尾收口。
+    requestAnimationFrame(collapseResidualNativeSelection)
   }
   if (e.key === 'Escape') {
+    // 格选区（表格原子块）：先撤选区，并把仍处编辑态的表格退回渲染态。
+    // 出格那刻格内 textarea 已失焦（否则输入法工具栏会一直闪），格内 Esc 收不到，
+    // 退出编辑只能在这里收口，与格内 Esc 同口径。
+    if (selection.cellSelection.value) {
+      const { blockId } = selection.cellSelection.value
+      selection.clearCellSelection()
+      if (editorStore.activeBlockId === blockId) editorStore.deactivateBlock()
+      return
+    }
     selection.clearSelection()
     selection.clearTextSelection()
     return
@@ -387,7 +506,12 @@ async function handleDocKeyDown(e: KeyboardEvent) {
     }
   }
   if ((e.key === 'c' || e.key === 'C') && (e.ctrlKey || e.metaKey)) {
-    // 文本选区优先于块选区（互斥，只会命中其一）
+    // 格选区优先（表格原子块 → TSV），其次文本选区、块选区（三者互斥，只会命中其一）
+    if (selection.cellSelection.value) {
+      e.preventDefault()
+      void selection.copyCellSelectionToClipboard(props.pageId)
+      return
+    }
     if (selection.textRange.value || selection.anchorIds.size > 0) {
       e.preventDefault()
       copySelectionToClipboard()
@@ -396,17 +520,49 @@ async function handleDocKeyDown(e: KeyboardEvent) {
 }
 
 /**
- * 捕获阶段拦截 Ctrl+A：在 ProseMirror（TipTap）处理之前屏蔽单 block 内容全选
- * （ProseMirror 的 Mod-a → selectAll 在目标阶段执行，冒泡阶段拦截已晚于它）。
- * 仅处理 BlockList 区域：激活块 / 块选区 / 本页属性区（含空白）→ 全选 Blocklist；
- * 冻结态与其余情况仅屏蔽浏览器默认（整页文本全选）。非 BlockList 区域交由 App.vue 全局兜底。
+ * 捕获阶段拦截 Ctrl/Cmd+Shift+A：在 ProseMirror（TipTap）处理之前把整页块固化为块选区。
+ * 纯 Ctrl/Cmd+A **不**在此拦截 —— 交还 TipTap 原生行为（块内全文选择，再按一次选全文档），
+ * 即「还原为原来的 tiptap 内部行为」。
+ * 仅处理 BlockList 区域：命中本页块（激活块 / 块选区 / 本页属性区含空白）→ 全选本页块；
+ * 非 BlockList 区域交由 App.vue 全局兜底。
  *
  * 注意：keydown 的 e.target 是焦点元素。点击属性区/bullet 等不可聚焦元素后焦点落回 body，
  * 此时回退用 lastClickedBlockId 判断 BlockList 上下文。
  */
-function handleDocKeyDownCapture(e: KeyboardEvent) {
-  if ((e.key !== 'a' && e.key !== 'A') || !(e.ctrlKey || e.metaKey)) return
-  if (isInSidebar(e)) return
+/** Ctrl+A 连续两次升级为整页块全选的时间窗（ms） */
+const CTRL_A_ESCALATE_MS = 600
+/** 上一次纯 Ctrl+A 的落点与时刻（非渲染态，普通对象即可） */
+const lastCtrlA = { blockId: null as string | null, at: 0 }
+
+/** 活动块的 PM 选区是否已覆盖整块内容（第一次 Ctrl+A 原生执行后的状态） */
+function isActiveBlockFullySelected(): boolean {
+  const ae = editorStore.activeEditor
+  if (!ae || ae.isDestroyed) return false
+  const pmSel = ae.state?.selection
+  if (!pmSel || pmSel.empty) return false
+  const size = ae.state.doc.content.size
+  return pmSel.from <= 1 && pmSel.to >= size - 1
+}
+
+/**
+ * 纯 Ctrl+A 是否该升级为整页块全选（第二次）。
+ *
+ * 每块是独立 PM 实例 ⇒ 原生 Ctrl+A 永远困在活动块内，「全文档全选」不接管就永不生效。
+ * 判据三重：同一块 + 时间窗内 + 该块已整块选中（后者排掉「Ctrl+A 后又做了别的操作
+ * 再 Ctrl+A」的误触发）。
+ */
+function shouldEscalateToBlockSelectAll(blockId: string): boolean {
+  if (lastCtrlA.blockId !== blockId) return false
+  if (Date.now() - lastCtrlA.at > CTRL_A_ESCALATE_MS) return false
+  return isActiveBlockFullySelected()
+}
+
+/**
+ * 解析 Ctrl(+Shift)+A 的上下文块；null = 不接管（侧栏 / 输入框 / 非本页 / 列表外）。
+ * 两个 chord（纯 Ctrl+A 与 Ctrl+Shift+A）共用，避免口径漂移。
+ */
+function resolveSelectAllContextBlockId(e: KeyboardEvent): string | null {
+  if (isInSidebar(e)) return null
   const target = e.target as HTMLElement | null
   // 焦点丢失到 body/document（点击不可聚焦元素后）：回退到最近一次点击的 block 判断上下文
   const isBodyOrDocument = !target || target === document.body || target === document.documentElement
@@ -416,22 +572,44 @@ function handleDocKeyDownCapture(e: KeyboardEvent) {
       ? (target.closest('[data-block-id]') as HTMLElement | null)?.dataset.blockId ?? null
       : null
   )
-  if (!ctxBlockId) return // 非 BlockList 区域交由 App.vue 全局兜底
+  if (!ctxBlockId) return null // 非 BlockList 区域交由 App.vue 全局兜底
   const ctxBlock = blockStore.getBlock(ctxBlockId)
-  if (!ctxBlock || ctxBlock.pageId !== props.pageId) return
-  // 输入框/非 TipTap contenteditable（含 CodeMirror 编辑区）保留控件自身 Ctrl+A
-  if (isInEditableInput(e)) return
+  if (!ctxBlock || ctxBlock.pageId !== props.pageId) return null
+  // 输入框/非 TipTap contenteditable（含 CodeMirror 编辑区）保留控件自身 Ctrl(+Shift)+A
+  if (isInEditableInput(e)) return null
+  return ctxBlockId
+}
+
+function handleDocKeyDownCapture(e: KeyboardEvent) {
+  const isSelectAllChord = (e.key === 'a' || e.key === 'A') && (e.ctrlKey || e.metaKey)
+  if (!isSelectAllChord) return
+  const ctxBlockId = resolveSelectAllContextBlockId(e)
+
+  // 纯 Ctrl/Cmd+A：第一次交还 TipTap 原生（块内全文选择）；第二次升级为整页块全选
+  //（与 Ctrl+Shift+A 同口径，走 selectAll 固化为块选区）。
+  if (!e.shiftKey) {
+    if (ctxBlockId && shouldEscalateToBlockSelectAll(ctxBlockId)) {
+      e.preventDefault()
+      e.stopPropagation()
+      // 先撤销第一次 Ctrl+A 留下的块内文本全选（原生 ::selection 高亮）：
+      // 块全选态下块内不应再有文本选区叠加（2026-10-22）。折叠后 selectAll
+      // 固化为块选区，可见态只有块高亮。
+      collapseResidualNativeSelection()
+      selection.selectAll(props.pageId, rootBlockId.value)
+      lastCtrlA.blockId = null // 消费掉：第三次 Ctrl+A 重新计为「第一次」
+      return
+    }
+    // 第一次（或不满足升级判据）：记录落点后交还原生
+    lastCtrlA.blockId = ctxBlockId
+    lastCtrlA.at = Date.now()
+    return
+  }
+
+  // Ctrl+Shift+A：整页块全选
+  if (!ctxBlockId) return
   e.preventDefault()
   e.stopPropagation()
-  const activeId = editorStore.activeBlockId
-  const activeInPage = !!activeId
-    && blockStore.getBlock(activeId)?.pageId === props.pageId
-  const inPropertyArea = fallbackBlockId
-    ? lastClickedInPropertyArea
-    : !!target?.closest('.block-properties, .block-row-properties')
-  if (activeInPage || selection.anchorIds.size > 0 || inPropertyArea) {
-    selection.selectAll(props.pageId, rootBlockId.value)
-  }
+  selection.selectAll(props.pageId, rootBlockId.value)
 }
 
 /**
@@ -442,7 +620,7 @@ function handleDocKeyDownCapture(e: KeyboardEvent) {
  * `undoRedo:false` / CodeMirrorEditor 去 `history()`+`historyKeymap`）—— 接管与禁用
  * 是一对，中间态会让两个栈互抢（D7 拒绝分阶段）。
  *
- * 豁免面比 Ctrl+A 窄：原生输入控件（搜索框 / 重命名）保留浏览器自身撤销；CodeMirror
+ * 豁免面比 Ctrl+Shift+A 窄：原生输入控件（搜索框 / 重命名）保留浏览器自身撤销；CodeMirror
  * 编辑区同样是 contenteditable 但不豁免，它归统一栈。**本实例不接管的落点**（不 preventDefault，
  * 交还原生行为）见 resolveUndoScopePage —— 无栈页块与列表外目标两类（#109 已裁定的边界）。
  */
@@ -534,16 +712,19 @@ function landOnChangedBlocks(ids: string[]): void {
 
   const target = ordered[ordered.length - 1]
   // 光标落行尾：activateBlock 不带 cursorPos，focusActiveEditor 走 focus('end') 分支。
-  // 别页编辑态不连坐清掉（与 useUndoRestore.runUndoOrRedo 的「只退**目标页**的编辑态」守卫同口径）：
-  // 当前编辑态挂在**别的页**（BlockModal）上时只闪不抢光标 —— 落点目标是本页的块，
-  // 抢过去会把别页的编辑态连坐清掉。
+  // **已有本页编辑态时不落点** —— 撤销历史已按快照把选区恢复回来（可能是「选中某段」），
+  // 再 activate 一次会把选区顶到行尾，等于白恢复。别页编辑态本就 `activeId` 非空，同样不抢
+  // （与 useUndoRestore.runUndoOrRedo 的「只退**目标页**的编辑态」守卫同口径）。
   const activeId = editorStore.activeBlockId
-  if (!activeId || blockStore.getBlock(activeId)?.pageId === props.pageId) {
+  if (!activeId) {
     editorStore.activateBlock(target)
   }
+  // 滚动目标：光标落在哪就滚哪（恢复的选区可能在另一块，不能让视口停在别处）
+  const scrollTargetId =
+    activeId && blockStore.getBlock(activeId)?.pageId === props.pageId ? activeId : target
   nextTick(() => {
     // 限定在本实例的渲染树内查：多实例共存时避免滚到弹窗/抽屉里的副本
-    const el = rootEl.value?.querySelector(`[data-block-id="${target}"]`)
+    const el = rootEl.value?.querySelector(`[data-block-id="${scrollTargetId}"]`)
     if (el && typeof el.scrollIntoView === 'function') {
       // 已可见就不滚（2026-09-15 裁定）：无条件 scrollIntoView({ block: 'center' }) 会在落点
       // 本就在眼前时把视口重新居中 —— 白跳一下。可见性判的是**位置**，与闪烁（集合标识）各管一头，
@@ -630,10 +811,12 @@ async function handleDocPaste(e: ClipboardEvent) {
     html: data.getData('text/html'),
   })
 
-  const forest = resolveClipboardForest(mime => data.getData(mime))
+  const payload = resolveClipboardPayload(mime => data.getData(mime))
   // 无结构化内容（如纯图片）→ 放行默认行为（image 钩子在编辑态先消费）
-  if (!forest || forest.length === 0) return
+  if (!payload || payload.blocks.length === 0) return
+  const forest = payload.blocks
 
+  // 内部载荷才可能带意图；外部内容一律当复制（`resolveClipboardPayload` 已归一）
   const hasInternal = !!data.getData(COMIND_BLOCK_MIME)
   // 外部内容 + 行内光标（块内有文本、无选区）→ TipTap 默认行内粘贴（ADR-0026 D1）；
   // ensure fire-and-forget：wasm 本地毫秒级 + 块保存有 debounce，极端竞争 miss 由后续保存/点击自愈
@@ -642,24 +825,58 @@ async function handleDocPaste(e: ClipboardEvent) {
     return
   }
 
+  // 空块就地转表（ADR-0061 D4）：整段只产出一个表格 + 无块选区 + 活动块是空 bullet
+  // → 口径同 useSlashCommands.insertTable，不新增块、不留空壳
+  if (!hasInternal && forest.length === 1 && forest[0]!.type === 'table' && selection.anchorIds.size === 0) {
+    const targetId = editorStore.activeBlockId
+    const target = targetId ? blockStore.getBlock(targetId) : null
+    if (
+      target
+      && target.pageId === props.pageId
+      && target.type === 'text'
+      && target.content.trim() === ''
+      && blockStore.getChildren(target.id).length === 0
+    ) {
+      e.preventDefault()
+      await blockStore.updateBlockContent(target.id, '')
+      await blockStore.updateBlockType(target.id, 'table')
+      await blockStore.updateBlockFormat(target.id, forest[0]!.format ?? {})
+      editorStore.activateBlock(target.id)
+      return
+    }
+  }
+
   e.preventDefault()
   // 块级粘贴：ensure 先于块落库完成，保存抽链必然命中
   const { created } = await ensurePages
   notifyCreatedPages(created, editorStore.showToast)
   const anchorBlockId = resolvePasteAnchor()
-  await blockStore.pasteBlocks(forest, {
+  // 剪切载荷且源块在本库仍软删 ⇒ 这次是「搬走同一个块」（id 不变），否则新建副本。
+  // 两种情况落点一致，所以不用分支，只有收尾（下面对空锚点的清理）要区分。
+  const outcome = await blockStore.pasteBlocksWithOp(forest, {
     pageId: props.pageId,
     anchorBlockId,
     fallbackParentId: rootBlockId.value,
-  })
-  // 粘贴目标为空活动块（无选区）：插入后清掉空壳，避免残留空行（仅限本页块）
-  if (!selection.anchorIds.size && anchorBlockId) {
+  }, payload.op, payload.fromPageId)
+  // 搬移要回报一句：块从源页消失了，用户需要知道它去了哪、为什么回收站里有一份。
+  // 降级为新建时**不提示** —— 跨机/跨库本来就拿不到源行，那不是异常。
+  if (outcome.moved) {
+    const title = pageStore.getPage(props.pageId)?.title
+    const count = outcome.blocks.length
+    editorStore.showToast(title ? `已移动 ${count} 个块到「${title}」` : `已移动 ${count} 个块`)
+    // 两页撤销配成一步：否则要换到源页再按一次 Ctrl+Z，且在错误的顺序下会出现
+    // 同一个 id 在两页并存（见 restoreEntry 的快照 id 剔除）
+    linkCrossPageMove(outcome.movedFromPageId, props.pageId)
+  }
+  // 粘贴目标为空活动块（无选区）：插入后清掉空壳，避免残留空行（仅限本页块）。
+  // 搬移时同样适用 —— 被清掉的是锚点空壳，不是搬来的块。
+  if (outcome.blocks.length > 0 && !selection.anchorIds.size && anchorBlockId) {
     const anchorBlock = blockStore.getBlock(anchorBlockId)
     if (
       anchorBlock
       && anchorBlock.pageId === props.pageId
       && anchorBlock.content.trim() === ''
-      && anchorBlock.type === 'bullet'
+      && anchorBlock.type === 'text'
     ) {
       editorStore.deactivateBlock()
       await blockStore.deleteBlock(anchorBlockId)
@@ -673,11 +890,13 @@ provide<CrossBlockSelection>('crossBlockSelection', selection)
 provide('onDragEnd', handleDragEnd)
 
 // ── 文本选区覆盖层高亮（ADR-0035 D4）──
-const highlightRects = ref<DOMRect[]>([])
+const highlightRects = ref<SelectionRect[]>([])
 
 function refreshTextHighlight() {
   const tr = selection.textRange.value
-  highlightRects.value = tr ? selectionClientRects(tr.anchor, tr.head) : []
+  // 传入本 pane 的 .block-list 根作为作用域：多 pane 同页时同一 data-block-id 有多份 DOM，
+  // 不限定作用域会经 document.querySelector 命中第一个（左侧）实例，高亮错画到左 pane。
+  highlightRects.value = tr ? selectionClientRects(tr.anchor, tr.head, rootEl.value) : []
 }
 
 function handleViewportChange() {
@@ -685,7 +904,245 @@ function handleViewportChange() {
   refreshFlashRects()
 }
 
+/** 布局变更（折叠侧栏 / 侧栏开合 / 拖 pane 分隔条）：不派发 window resize，但视口矩形已失效 */
+let offLayoutChange: (() => void) | null = null
+
 watch(() => selection.textRange.value, () => refreshTextHighlight())
+
+// ── 跨块文本选区工具条（ADR-0035 D4 的配套能力）──
+// 内容区拖拽超过阈值后编辑器已失活，TipTap 的工具条无从出现；这里按选区覆盖的
+// 每个块切出本地偏移，直接读写 block.format.inlineMarks（正文不动）。
+interface RangeSegment {
+  block: Block
+  /** 本地偏移，encoded 口径（与 format.inlineMarks 同源） */
+  from: number
+  to: number
+}
+
+const rangeSegments = computed<RangeSegment[]>(() => {
+  const tr = selection.textRange.value
+  if (!tr) return []
+  const blocks = blockStore.getBlocksByPage(props.pageId)
+  const byId = new Map(blocks.map(b => [b.id, b]))
+  const { start, end, middleBlockIds } = normalizeTextRange(blocks, tr)
+
+  const segments: RangeSegment[] = []
+  const push = (block: Block | undefined, from: number, to: number) => {
+    // 表格等原子块 content 为空，没有可着色的正文
+    if (!block || block.type === 'table' || block.content.length === 0) return
+    const lo = Math.max(0, Math.min(block.content.length, Math.trunc(from)))
+    const hi = Math.max(lo, Math.min(block.content.length, Math.trunc(to)))
+    if (hi > lo) segments.push({ block, from: lo, to: hi })
+  }
+  const toEncoded = (block: Block, offset: number) =>
+    renderedOffsetToEncodedOffset(block.content, block.renderSegments, offset)
+
+  const startBlock = byId.get(start.blockId)
+  const endBlock = byId.get(end.blockId)
+  if (startBlock && endBlock && startBlock.id === endBlock.id) {
+    push(startBlock, toEncoded(startBlock, start.offset), toEncoded(endBlock, end.offset))
+    return segments
+  }
+  if (startBlock) push(startBlock, toEncoded(startBlock, start.offset), startBlock.content.length)
+  for (const id of middleBlockIds) {
+    const block = byId.get(id)
+    if (block) push(block, 0, block.content.length)
+  }
+  if (endBlock) push(endBlock, 0, toEncoded(endBlock, end.offset))
+  return segments
+})
+
+/** 选区在所有覆盖块上统一为同一 token 才返回它（工具条激活态口径） */
+function commonColorToken(
+  segments: RangeSegment[],
+  runs: InlineMarkRange[][],
+  key: 'color' | 'background',
+): string {
+  let token = ''
+  for (let i = 0; i < segments.length; i++) {
+    const segment = segments[i]!
+    const value = rangeColorToken(
+      runs[i]!,
+      segment.from,
+      segment.to,
+      key,
+      segment.block.content.length,
+    )
+    if (!value) return ''
+    if (!token) token = value
+    else if (token !== value) return ''
+  }
+  return token
+}
+
+const rangeFormat = computed<InlineMarkAttrs | null>(() => {
+  const segments = rangeSegments.value
+  if (segments.length === 0) return null
+  const runs = segments.map(segment => readInlineMarks(segment.block.format, segment.block.content.length))
+
+  const attrs: InlineMarkAttrs = {}
+  for (const key of ['bold', 'italic', 'underline', 'strike'] as const) {
+    const active = segments.every((segment, i) =>
+      rangeHasAttr(runs[i]!, segment.from, segment.to, key, segment.block.content.length))
+    if (active) attrs[key] = true
+  }
+  const color = commonColorToken(segments, runs, 'color')
+  if (color) attrs.color = color
+  const background = commonColorToken(segments, runs, 'background')
+  if (background) attrs.background = background
+  return attrs
+})
+
+/**
+ * 跨块选区的对齐（工具条激活态）：所有覆盖块一致才显示那一项，否则按默认左对齐。
+ * 与 `rangeFormat` 同口径 —— 都是「选区在所有这些块上是否同一状态」。
+ */
+const rangeAlign = computed<BlockAlign>(() => {
+  const segments = rangeSegments.value
+  if (segments.length === 0) return 'left'
+  const first = blockAlignOf(segments[0]!.block.format)
+  return segments.every(segment => blockAlignOf(segment.block.format) === first) ? first : 'left'
+})
+
+/**
+ * 覆盖块的**对齐**一变，正文就横向重排：高亮矩形与工具条位置都是拖拽时量的 DOM 实测值，
+ * 而 `textRange` 本身没变 ⇒ 不重量的话，文字已经居中、蓝带和工具条还钉在原位。
+ * 等 DOM 落定（nextTick）再量，否则量到的仍是旧位置。
+ */
+watch(
+  () => rangeSegments.value.map(segment => `${segment.block.id}:${blockAlignOf(segment.block.format)}`).join('|'),
+  () => { void nextTick(refreshTextHighlight) },
+)
+
+/** 对齐按块生效：写覆盖到的每一块（已经是目标值的跳过，不产生无谓落库） */
+function applyRangeAlign(value: BlockAlign) {
+  for (const segment of rangeSegments.value) {
+    if (blockAlignOf(segment.block.format) === value) continue
+    void blockStore.updateBlockFormat(segment.block.id, { align: value })
+  }
+}
+
+/** 工具条动作：逐块切换格式；正文未变时 store 只更新 format 并调度保存 */
+function applyRangeMark(key: InlineMarkKey, token: string | null) {  for (const segment of rangeSegments.value) {
+    const textLength = segment.block.content.length
+    const marks = readInlineMarks(segment.block.format, textLength)
+    let next: InlineMarkRange[]
+    if (key === 'color' || key === 'background') {
+      const current = rangeColorToken(marks, segment.from, segment.to, key, textLength)
+      if (token && current !== token) {
+        const patch: InlineMarkAttrs = {}
+        patch[key] = token
+        next = setInlineMarkRange(marks, segment.from, segment.to, patch, textLength)
+      } else {
+        next = clearInlineMarkRange(marks, segment.from, segment.to, [key], textLength)
+      }
+    } else if (rangeHasAttr(marks, segment.from, segment.to, key, textLength)) {
+      next = clearInlineMarkRange(marks, segment.from, segment.to, [key], textLength)
+    } else {
+      const patch: InlineMarkAttrs = {}
+      patch[key] = true
+      next = setInlineMarkRange(marks, segment.from, segment.to, patch, textLength)
+    }
+    if (sameInlineMarks(marks, next)) continue
+    void blockStore.updateBlockContent(segment.block.id, segment.block.content, {
+      commitTags: false,
+      inlineMarks: next,
+    })
+  }
+}
+
+/**
+ * 「转为页面引用」按钮的状态（D1/D2/D3）。
+ *
+ * - 跨 block → `null`：没有单一页名语义，能力**永不成立**，不渲染（置灰会误导
+ *   用户去改文本再试）。
+ * - 单块但选区覆盖已渲染单元（`[[X]]` / `#tag` / `@日期`）→ 置灰：编码层的原文
+ *   带语法字符，包裹会产出 `[[[[X]]]]` 这类断链，而屏幕上完全看不出来。
+ * - 单块纯文本但字面非法（含 `[ ] |`、换行、空白）→ 置灰。
+ * - 全部成立 → 可点。
+ *
+ * 用**渲染偏移**判单元、用**编码切片**判字面：前者是用户眼见，后者才是要写进
+ * `[[ ]]` 的那份原文。
+ */
+const wrapPageRefState = computed<{ enabled: boolean; hint?: string } | null>(() => {
+  const tr = selection.textRange.value
+  if (!tr) return null
+  if (tr.anchor.blockId !== tr.head.blockId) return null
+
+  const block = blockStore.getBlock(tr.anchor.blockId)
+  // 表格等原子块的 content 不承载正文，没有「单块文本」可包
+  if (!block || block.type !== 'text') return null
+
+  const lo = Math.min(tr.anchor.offset, tr.head.offset)
+  const hi = Math.max(tr.anchor.offset, tr.head.offset)
+  // 零长选区（点击残留）没有可包的文字：不渲染按钮。以前会跌进下面的
+  // 「覆盖了单元」分支，给出一个指向完全错误方向的提示。
+  if (hi <= lo) return null
+
+  const blocker = firstNonPlainUnitInRange(block.content, block.renderSegments, lo, hi)
+  if (blocker) {
+    const label = NON_PLAIN_UNIT_LABEL[blocker.kind]
+    const named = blocker.visible ? ` ${blocker.visible}` : ''
+    return { enabled: false, hint: `选区覆盖了${label}${named}，不能作为页面名` }
+  }
+
+  const encLo = renderedOffsetToEncodedOffset(block.content, block.renderSegments, lo)
+  const encHi = renderedOffsetToEncodedOffset(block.content, block.renderSegments, hi)
+  const hint = pageNameRejectionHint(block.content.slice(encLo, encHi))
+  if (hint) return { enabled: false, hint }
+  return { enabled: true }
+})
+
+/**
+ * 就地把选区文本包成 `[[页名]]`（D4–D7）。
+ *
+ * 体感约束：**内容必须立刻变**。曾经把 `await createPage(name)` 放在写回之前，
+ * 真机上那是一次 SQLite 落库往返，用户点完按钮到看见包裹结果之间的空白期就是他
+ * 抱怨的「延迟」。现在写回在前（本地改 `block.content` 是同步的），页面与落库都
+ * 甩到后台 —— 顺序仍然正确，因为提交时点建页（`create_missing_pages`）会在这次
+ * 写回的保存里按 title 建页并补 link，前端那次 createPage 只负责让侧栏与 `[[`
+ * 搜索立刻可见，失败也不影响引用成立。
+ */
+async function wrapRangeAsPageRef() {
+  const tr = selection.textRange.value
+  if (!tr) return
+  const block = blockStore.getBlock(tr.anchor.blockId)
+  if (!block) return
+
+  const lo = Math.min(tr.anchor.offset, tr.head.offset)
+  const hi = Math.max(tr.anchor.offset, tr.head.offset)
+  const encLo = renderedOffsetToEncodedOffset(block.content, block.renderSegments, lo)
+  const encHi = renderedOffsetToEncodedOffset(block.content, block.renderSegments, hi)
+
+  const check = validatePageName(block.content.slice(encLo, encHi))
+  if (!check.ok) {
+    editorStore.showToast(check.message, 'error')
+    return
+  }
+  const name = check.name
+
+  // 补空与 `[[` 补全插页同源（inline-unit-pad 单源）：本功能属于「插入新单元」语义，
+  // 左右邻居按编码原文判，块首/已有空白不补，`((type))` 收尾不补左。
+  const padded = padUnitForContent(block.content, encLo, encHi, `[[${name}]]`)
+  const result = await blockStore.replaceTextRange(props.pageId, tr, padded)
+  if (!result) return
+
+  // 收场：结束选区（浮条随之关闭）、光标落 `]]` 之后，可直接接着写
+  selection.clearTextSelection()
+  editorStore.activateBlock(result.id, result.cursorPos)
+
+  // 立刻落库，不等 300ms 防抖：写回时 `renderSegments` 被清空（索引已过时），
+  // 不 flush 的话块会停在裸 `[[页名]]` 的纯文本态，用户以为没生效。
+  void blockStore.flushSave(result.id)
+
+  // 页面实例放后台（幂等）：只为让侧栏「最近」与 `[[` 补全立刻可见，
+  // 引用成立不依赖它——同一次保存里 Rust 会按 title 建页并补 link。
+  void pageStore
+    .getOrCreatePageByTitle(name)
+    .catch((err: unknown) =>
+      editorStore.showToast(`页面「${name}」未能创建：${(err as Error).message}`, 'error'),
+    )
+}
 
 // ── 拖放指示器（模块级共享状态，渲染一次） ──
 // 所有 Block 的 useBlockDragDrop 写入同一组 ref，这里统一渲染单个 <BlockDropIndicator>，
@@ -746,6 +1203,8 @@ onMounted(() => {
   // 文本选区覆盖层高亮需随滚动/缩放重绘（视口矩形会失效）
   document.addEventListener('scroll', handleViewportChange, true)
   window.addEventListener('resize', handleViewportChange)
+  // 折叠侧栏只改内容容器宽度，不派发 resize：不订阅就是「高亮整段留在旧坐标」（见 layout-change.ts）
+  offLayoutChange = onLayoutChange(handleViewportChange)
 })
 
 onBeforeUnmount(() => {
@@ -757,6 +1216,8 @@ onBeforeUnmount(() => {
   document.removeEventListener('paste', handleDocPaste, true)
   document.removeEventListener('scroll', handleViewportChange, true)
   window.removeEventListener('resize', handleViewportChange)
+  offLayoutChange?.()
+  offLayoutChange = null
 })
 </script>
 
@@ -765,6 +1226,14 @@ onBeforeUnmount(() => {
     ref="rootEl"
     class="block-list"
   >
+    <!-- 根级任务进度条：顶层 block（页面根 block 的子 block）含任务项时显示在列表顶部 -->
+    <TaskProgressBar
+      v-if="rootTaskProgress"
+      :done="rootTaskProgress.done"
+      :total="rootTaskProgress.total"
+      class="block-list-task-progress"
+    />
+
     <!-- 根级拖拽列表：与 Block 子级列表共用同一实现（BlockDraggableList），
          接线只有一份，避免两处配置漂移。落库由 @drag-end 统一接管。 -->
     <BlockDraggableList
@@ -799,6 +1268,19 @@ onBeforeUnmount(() => {
       />
     </Teleport>
 
+    <!-- 跨块文本选区工具条：选区由本组件持有（编辑器在拖拽越阈值后已失活），
+         定位复用与高亮同一份矩形；格式按块回写 block.format.inlineMarks。 -->
+    <InlineFormatToolbar
+      :range="selection.textRange.value"
+      :range-rect="highlightRects[0] ?? null"
+      :range-format="rangeFormat"
+      :block-align="rangeAlign"
+      :wrap-page-ref="wrapPageRefState"
+      @apply-range="applyRangeMark"
+      @apply-align="applyRangeAlign"
+      @wrap-page-ref="wrapRangeAsPageRef"
+    />
+
     <!-- 落点闪烁层（#109）：矩形与上一层同理 Teleport 到 body —— fixed 定位会被 transform 祖先困住。
          矩形量的是「内容区 + 属性区」的墨迹（测量收口在 useRestoreFlash，#115），只覆盖有内容的非空白区域。
          淡出时长由 UNDO_FLASH_MS 单源下发（#115）：与 JS 清空计时共用同一常量，不会漂。 -->
@@ -820,6 +1302,12 @@ onBeforeUnmount(() => {
   min-height: 100px;
 }
 
+/* 根级任务进度条（列表顶部）：左缘对齐根级 block 的 bullet 圆点左缘
+   （bullet 列宽 20px − 圆点 6px 后居中 → 左缘 7px）；与下方列表间隔一个 space-3 */
+.block-list-task-progress {
+  margin: var(--space-2) 0 var(--space-3) 0px;
+}
+
 .block-list-padding {
   height: 40px;
   user-select: none;
@@ -838,15 +1326,15 @@ onBeforeUnmount(() => {
   z-index: var(--z-sticky);
 }
 
-.text-selection-rect.is-first {
-  border-top-left-radius: var(--radius-xs);
-  border-bottom-left-radius: var(--radius-xs);
-}
+// .text-selection-rect.is-first {
+//   border-top-left-radius: var(--radius-xs);
+//   border-bottom-left-radius: var(--radius-xs);
+// }
 
-.text-selection-rect.is-last {
-  border-top-right-radius: var(--radius-xs);
-  border-bottom-right-radius: var(--radius-xs);
-}
+// .text-selection-rect.is-last {
+//   border-top-right-radius: var(--radius-xs);
+//   border-bottom-right-radius: var(--radius-xs);
+// }
 
 /* 撤销 / 重做落点的闪烁矩形：与文本选区同色（同为「这段内容」的提示），一次淡出后由
    useRestoreFlash 的计时器清空矩形列表；时长由模板 inline style 从 UNDO_FLASH_MS

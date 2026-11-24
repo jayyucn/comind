@@ -1,8 +1,8 @@
 use crate::assets::{asset_extension, asset_file_path, is_safe_asset_component, now_millis, read_asset_manifest, write_asset_manifest, AssetMeta};
 use comind_core::{
     services::{
-        build_page_with_blocks, BlockService, BlockVersionService, BlockWriteService,
-        BookService, DateRefService, FilterService, LinkService, PageService, PropertyService,
+        build_page_with_blocks, BlockService, BlockWriteService,
+        BookService, DateRefService, FieldValueService, FilterService, LinkService, OrphanCleanupReport, PageService,
         RelationshipTypeService, SnapshotService, TemplateService,
     },
     storage::{SQLiteAdapter, StorageAdapter, TransactionalStorageAdapter},
@@ -296,6 +296,34 @@ pub async fn set_default_screen(
     .await
 }
 
+/// 孤儿查询块视图的标记：把 `live_prefix + blockId` 命名空间下的视图行改挂到孤儿前缀。
+/// 快路径（块删除时同步调用），只改 entity 不改内容 —— 撤销复活时配置原样可用。
+#[tauri::command]
+pub async fn mark_orphan_screen_views(
+    db: State<'_, super::state::DatabaseConnection>,
+    live_prefix: String,
+    orphan_prefix: String,
+    block_id: String,
+) -> Result<usize, String> {
+    execute_with_adapter(db, |storage| {
+        FilterService::mark_orphan_screen_views(storage, &live_prefix, &orphan_prefix, &block_id)
+    })
+    .await
+}
+
+/// 孤儿视图核销：启动后异步调用。前缀命中且块已不存在 → 删；块存在 → 改回活前缀。
+#[tauri::command]
+pub async fn cleanup_orphan_screen_views(
+    db: State<'_, super::state::DatabaseConnection>,
+    orphan_prefix: String,
+    live_prefix: String,
+) -> Result<OrphanCleanupReport, String> {
+    execute_with_adapter(db, |storage| {
+        FilterService::cleanup_orphan_screen_views(storage, &orphan_prefix, &live_prefix)
+    })
+    .await
+}
+
 #[tauri::command]
 pub async fn reorder_screen_views(
     db: State<'_, super::state::DatabaseConnection>,
@@ -455,12 +483,12 @@ pub async fn search(
 }
 
 #[tauri::command]
-pub async fn get_properties(
+pub async fn get_field_values(
     db: State<'_, super::state::DatabaseConnection>,
     block_id: &str,
-) -> Result<Vec<Property>, String> {
+) -> Result<Vec<FieldValue>, String> {
     execute_with_adapter(db, |storage| {
-        PropertyService::get_by_block_id(storage, block_id)
+        FieldValueService::get_by_block_id(storage, block_id)
     })
     .await
 }
@@ -571,7 +599,7 @@ pub async fn query_incomplete_tasks(
         // 1. 查 status=Todo/Doing 的 block_ids
         let statuses = vec!["Todo".to_string(), "Doing".to_string()];
         let block_ids =
-            PropertyService::query_block_ids_by_key_value(storage, "status", &statuses)?;
+            FieldValueService::query_block_ids_by_key_value(storage, "status", &statuses)?;
         if block_ids.is_empty() {
             return Ok(Vec::new());
         }
@@ -747,6 +775,22 @@ pub async fn rebuild_date_refs(
     result
 }
 
+/// `save_block_tree` 的单块输入：core `Block` 字段 + 建签门标志（ADR-0050）。
+/// 前端 `_doSave` 的防抖打字保存携带 `create_missing_tags=false`，`#f`、`#fo`
+/// 这类中间前缀不得落标签表；建页/迁移/恢复等旧调用方不带该字段，缺省 true。
+/// （此前直接解析成 `Block`，该字段被 serde 静默丢弃后硬编码 true，打字中间态各建一个垃圾标签。）
+#[derive(Debug, Deserialize)]
+struct BlockSaveInput {
+    #[serde(flatten)]
+    block: Block,
+    #[serde(default = "default_true")]
+    create_missing_tags: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
 #[tauri::command]
 pub async fn save_block_tree(
     db: State<'_, super::state::DatabaseConnection>,
@@ -755,17 +799,22 @@ pub async fn save_block_tree(
 ) -> Result<Vec<BlockSaveResult>, String> {
     // Thin adapter (ADR-0019): parse input, delegate to the shared orchestration
     // (which owns its transaction), then spawn the async sync notification.
-    let blocks: Vec<Block> = blocks
+    let inputs: Vec<BlockSaveInput> = blocks
         .into_iter()
         .map(|block_json| {
             serde_json::from_value(block_json).map_err(|e| format!("Failed to parse block: {}", e))
         })
         .collect::<Result<_, _>>()?;
 
+    // 建签门（ADR-0050）：批次内「全为提交语义」才放行 —— 与 wasm 侧 save_block_tree
+    // 同一 all() 语义（前端 _doSave 每次只提交一个块）。
+    let create_missing_tags = inputs.iter().all(|i| i.create_missing_tags);
+    let blocks: Vec<Block> = inputs.into_iter().map(|i| i.block).collect();
+
     let adapter_arc = db.adapter_arc();
     let mut adapter = adapter_arc.lock().await;
-    let outcome =
-        BlockWriteService::save_blocks(&mut *adapter, blocks).map_err(|e| e.to_string())?;
+    let outcome = BlockWriteService::save_blocks(&mut *adapter, blocks, create_missing_tags)
+        .map_err(|e| e.to_string())?;
     drop(adapter);
 
     let sync_server_clone = sync_server.inner().clone();
@@ -810,6 +859,28 @@ pub async fn undelete_blocks(
     let mut adapter = adapter_arc.lock().await;
     let sync_changes =
         BlockWriteService::undelete_blocks(&mut *adapter, &ids).map_err(|e| e.to_string())?;
+    drop(adapter);
+
+    let sync_server_clone = sync_server.inner().clone();
+    tokio::spawn(async move {
+        for (table, ids) in sync_changes {
+            sync_server_clone.record_and_notify(table, ids).await;
+        }
+    });
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn move_blocks(
+    db: State<'_, super::state::DatabaseConnection>,
+    sync_server: State<'_, super::state::SyncServerHandle>,
+    targets: Vec<comind_core::services::BlockMoveTarget>,
+) -> Result<(), String> {
+    let adapter_arc = db.adapter_arc();
+    let mut adapter = adapter_arc.lock().await;
+    let sync_changes =
+        BlockWriteService::move_blocks(&mut *adapter, &targets).map_err(|e| e.to_string())?;
     drop(adapter);
 
     let sync_server_clone = sync_server.inner().clone();
@@ -914,20 +985,20 @@ pub async fn delete_page_cascade(
 }
 
 #[tauri::command]
-pub async fn set_property(
+pub async fn set_field_value(
     db: State<'_, super::state::DatabaseConnection>,
     sync_server: State<'_, super::state::SyncServerHandle>,
     block_id: &str,
     key: &str,
     value: &str,
     type_: &str,
-) -> Result<Property, String> {
+) -> Result<FieldValue, String> {
     let block_id_clone = block_id.to_string();
 
     let result = execute_with_adapter(db, |storage| {
         // Use upsert to eliminate read-then-write race condition
-        // (two concurrent setProperty calls both seeing existing=None → double INSERT → UNIQUE constraint failure)
-        let result = PropertyService::upsert(storage, block_id, key, value, type_, 0, 0, 1);
+        // (two concurrent set_field_value calls both seeing existing=None → double INSERT → UNIQUE constraint failure)
+        let result = FieldValueService::upsert(storage, block_id, key, value, type_, 0);
 
         if let Ok(block) = storage.blocks().get_by_id(block_id) {
             let _ = PageService::update(
@@ -952,7 +1023,7 @@ pub async fn set_property(
         let sync_server_clone = sync_server.inner().clone();
         tokio::spawn(async move {
             sync_server_clone
-                .record_and_notify(SyncTable::Property, vec![block_id_clone])
+                .record_and_notify(SyncTable::FieldValue, vec![block_id_clone])
                 .await;
         });
     }
@@ -961,7 +1032,7 @@ pub async fn set_property(
 }
 
 #[tauri::command]
-pub async fn delete_property(
+pub async fn delete_field_value(
     db: State<'_, super::state::DatabaseConnection>,
     sync_server: State<'_, super::state::SyncServerHandle>,
     block_id: &str,
@@ -970,8 +1041,8 @@ pub async fn delete_property(
     let block_id_clone = block_id.to_string();
 
     let result = execute_with_adapter(db, |storage| {
-        if let Some(prop) = PropertyService::get_by_block_id_and_key(storage, block_id, key)? {
-            storage.properties().delete(&prop.id)?;
+        if let Some(prop) = FieldValueService::get_by_block_id_and_key(storage, block_id, key)? {
+            FieldValueService::delete(storage, &prop.id)?;
         }
 
         if let Ok(block) = storage.blocks().get_by_id(block_id) {
@@ -997,7 +1068,7 @@ pub async fn delete_property(
         let sync_server_clone = sync_server.inner().clone();
         tokio::spawn(async move {
             sync_server_clone
-                .record_and_notify(SyncTable::Property, vec![block_id_clone])
+                .record_and_notify(SyncTable::FieldValue, vec![block_id_clone])
                 .await;
         });
     }
@@ -1302,6 +1373,24 @@ pub async fn execute_batch(
     }
 }
 
+/// dev 免重编：前端把 HMR 拿到的最新 systemFieldSeed.json 运行时注入原生 Rust，
+/// 并重跑幂等 seeding（改 JSON 后刷新页面即生效，无需重编/重启 tauri:dev）。
+/// 生产前端不调用本命令；传 None 时仅清除覆盖后按编译期内置 seed 重跑，语义无害。
+#[tauri::command]
+pub async fn reload_system_seed(
+    db: State<'_, super::state::DatabaseConnection>,
+    seed_json: Option<String>,
+) -> Result<(), String> {
+    comind_core::types::field_definition::set_seed_override(seed_json);
+    let adapter_arc = db.adapter_arc();
+    let adapter = adapter_arc.lock().await;
+    SQLiteAdapter::seed_system_field_definitions(&adapter.conn)
+        .map_err(|e| format!("seed_system_field_definitions failed: {e}"))?;
+    SQLiteAdapter::seed_system_tags(&adapter.conn)
+        .map_err(|e| format!("seed_system_tags failed: {e}"))?;
+    Ok(())
+}
+
 
 #[tauri::command]
 pub async fn export_to_markdown(
@@ -1396,77 +1485,6 @@ pub async fn trigger_sync(
     let assets_dir = super::config::get_assets_path(&workspace);
     execute_with_adapter(db, |storage| {
         super::markdown::export_changed(storage, &dir, Some(&assets_dir))
-    })
-    .await
-}
-
-#[tauri::command]
-pub async fn create_block_version(
-    db: State<'_, super::state::DatabaseConnection>,
-    block_id: &str,
-    snapshot: &str,
-    hash: &str,
-    reason: &str,
-    checkpoint_name: Option<String>,
-) -> Result<BlockVersion, String> {
-    execute_with_adapter(db, |storage| {
-        BlockVersionService::create(
-            storage,
-            block_id,
-            snapshot,
-            hash,
-            reason,
-            checkpoint_name.as_deref(),
-            None,
-        )
-    })
-    .await
-}
-
-#[tauri::command]
-pub async fn get_block_versions(
-    db: State<'_, super::state::DatabaseConnection>,
-    block_id: &str,
-) -> Result<Vec<BlockVersion>, String> {
-    execute_with_adapter(db, |storage| BlockVersionService::list(storage, block_id)).await
-}
-
-#[tauri::command]
-pub async fn get_block_version_by_id(
-    db: State<'_, super::state::DatabaseConnection>,
-    id: &str,
-) -> Result<BlockVersion, String> {
-    execute_with_adapter(db, |storage| BlockVersionService::get_by_id(storage, id)).await
-}
-
-#[tauri::command]
-pub async fn restore_block_version(
-    db: State<'_, super::state::DatabaseConnection>,
-    version_id: &str,
-) -> Result<BlockVersion, String> {
-    let adapter_arc = db.adapter_arc();
-    let mut adapter = adapter_arc.lock().await;
-    BlockVersionService::restore(&mut *adapter, version_id).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn cleanup_block_versions(
-    db: State<'_, super::state::DatabaseConnection>,
-    retention_days: i64,
-) -> Result<(), String> {
-    execute_with_adapter(db, |storage| {
-        BlockVersionService::cleanup(storage, retention_days)
-    })
-    .await
-}
-
-#[tauri::command]
-pub async fn delete_block_version(
-    db: State<'_, super::state::DatabaseConnection>,
-    version_id: &str,
-) -> Result<(), String> {
-    execute_with_adapter(db, |storage| {
-        BlockVersionService::delete(storage, version_id)
     })
     .await
 }
@@ -2075,5 +2093,67 @@ pub async fn manage_window(
         other => Err(format!(
             "unknown action `{other}` (expected list|show|hide|close)"
         )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn block_json(content: &str, create_missing_tags: Option<bool>) -> serde_json::Value {
+        let mut v = serde_json::json!({
+            "id": "b1", "page_id": "p1", "parent_id": null, "pos": 0,
+            "content": content, "format": "{}", "type": "text",
+        });
+        if let Some(flag) = create_missing_tags {
+            v["create_missing_tags"] = serde_json::json!(flag);
+        }
+        v
+    }
+
+    fn parse_gate(batch: Vec<serde_json::Value>) -> bool {
+        let inputs: Vec<BlockSaveInput> = batch
+            .into_iter()
+            .map(|b| serde_json::from_value(b).unwrap())
+            .collect();
+        inputs.iter().all(|i| i.create_missing_tags)
+    }
+
+    /// 建签门回归（ADR-0050 桌面侧洞）：打字防抖保存携带 create_missing_tags=false，
+    /// 适配层必须透传门控 —— 此前解析成 Block 时该字段被 serde 静默丢弃、硬编码 true，
+    /// 打 `#foo` 的中间态 `#f`、`#fo` 会各建一个垃圾标签。
+    #[test]
+    fn typing_save_flag_false_keeps_gate_closed() {
+        assert!(!parse_gate(vec![block_json("#foo", Some(false))]));
+    }
+
+    #[test]
+    fn commit_flag_true_opens_gate() {
+        assert!(parse_gate(vec![block_json("#foo", Some(true))]));
+    }
+
+    /// 旧调用方（建页 / 迁移 / 恢复）不带该字段 → 缺省 true（提交语义），行为不变。
+    #[test]
+    fn missing_flag_defaults_to_commit() {
+        assert!(parse_gate(vec![block_json("hello", None)]));
+    }
+
+    /// 批次门 all() 语义：与 wasm 侧一致 —— 混入一个打字保存即保守关闭，不误建。
+    #[test]
+    fn mixed_batch_conservatively_closes_gate() {
+        assert!(!parse_gate(vec![
+            block_json("hello", None),
+            block_json("#foo", Some(false)),
+        ]));
+    }
+
+    /// flatten 解析不丢 Block 字段：content / page_id 原样进 core 结构体。
+    #[test]
+    fn flatten_keeps_block_fields() {
+        let input: BlockSaveInput =
+            serde_json::from_value(block_json("#foo  [[页面]]", Some(false))).unwrap();
+        assert_eq!(input.block.content, "#foo  [[页面]]");
+        assert_eq!(input.block.page_id, "p1");
+        assert!(!input.create_missing_tags);
     }
 }

@@ -2,7 +2,7 @@ import { useEditorStore } from '../stores/editor'
 import { useBlockStore } from '../stores/blocks'
 
 /**
- * 全局 BlockSelector 选择源 block 后：一次性转 embed 类型 + 写 sourceBlockId/sourcePageId 属性。
+ * 全局 BlockSelector 选择源 block 后：一次性转 embed 类型 + 写 sourceBlockId/sourcePageId 字段值。
  */
 export function useEmbedSelector() {
   const editorStore = useEditorStore()
@@ -13,7 +13,7 @@ export function useEmbedSelector() {
     editorStore.closeBlockSelector()
     if (!targetBlockId) return
     await blockStore.updateBlockType(targetBlockId, 'embed')
-    await blockStore.updateBlockProperties(targetBlockId, { sourceBlockId, sourcePageId })
+    await blockStore.updateBlockFieldValues(targetBlockId, { sourceBlockId, sourcePageId })
   }
 
   return { handleSelect }

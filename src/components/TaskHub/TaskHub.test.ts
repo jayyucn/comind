@@ -5,19 +5,22 @@
  * 1. handleQuadrantAdd 改调 pageStore.ensureTodayIdeasPage 获取今日 Ideas 页，
  *    不再 getOrCreatePageByTitle('任务收集') 创建/复用普通容器页。
  * 2. 新任务块以 parentId=null 落今日 Ideas 页根级（saveBlockTree 载荷 page_id=今日 Ideas 页、parent_id=null）。
- * 3. 保留 createBlock → flushSave → setProperty(status/priority) 链：先落 block 行再写属性。
+ * 3. 保留 createBlock → flushSave → setFieldValue(status/priority) 链：先落 block 行再写字段值。
  *
  * 测试跑在真实 comind-core（sqljs 内存库）上（先例：Block/index.test.ts）：
- * FK 约束真实生效——若 flushSave 先于 setProperty 的顺序被破坏，会抛 FOREIGN KEY 失败使用例失败。
+ * FK 约束真实生效——若 flushSave 先于 setFieldValue 的顺序被破坏，会抛 FOREIGN KEY 失败使用例失败。
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { mount, flushPromises } from '@vue/test-utils'
 import { defineComponent, h } from 'vue'
 import TaskHub from './TaskHub.vue'
+import { useBlockCardStore } from '../../stores/blockCard'
 import { usePageStore } from '../../stores/pages'
 import { useBlockStore } from '../../stores/blocks'
-import { usePropertyStore } from '../../stores/property'
+import { useFieldValueStore } from '../../stores/fieldValue'
+import { useTagsStore } from '../../stores/tags'
+import { decodeFieldValueData } from '../../utils/field-value-codec'
 import { getTestCore } from '../../../tests/core-client'
 
 // jsdom 无 matchMedia；CodeMirrorEditor→useTheme 在模块级求值会调用它（先例：Block/index.test.ts）。
@@ -55,11 +58,19 @@ vi.mock('../../stores/screenView', () => {
   }
 })
 
-// 外壳桩：仅渲染 #quadrant 插槽（其余插槽/视图不挂载，避免无关渲染依赖）。
+// 外壳桩：渲染副标题（含 flatCards.length —— D4 过滤口径的可观测面）与 items id 列表，
+// 另渲染 #quadrant 插槽（其余插槽/视图不挂载，避免无关渲染依赖）。
 const QueryPageFrameStub = defineComponent({
   name: 'QueryPageFrame',
-  setup(_, { slots }) {
-    return () => h('div', { class: 'qpf-stub' }, [slots.quadrant?.({ context: {} })])
+  props: { subtitle: { type: String, default: '' }, items: { type: Array, default: () => [] } },
+  setup(props, { slots }) {
+    return () => h('div', { class: 'qpf-stub' }, [
+      h('p', { class: 'qpf-subtitle' }, props.subtitle),
+      h('div', { class: 'qpf-items' }, (props.items as Array<{ block_id: string }>).map((i) =>
+        h('span', { class: 'qpf-item', 'data-block-id': i.block_id }, i.block_id),
+      )),
+      slots.quadrant?.({ context: {} }),
+    ])
   },
 })
 // 四象限视图桩：测试从桩上直接 $emit('addItem') 驱动 TaskHub 的 handleQuadrantAdd。
@@ -98,17 +109,17 @@ async function waitFor(pred: () => boolean, timeoutMs = 3000): Promise<void> {
   }
 }
 
-/** 从 QuadrantView 桩触发一次新增并等待 createBlock→flushSave→setProperty×2 全部完成 */
+/** 从 QuadrantView 桩触发一次新增并等待 createBlock→flushSave→setFieldValue×2 全部完成 */
 async function addFromQuadrant(priority: string, title: string) {
   const wrapper = mountTaskHub()
   await flushPromises() // onMounted（screenView.load + blockCard.getCards）
   const qv = wrapper.findComponent(QuadrantViewStub)
   expect(qv.exists()).toBe(true)
-  const setPropertySpy = vi.spyOn(getTestCore()!, 'setProperty')
+  const setFieldValueSpy = vi.spyOn(getTestCore()!, 'setFieldValue')
   qv.vm.$emit('addItem', priority, title)
   await flushPromises()
-  await waitFor(() => setPropertySpy.mock.calls.length === 2)
-  return { wrapper, setPropertySpy }
+  await waitFor(() => setFieldValueSpy.mock.calls.length === 2)
+  return { wrapper, setFieldValueSpy }
 }
 
 beforeEach(() => {
@@ -128,9 +139,9 @@ describe('TaskHub — 四象限新增任务落点', () => {
     // 1) 走 ensureTodayIdeasPage（而非 getOrCreatePageByTitle('任务收集')）
     expect(ensureSpy).toHaveBeenCalledTimes(1)
 
-    // 2) 块真实建在今日 Ideas 页根级（parentId=null）
+    // 2) 块真实建在今日 Ideas 页根级（parentId=null）；D2 挂载后 content 尾部含 #任务
     const blockStore = useBlockStore()
-    const block = blockStore.blocks.find((b) => b.content === '四象限新增-落今日Ideas')
+    const block = blockStore.blocks.find((b) => b.content.startsWith('四象限新增-落今日Ideas'))
     expect(block).toBeDefined()
     expect(block!.parentId).toBeNull()
     const page = pageStore.pages.find((p) => p.id === block!.pageId)
@@ -177,7 +188,7 @@ describe('TaskHub — 四象限新增任务落点', () => {
     expect(ensureSpy).toHaveBeenCalledTimes(1)
 
     // 任务仍以 parentId=null 落今日 Ideas 页根级
-    const task = blockStore.blocks.find((b) => b.content === '四象限新增-既有根块场景')
+    const task = blockStore.blocks.find((b) => b.content.startsWith('四象限新增-既有根块场景'))
     expect(task).toBeDefined()
     expect(task!.parentId).toBeNull()
 
@@ -195,32 +206,64 @@ describe('TaskHub — 四象限新增任务落点', () => {
     wrapper.unmount()
   })
 
-  it('保留 createBlock → flushSave → setProperty 链：先落 block 行再写 status/priority 属性', async () => {
+  it('保留 createBlock → flushSave → setFieldValue 链：先落 block 行再写 status/priority 字段值', async () => {
     const client = getTestCore()!
     const blockStore = useBlockStore()
-    const propertyStore = usePropertyStore()
+    const fieldValueStore = useFieldValueStore()
     const saveTreeSpy = vi.spyOn(client, 'saveBlockTree')
-    const setPropertySpy = vi.spyOn(client, 'setProperty')
+    const setFieldValueSpy = vi.spyOn(client, 'setFieldValue')
 
     const { wrapper } = await addFromQuadrant('High', '四象限新增-FK链验证')
 
-    // 顺序：block 行必须先于属性写入（真实 sqlite 外键约束下乱序会直接失败）
+    // 顺序：block 行必须先于字段值写入（真实 sqlite 外键约束下乱序会直接失败）
     expect(saveTreeSpy).toHaveBeenCalled()
-    expect(setPropertySpy).toHaveBeenCalledTimes(2)
-    expect(saveTreeSpy.mock.invocationCallOrder[0]).toBeLessThan(setPropertySpy.mock.invocationCallOrder[0])
+    expect(setFieldValueSpy).toHaveBeenCalledTimes(2)
+    expect(saveTreeSpy.mock.invocationCallOrder[0]).toBeLessThan(setFieldValueSpy.mock.invocationCallOrder[0])
 
     // status=Todo、priority=象限值真实落库（store 本地态 + 真实 DB 双确认）
-    const block = blockStore.blocks.find((b) => b.content === '四象限新增-FK链验证')!
-    const localProps = propertyStore.getBlockProperties(block.id)
-    const localKv = Object.fromEntries(localProps.map((p) => [p.key, p.value]))
+    const block = blockStore.blocks.find((b) => b.content.startsWith('四象限新增-FK链验证'))!
+    const localValues = fieldValueStore.getBlockFieldValues(block.id)
+    const localKv = Object.fromEntries(localValues.map((p) => [p.key, decodeFieldValueData(p.value_json, p.value_type)]))
     expect(localKv['status']).toBe('Todo')
     expect(localKv['priority']).toBe('High')
 
-    const props = await client.getProperties(block.id)
-    const kv = Object.fromEntries(props.map((p) => [p.key, p.value]))
+    const values = await client.getFieldValues(block.id)
+    const kv = Object.fromEntries(values.map((p) => [p.key, decodeFieldValueData(p.value_json, p.value_type)]))
     expect(kv['status']).toBe('Todo')
     expect(kv['priority']).toBe('High')
 
     wrapper.unmount()
   })
+
+  // ── ADR-0050 阶段 2：D2 原子挂载 + D4 tags 过滤 ──
+
+  it('D2：ensureTodo 为无标签块挂载 #任务（content 文本 + DB tags 双确认）', async () => {
+    const client = getTestCore()!
+    const blockStore = useBlockStore()
+    const fieldValueStore = useFieldValueStore()
+    const tagsStore = useTagsStore()
+    await tagsStore.ensureLoaded()
+    const taskTagId = blockStore.systemTaskTagId()
+    expect(taskTagId).toBeDefined()
+
+    const page = await usePageStore().ensureTodayIdeasPage()
+    const b = await blockStore.createBlock({ pageId: page.id, content: 'D2挂载验证-无标签段落' })
+    await blockStore.flushSave(b.id)
+    expect(b.tags ?? []).not.toContain(taskTagId)
+
+    await fieldValueStore.ensureTodo(b.id)
+    // 挂载走 content 文本（updateBlockContent + flushSave），status 随后写入
+    await waitFor(() => (blockStore.getBlock(b.id)?.tags ?? []).includes(taskTagId!))
+
+    // store 内存态双确认：content 含 #任务、tags 含系统任务 tag（tags 由 Rust 保存回写，
+    // 即派生真相；WASM 端 getBlockCards 恒空、getBlocksByPage 不带 tags，无 DB 侧取证面）
+    expect(blockStore.getBlock(b.id)!.content).toContain('#任务')
+    expect(blockStore.getBlock(b.id)!.tags).toContain(taskTagId)
+    const values = await client.getFieldValues(b.id)
+    const kv = Object.fromEntries(values.map((p) => [p.key, decodeFieldValueData(p.value_json, p.value_type)]))
+    expect(kv['status']).toBe('Todo')
+  })
+
+  // D4 过滤口径的组件接线测试见 TaskHub.d4filter.test.ts（WASM 端 getBlockCards 恒空，
+  // 真实库测不了卡片过滤，故用 mock client 精确控制投影）。
 })

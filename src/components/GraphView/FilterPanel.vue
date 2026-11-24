@@ -414,7 +414,7 @@ init()
 
 .filter-panel.collapsed {
   width: 0;
-  transition: width var(--transition-base);
+  transition: width var(--dur-base) var(--ease-in-out);
   border-left: none;
 }
 
@@ -455,7 +455,8 @@ init()
   align-items: center;
   justify-content: center;
   color: var(--text-secondary);
-  transition: background var(--transition-base), border-color var(--transition-base), color var(--transition-base);
+  transition: background var(--dur-base) var(--ease-out), border-color var(--dur-base) var(--ease-out),
+    color var(--dur-base) var(--ease-out);
   flex-shrink: 0;
 
   &:hover {
@@ -512,7 +513,7 @@ init()
   background: var(--bg-base);
   color: var(--text-primary);
   font-size: var(--text-xs);
-  transition: all var(--transition-base);
+  transition: border-color var(--dur-base) var(--ease-out), box-shadow var(--dur-base) var(--ease-out);
 
   &:hover:not(:disabled) {
     border-color: var(--border-strong);
@@ -550,7 +551,8 @@ init()
   color: var(--text-secondary);
   cursor: pointer;
   font-family: inherit;
-  transition: all var(--transition-base);
+  transition: background var(--dur-base) var(--ease-out), border-color var(--dur-base) var(--ease-out),
+    color var(--dur-base) var(--ease-out);
 
   &:hover {
     background: var(--bg-hover);
@@ -594,7 +596,8 @@ init()
   color: var(--text-secondary);
   cursor: pointer;
   font-family: inherit;
-  transition: all var(--transition-base);
+  transition: background var(--dur-base) var(--ease-out), border-color var(--dur-base) var(--ease-out),
+    color var(--dur-base) var(--ease-out);
 
   &:hover {
     background: var(--bg-hover);
@@ -635,7 +638,7 @@ init()
   font-family: inherit;
   cursor: pointer;
   text-align: left;
-  transition: border-color var(--transition-base), box-shadow var(--transition-base);
+  transition: border-color var(--dur-base) var(--ease-out), box-shadow var(--dur-base) var(--ease-out);
 
   &:hover { border-color: var(--border-strong); }
   &:focus { outline: none; border-color: var(--accent); box-shadow: var(--shadow-focus); }
@@ -674,7 +677,8 @@ init()
   cursor: pointer;
   font-family: inherit;
   min-width: 36px;
-  transition: all var(--transition-base);
+  transition: background var(--dur-base) var(--ease-out), border-color var(--dur-base) var(--ease-out),
+    color var(--dur-base) var(--ease-out);
 
   &:hover {
     background: var(--bg-hover);
@@ -709,7 +713,8 @@ init()
   font-size: var(--text-xs);
   font-family: inherit;
   cursor: pointer;
-  transition: background var(--transition-base), color var(--transition-base), border-color var(--transition-base), transform var(--transition-base);
+  transition: background var(--dur-base) var(--ease-out), color var(--dur-base) var(--ease-out),
+    border-color var(--dur-base) var(--ease-out), transform var(--dur-base) var(--ease-out);
   width: 100%;
 
   &:hover:not(:disabled) {

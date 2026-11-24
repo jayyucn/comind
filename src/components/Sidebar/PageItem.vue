@@ -150,7 +150,7 @@ function handleKeydown(event: KeyboardEvent) {
   position: relative;
   height: 30px;
   box-sizing: border-box;
-  transition: background 80ms ease;
+  transition: background var(--dur-fast) var(--ease-out);
 }
 
 .page-item:hover {

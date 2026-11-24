@@ -1,7 +1,7 @@
 // 写笔记业务单测（票 06 / ADR-0040 D3/D4/D7）：高亮 → 书 Page 下 append
-// bullet Block（属性四件套 book/chapter/cfi/quote）→ 回填高亮行 block_id →
+// bullet Block（字段值四件套 book/chapter/cfi/quote）→ 回填高亮行 block_id →
 // emitTo 主窗口 'reader:data-changed'。更新路径：已有 block_id 的高亮再写 →
-// 只更新同一条 Block 的 content，不新建 Block/属性，也不重复回填。
+// 只更新同一条 Block 的 content，不新建 Block/字段值，也不重复回填。
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import type { BookHighlightRust } from '../wasm/types'
@@ -10,14 +10,14 @@ import type { BookHighlightRust } from '../wasm/types'
 const { mockEmitTo } = vi.hoisted(() => ({ mockEmitTo: vi.fn() }))
 vi.mock('@tauri-apps/api/event', () => ({ emitTo: mockEmitTo }))
 
-// blocks/property store 依赖的 client mock（内存态即可，验证写路径调用形态）
+// blocks/fieldValue store 依赖的 client mock（内存态即可，验证写路径调用形态）
 const { mockClient, mockIsTauri } = vi.hoisted(() => {
   const client = {
     getPageWithBlocks: vi.fn(),
     getBlocksByPage: vi.fn(),
     saveBlockTree: vi.fn(),
-    setProperty: vi.fn(),
-    getProperties: vi.fn(),
+    setFieldValue: vi.fn(),
+    getFieldValues: vi.fn(),
     getBlock: vi.fn(),
     upsertBookHighlight: vi.fn(),
     deleteBookHighlight: vi.fn(),
@@ -54,32 +54,31 @@ function makeHighlight(blockId: string | null = null): BookHighlightRust {
   }
 }
 
-/** saveBlockTree 回显：Rust 返回 [{ block: <rust 命名 block>, render_segments, snapshot }] */
+/** saveBlockTree 回显：Rust 返回 [{ block: <rust 命名 block>, render_segments }] */
 function echoSaveBlockTree(list: Array<Record<string, unknown>>) {
   mockClient.saveBlockTree.mockImplementation(async (updates: Array<Record<string, unknown>>) =>
     updates.map(u => ({
       block: { ...u, created_at: u.created_at ?? 1 },
       render_segments: [],
-      snapshot: null,
     })))
   return list
 }
 
-/** setProperty 回显：Rust 返回属性行 */
+/** setFieldValue 回显：Rust 返回字段值行 */
 function echoSetProperty() {
-  mockClient.setProperty.mockImplementation(
+  mockClient.setFieldValue.mockImplementation(
     async (blockId: string, key: string, value: string, type: string) => ({
       id: `prop-${key}`,
       block_id: blockId,
+      field_definition_id: `fd-${key}`,
       key,
-      value,
-      type,
-      sort_order: 0,
-      is_hidden: 0,
-      is_deleted: 0,
-      schema_version: 1,
+      value_json: value,
+      value_type: type,
+      seq: 0,
       created_at: 1,
       updated_at: 1,
+      version: 0,
+      deleted_at: null,
     }))
 }
 
@@ -89,7 +88,7 @@ beforeEach(() => {
   mockIsTauri.mockReturnValue(false)
   mockClient.getPageWithBlocks.mockResolvedValue({ blocks: [] })
   mockClient.getBlocksByPage.mockResolvedValue([])
-  mockClient.getProperties.mockResolvedValue([])
+  mockClient.getFieldValues.mockResolvedValue([])
   mockClient.upsertBookHighlight.mockImplementation(async (h: BookHighlightRust) => h)
   mockClient.deleteBookHighlight.mockResolvedValue(undefined)
   mockClient.deleteBlock.mockResolvedValue(undefined)
@@ -119,7 +118,7 @@ describe('createOrUpdateNoteBlock（新建笔记）', () => {
     expect(saved.id).toBe(result.blockId)
     expect(saved.page_id).toBe('book-1')
     expect(saved.parent_id).toBeNull()
-    expect(saved.type).toBe('bullet')
+    expect(saved.type).toBe('text')
     expect(saved.content).toBe('我的想法')
   })
 
@@ -128,7 +127,7 @@ describe('createOrUpdateNoteBlock（新建笔记）', () => {
       blocks: [{
         block: {
           id: 'exist-1', page_id: 'book-1', parent_id: null, pos: 1000,
-          content: '已有笔记', format: '{}', type: 'bullet', created_at: 0, updated_at: 0,
+          content: '已有笔记', format: '{}', type: 'text', created_at: 0, updated_at: 0,
         },
         children: [],
         render_segments: [],
@@ -151,7 +150,7 @@ describe('createOrUpdateNoteBlock（新建笔记）', () => {
     expect(saved.pos).toBeGreaterThan(1000)
   })
 
-  it('属性四件套 book/chapter/cfi/quote 逐一写入（type=string）', async () => {
+  it('字段值四件套 book/chapter/cfi/quote 逐一写入（type=string）', async () => {
     echoSaveBlockTree([])
 
     const result = await createOrUpdateNoteBlock({
@@ -164,7 +163,7 @@ describe('createOrUpdateNoteBlock（新建笔记）', () => {
       highlight: makeHighlight(),
     })
 
-    const propCalls = mockClient.setProperty.mock.calls.map(
+    const propCalls = mockClient.setFieldValue.mock.calls.map(
       (c: unknown[]) => [c[1], c[2], c[3]] as const,
     )
     expect(propCalls).toContainEqual(['book', '测试书', 'string'])
@@ -172,7 +171,7 @@ describe('createOrUpdateNoteBlock（新建笔记）', () => {
     expect(propCalls).toContainEqual(['cfi', 'epubcfi(/6/2!/4/2:0)', 'string'])
     expect(propCalls).toContainEqual(['quote', '原文摘录', 'string'])
     // 四件套都挂在新建 block 上
-    for (const c of mockClient.setProperty.mock.calls) {
+    for (const c of mockClient.setFieldValue.mock.calls) {
       expect(c[0]).toBe(result.blockId)
     }
   })
@@ -252,11 +251,11 @@ describe('createOrUpdateNoteBlock（新建笔记）', () => {
 })
 
 describe('createOrUpdateNoteBlock（更新已有笔记）', () => {
-  it('已有 block_id 的高亮再写：只更新该 Block 的 content，不新建 Block/属性/回填', async () => {
+  it('已有 block_id 的高亮再写：只更新该 Block 的 content，不新建 Block/字段值/回填', async () => {
     echoSaveBlockTree([])
     mockClient.getBlock.mockResolvedValue({
       id: 'b-1', page_id: 'book-1', parent_id: null, pos: 1000,
-      content: '旧想法', format: '{}', type: 'bullet', created_at: 1, updated_at: 1,
+      content: '旧想法', format: '{}', type: 'text', created_at: 1, updated_at: 1,
     })
 
     const result = await createOrUpdateNoteBlock({
@@ -278,8 +277,8 @@ describe('createOrUpdateNoteBlock（更新已有笔记）', () => {
     const saved = mockClient.saveBlockTree.mock.calls[0][0][0]
     expect(saved.id).toBe('b-1')
     expect(saved.content).toBe('新想法')
-    // 属性不重写、block_id 不重复回填
-    expect(mockClient.setProperty).not.toHaveBeenCalled()
+    // 字段值不重写、block_id 不重复回填
+    expect(mockClient.setFieldValue).not.toHaveBeenCalled()
     expect(mockClient.upsertBookHighlight).not.toHaveBeenCalled()
   })
 
@@ -288,7 +287,7 @@ describe('createOrUpdateNoteBlock（更新已有笔记）', () => {
     echoSaveBlockTree([])
     mockClient.getBlock.mockResolvedValue({
       id: 'b-1', page_id: 'book-1', parent_id: null, pos: 1000,
-      content: '旧想法', format: '{}', type: 'bullet', created_at: 1, updated_at: 1,
+      content: '旧想法', format: '{}', type: 'text', created_at: 1, updated_at: 1,
     })
 
     await createOrUpdateNoteBlock({
@@ -309,7 +308,7 @@ describe('loadNoteText', () => {
   it('读取已有笔记 Block 的当前文本（输入浮层预填）', async () => {
     mockClient.getBlock.mockResolvedValue({
       id: 'b-1', page_id: 'book-1', parent_id: null, pos: 1000,
-      content: '旧想法', format: '{}', type: 'bullet', created_at: 1, updated_at: 1,
+      content: '旧想法', format: '{}', type: 'text', created_at: 1, updated_at: 1,
     })
 
     await expect(loadNoteText('b-1')).resolves.toBe('旧想法')

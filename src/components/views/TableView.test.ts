@@ -107,15 +107,26 @@ describe('TableView (generic, field-driven)', () => {
     expect(headers.some((h) => h.includes('页面'))).toBe(true)
   })
 
-  // ── Header icons (lucide type icons) ──
-  it('renders a type icon in each column header (Link2 for link role)', () => {
+  // ── 表头只有字段名（无类型图标）：对齐聚合页设计稿，2026-09-23 ──
+  it('renders header labels without type icons', () => {
     const wrapper = mountTable({ items: [makeCard({ block_id: 'b1' })] })
-    // 数据列（boolean/text/select/date）表头都有 svg 图标
-    for (const key of ['status', 'content', 'priority', 'deadline']) {
-      expect(wrapper.find(`thead .col-${key} svg`).exists()).toBe(true)
+    for (const key of ['status', 'content', 'priority', 'deadline', 'page']) {
+      expect(wrapper.find(`thead .col-${key} svg`).exists()).toBe(false)
     }
-    // link 角色列（page）也有图标
-    expect(wrapper.find('thead .col-page svg').exists()).toBe(true)
+    expect(wrapper.find('thead .col-content .th-label').text()).toContain('内容')
+  })
+
+  // ── 列宽预算必须扣掉表格自身描边（jsdom 无布局 → 列宽退化到下限，正好钉住两处预算的一致性）──
+  // 若列宽和 + 描边 > 表格声明宽，fixed 布局的 used width 取「列宽和 + 边框」，
+  // 表格右缘越出 .table-scroll（overflow: auto）可视区 → 右侧描边被裁，而左侧仍可见。
+  it('keeps column widths within the table width minus its own border', () => {
+    const wrapper = mountTable({ items: [makeCard()] })
+    const tableW = Number.parseFloat((wrapper.find('table').element as HTMLElement).style.width)
+    const colsW = wrapper
+      .findAll('thead th')
+      .reduce((sum, th) => sum + Number.parseFloat((th.element as HTMLElement).style.width || '0'), 0)
+    expect(tableW).toBeGreaterThan(0)
+    expect(colsW + 2).toBe(tableW) // 2 = 表格左右各 1px 描边
   })
 
   // ── Sort icon ──
@@ -154,10 +165,30 @@ describe('TableView (generic, field-driven)', () => {
     expect(labels).toContain('急')
   })
 
-  // ── Priority colored dot (Option.color lifted to metadata) ──
-  it('renders color dot for prioritized item', () => {
+  // ── select 有值态：值胶囊（配色由 Option.color 元数据给出） ──
+  it('renders a tinted value chip for a colored select option', () => {
     const wrapper = mountTable({ items: [makeCard({ properties: { priority: 'High' } })] })
-    expect(wrapper.find('.color-dot').exists()).toBe(true)
+    const chip = wrapper.find('tbody .col-priority .cell-chip')
+    expect(chip.exists()).toBe(true)
+    expect(chip.text()).toBe('高')
+    // 配色（字段元数据）内联到胶囊：文字取该色、底色为该色 10% 淡染（jsdom 会把 hex 规范化成 rgb()）
+    expect(chip.attributes('style')).toContain('rgb(245, 158, 11)')
+    expect(chip.attributes('style')).toContain('color-mix')
+    // 胶囊底已承担配色，单元格内不再叠加色点（色点仅保留在选项菜单里）
+    expect(wrapper.find('tbody .col-priority .color-dot').exists()).toBe(false)
+  })
+
+  // 无配色的选项 → 中性胶囊（走 .cell-chip 的 token 默认，不内联任何样式）
+  it('renders a neutral value chip when the option has no color', () => {
+    const cfg: TableConfig = { viewKind: 'table', version: 1, columns: [{ key: 'status' }] }
+    const wrapper = mountTable({
+      items: [makeCard({ properties: { status: 'Doing' } })],
+      config: cfg,
+    })
+    const chip = wrapper.find('tbody .col-status .cell-chip')
+    expect(chip.exists()).toBe(true)
+    expect(chip.text()).toBe('进行中')
+    expect(chip.attributes('style')).toBeUndefined()
   })
 
   // ── Project ──
@@ -208,19 +239,29 @@ describe('TableView (generic, field-driven)', () => {
   it('emits cellClick with field key when title cell clicked', async () => {
     const wrapper = mountTable({ items: [makeCard({ block_id: 'b1' })] })
     await wrapper.find('tbody .col-content').trigger('click')
-    expect(wrapper.emitted('cellClick')![0]).toEqual(['b1', 'content'])
+    expect(wrapper.emitted('cellClick')![0]).toEqual(['b1', 'content', expect.anything()])
   })
 
   it('emits cellClick with field key for plain cells', async () => {
     const wrapper = mountTable({ items: [makeCard({ block_id: 'b1' })] })
     await wrapper.find('tbody .col-project').trigger('click')
-    expect(wrapper.emitted('cellClick')![0]).toEqual(['b1', 'project'])
+    expect(wrapper.emitted('cellClick')![0]).toEqual(['b1', 'project', expect.anything()])
   })
 
   it('emits cellClick with field key when link button clicked (bubbles to td)', async () => {
     const wrapper = mountTable({ items: [makeCard({ block_id: 'b1' })] })
     await wrapper.find('.link-btn').trigger('click')
-    expect(wrapper.emitted('cellClick')![0]).toEqual(['b1', 'page'])
+    expect(wrapper.emitted('cellClick')![0]).toEqual(['b1', 'page', expect.anything()])
+  })
+
+  // 修饰键只透传、不解释：分屏与否是业务方的裁决（查询块据此 Ctrl/⌘+Click 开另一栏）
+  it('passes the mouse event through so callers can read modifiers', async () => {
+    const wrapper = mountTable({ items: [makeCard({ block_id: 'b1' })] })
+    await wrapper.find('tbody .col-page').trigger('click', { ctrlKey: true })
+    const [id, key, event] = wrapper.emitted('cellClick')![0] as [string, string, MouseEvent]
+    expect(id).toBe('b1')
+    expect(key).toBe('page')
+    expect(event.ctrlKey).toBe(true)
   })
 
   it('does not emit cellClick when status icon clicked (cycles instead)', async () => {
@@ -475,7 +516,7 @@ describe('TableView (generic, field-driven)', () => {
     // 点击只读 cell 不弹下拉菜单（业务方仍可通过 cellClick 事件处理跳转/预览）
     await stageTd.trigger('click')
     expect(document.body.querySelector('[data-testid="select-menu"]')).toBeFalsy()
-    expect(wrapper.emitted('cellClick')![0]).toEqual(['b1', 'stage'])
+    expect(wrapper.emitted('cellClick')![0]).toEqual(['b1', 'stage', expect.anything()])
   })
 
   it('renders boolean as read-only check when editable=false', () => {
@@ -564,7 +605,7 @@ describe('TableView custom cell (ADR-0010)', () => {
       cellRegistry: { 'block-content': StubCell },
     })
     await wrapper.find('tbody .col-content').trigger('click')
-    expect(wrapper.emitted('cellClick')![0]).toEqual(['b1', 'content'])
+    expect(wrapper.emitted('cellClick')![0]).toEqual(['b1', 'content', expect.anything()])
   })
 })
 

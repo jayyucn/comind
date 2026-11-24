@@ -1,12 +1,15 @@
+import type { FieldValue } from '../types/field-value'
+// dev 免重编：seed 经静态 import 进入 Vite 模块图（编辑 JSON 触发 HMR 整页刷新，
+// 启动时注入最新值）；生产仍由 Rust 编译期 include_str 嵌入，本 import 不参与注入。
+import seedJson from '../types/systemFieldSeed.json'
 import type {
   BatchResult,
   Block,
-  BlockVersion,
   BookHighlightRust, BookProgressRust,
   DateRefRecord,
   Link,
   Notification,
-  Page, Property,
+  Page,
   RelationshipType,
   SearchResult
 } from './types'
@@ -26,9 +29,9 @@ export interface WasmClient {
 
   get_outlinks(pageId: string): Promise<Link[]>
 
-  get_properties(blockId: string): Promise<Property[]>
-  set_property(blockId: string, key: string, value: string, type: string): Promise<Property>
-  delete_property(blockId: string, key: string): Promise<void>
+  get_field_values(blockId: string): Promise<FieldValue[]>
+  set_field_value(blockId: string, key: string, value: string, type: string): Promise<FieldValue>
+  delete_field_value(blockId: string, key: string): Promise<void>
 
   get_relationship_types(): Promise<RelationshipType[]>
 
@@ -51,14 +54,11 @@ export interface WasmClient {
   /** 指定月份（yyyy-MM）的全部快照（含 content_json），按 date 倒序，供按月异步渲染 */
   list_ideas_snapshots_by_month(year: number, month: number): Promise<{ page_id: string; date: string; content_json: string }[]>
 
-  create_block_version(blockId: string, snapshot: string, hash: string, reason: string, checkpointName?: string): Promise<BlockVersion>
-  get_block_versions(blockId: string): Promise<BlockVersion[]>
-  get_block_version_by_id(id: string): Promise<BlockVersion>
-  restore_block_version(versionId: string): Promise<BlockVersion>
-  cleanup_block_versions(retentionDays: number): Promise<void>
-  delete_block_version(versionId: string): Promise<void>
   /** 撤销软删除（ADR-0046 D10）：复活块及其下整棵软删子树，返回 sync_changes 的 JSON 串 */
   undelete_blocks(ids_json: string): Promise<string>
+
+  /** 搬移一组块（ADR-0025 D4b）：`BlockMoveTarget[]` 的 JSON 进，sync_changes 的 JSON 出 */
+  move_blocks(targets_json: string): Promise<string>
 
   get_notification(id: string): Promise<Notification>
   get_notifications_by_block(blockId: string): Promise<Notification[]>
@@ -150,7 +150,14 @@ export async function initWasmClient(): Promise<WasmClient> {
     }
   }
   
-  await wasmModule.init()
+  // dev（MODE=development）：把 seed 在运行时注入 WASM，改 JSON 免重编。
+  // 不依赖 fetch，规避 webview 缓存旧响应导致「刷新无效、必须重启 tauri:dev」的问题；
+  // 生产 / vitest 不注入：Rust 走编译期 include_str（prod）或内置默认（test）。
+  await wasmModule.init(
+    import.meta.env.DEV && import.meta.env.MODE === 'development'
+      ? JSON.stringify(seedJson)
+      : undefined,
+  )
 
   const client: WasmClient = {
     async get_block(blockId: string): Promise<Block> {
@@ -202,18 +209,18 @@ export async function initWasmClient(): Promise<WasmClient> {
       return parseJsonResult<Link[]>(result)
     },
 
-    async get_properties(blockId: string): Promise<Property[]> {
-      const result = await wasmModule.get_properties(blockId)
-      return parseJsonResult<Property[]>(result)
+    async get_field_values(blockId: string): Promise<FieldValue[]> {
+      const result = await wasmModule.get_field_values(blockId)
+      return parseJsonResult<FieldValue[]>(result)
     },
 
-    async set_property(blockId: string, key: string, value: string, type: string): Promise<Property> {
-      const result = await wasmModule.set_property(blockId, key, value, type)
-      return parseJsonResult<Property>(result)
+    async set_field_value(blockId: string, key: string, value: string, type: string): Promise<FieldValue> {
+      const result = await wasmModule.set_field_value(blockId, key, value, type)
+      return parseJsonResult<FieldValue>(result)
     },
 
-    async delete_property(blockId: string, key: string): Promise<void> {
-      await wasmModule.delete_property(blockId, key)
+    async delete_field_value(blockId: string, key: string): Promise<void> {
+      await wasmModule.delete_field_value(blockId, key)
     },
 
     async get_relationship_types(): Promise<RelationshipType[]> {
@@ -290,36 +297,12 @@ export async function initWasmClient(): Promise<WasmClient> {
       return parseJsonResult<{ page_id: string; date: string; content_json: string }[]>(result)
     },
 
-    async create_block_version(blockId: string, snapshot: string, hash: string, reason: string, checkpointName?: string): Promise<BlockVersion> {
-      const result = await wasmModule.create_block_version(blockId, snapshot, hash, reason, checkpointName ?? undefined)
-      return parseJsonResult<BlockVersion>(result)
-    },
-
-    async get_block_versions(blockId: string): Promise<BlockVersion[]> {
-      const result = await wasmModule.get_block_versions(blockId)
-      return parseJsonResult<BlockVersion[]>(result)
-    },
-
-    async get_block_version_by_id(id: string): Promise<BlockVersion> {
-      const result = await wasmModule.get_block_version_by_id(id)
-      return parseJsonResult<BlockVersion>(result)
-    },
-
-    async restore_block_version(versionId: string): Promise<BlockVersion> {
-      const result = await wasmModule.restore_block_version(versionId)
-      return parseJsonResult<BlockVersion>(result)
-    },
-
-    async cleanup_block_versions(retentionDays: number): Promise<void> {
-      await wasmModule.cleanup_block_versions(BigInt(retentionDays))
-    },
-
-    async delete_block_version(versionId: string): Promise<void> {
-      await wasmModule.delete_block_version(versionId)
-    },
-
     async undelete_blocks(ids_json: string): Promise<string> {
       return wasmModule.undelete_blocks(ids_json)
+    },
+
+    async move_blocks(targets_json: string): Promise<string> {
+      return wasmModule.move_blocks(targets_json)
     },
 
     async get_notification(id: string): Promise<Notification> {

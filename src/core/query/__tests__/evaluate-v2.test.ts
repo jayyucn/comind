@@ -10,7 +10,7 @@ interface Row {
 
 function makeRegistry(): Registry {
   const reg = createRegistry()
-  reg.register('row', { key: 'name', label: '名称', type: 'text', get: (r: Row) => r.name })
+  reg.register('row', { key: 'name', label: '名称', type: 'string', get: (r: Row) => r.name })
   reg.register('row', {
     key: 'status',
     label: '状态',

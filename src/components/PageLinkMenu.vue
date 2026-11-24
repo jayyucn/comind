@@ -153,6 +153,7 @@ defineExpose({ selectNext, selectPrev, confirmSelect, close });
             active: selectedIndex === index,
             'wlm-create': item.type === 'create'
           }"
+          @mousedown.prevent
           @click="selectItem(item)"
           @mouseenter="selectedIndex = index"
         >
@@ -199,7 +200,7 @@ defineExpose({ selectNext, selectPrev, confirmSelect, close });
   cursor: pointer;
   border-radius: 4px;
   font-size: var(--text-sm);
-  transition: background-color 0.15s;
+  transition: background-color var(--dur-fast) var(--ease-out);
 }
 
 .wlm-item:hover {

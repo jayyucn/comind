@@ -99,6 +99,46 @@ test.describe('Block drag and drop', () => {
     await page.waitForTimeout(300)
   })
 
+  test('拖到紧邻自身的位置时指示器不贴视口顶部', async ({ page }) => {
+    // 回归：意图解析为「插到被拖块自己之前」时（beforeId === 被拖块 id），锚点曾命中
+    // display:none 的被拖本体 —— 矩形全 0 ⇒ 指示器 top = 0，蓝线贴在视口顶部。
+    const blockContent = page.locator('.block-content').first()
+    await blockContent.click()
+    await page.waitForTimeout(400)
+    await page.keyboard.type('DropA')
+    await page.keyboard.press('Enter')
+    await page.waitForTimeout(300)
+    await page.keyboard.type('DropB')
+    await page.keyboard.press('Enter')
+    await page.waitForTimeout(300)
+    await page.keyboard.type('DropC')
+    await page.waitForTimeout(400)
+
+    const bulletOf = async (text: string) =>
+      page.locator('.block', { hasText: text }).first().locator('.block-bullet').first().boundingBox()
+
+    const src = await bulletOf('DropC')
+    const dst = await bulletOf('DropB')
+    if (!src || !dst) throw new Error('无法定位 bullet')
+
+    await page.mouse.move(src.x + 5, src.y + 5)
+    await page.mouse.down()
+    await page.waitForTimeout(200)
+    // 中列（bullet 左缘内）+ B 行下半区 ⇒ sort before = 自己（原地不动）
+    await page.mouse.move(src.x + 5, dst.y + dst.height - 4, { steps: 10 })
+    await page.waitForTimeout(300)
+
+    const indicator = page.locator('.drop-indicator.visible')
+    await expect(indicator).toBeVisible({ timeout: 2000 })
+    const box = await indicator.boundingBox()
+    if (!box) throw new Error('量不到落位指示器')
+    // 应落在目标行底附近（被拖块原槽位），绝不能被 clamp 到视口顶部
+    expect(box.y).toBeGreaterThan(dst.y)
+
+    await page.mouse.up()
+    await page.waitForTimeout(300)
+  })
+
   test('should sort blocks by dragging', async ({ page }) => {
     // 创建 3 个 block
     const blockContent = page.locator('.block-content').first()
@@ -172,9 +212,13 @@ test.describe('Block drag and drop', () => {
     await page.mouse.move(nestX, nestY, { steps: 10 })
     await page.waitForTimeout(300)
 
-    // 应显示 nest 指示器
-    const nestIndicator = page.locator('.drop-indicator.nest.visible')
+    // nest 语义只剩横向偏移：指示器组件固定 `class="drop-indicator"`，动作类型不再落到
+    // 类名上（cssClass 恒为空串），nest 表达为「从目标 bullet 左缘再右移一级」。
+    const nestIndicator = page.locator('.drop-indicator.visible')
     await expect(nestIndicator).toBeVisible({ timeout: 2000 })
+    const nestBox = await nestIndicator.boundingBox()
+    if (!nestBox) throw new Error('量不到落位指示器')
+    expect(Math.abs(nestBox.x - (parentBox!.x + 34))).toBeLessThanOrEqual(1)
 
     await page.mouse.up()
     await page.waitForTimeout(1000)

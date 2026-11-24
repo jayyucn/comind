@@ -1,24 +1,28 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import type { EditorView } from '@tiptap/pm/view'
-import { useModalKeyboardRef } from '../composables/useModalKeyboard'
-import { buildTemplateCommands, executeTemplateCommand, filterCommands, groupCommands, parseCommandInput, useSlashCommands } from '../composables/useSlashCommands'
-import { useTemplateRegistry } from '../composables/useTemplateRegistry'
-import { useBlockStore } from '../stores/blocks'
-import { useEditorStore } from '../stores/editor'
-import { usePropertyStore } from '../stores/property'
-import { useUserTemplatesStore } from '../stores/user-templates'
-import BasePopover from './common/BasePopover.vue'
-import ConfirmDialog from './ConfirmDialog.vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
+
 // S6: parseDateInput migrated to Rust
 // 4.2: Use Rust DateRefService instead of TS parseDateRefs
 import { Icon } from '../components/Icons'
+import { useModalKeyboardRef } from '../composables/useModalKeyboard'
+import { buildTemplateCommands, executeTemplateCommand, filterCommands, groupCommands, parseCommandInput, useSlashCommands } from '../composables/useSlashCommands'
+import { useTemplateRegistry } from '../composables/useTemplateRegistry'
+import { useBlockCardStore } from '../stores/blockCard'
+import { useBlockStore } from '../stores/blocks'
+import { useEditorStore } from '../stores/editor'
+import { useFieldValueStore } from '../stores/fieldValue'
+import { useUserTemplatesStore } from '../stores/user-templates'
 import type { Command } from '../types/command'
+import { hasHiddenAncestor } from '../utils/element-visibility'
 import { getCoreClient } from '../wasm/client'
+import BasePopover from './common/BasePopover.vue'
+import ConfirmDialog from './ConfirmDialog.vue'
 
 const editorStore = useEditorStore()
-const propertyStore = usePropertyStore()
+const fieldValueStore = useFieldValueStore()
 const blockStore = useBlockStore()
+const blockCardStore = useBlockCardStore()
 const { commands } = useSlashCommands()
 const templateRegistry = useTemplateRegistry()
 const userTemplatesStore = useUserTemplatesStore()
@@ -33,12 +37,6 @@ onMounted(async () => {
 const visible = ref(false)
 const query = ref('')
 const selectedIndex = ref(0)
-/**
- * 无选中项（#122）：query 为空时**不得**默认高亮首项 —— 首项是 /time，
- * 一回车就把当前时间插进块里。空 query ⇒ 无高亮 ⇒ 回车不执行任何命令
- * （方向键仍可主动选中，那时是用户显式选择，与「默认落到首项」两回事）。
- */
-const NO_SELECTION = -1
 const position = ref({ x: 0, y: 0 })
 const range = ref<{ from: number; to: number } | null>(null)
 const listRef = ref<HTMLElement | null>(null)
@@ -83,6 +81,23 @@ const flatCommands = computed(() => {
   return result
 })
 
+/**
+ * 触发事件是否来自「用户看得见的编辑器」。
+ *
+ * 同一 pane 内的多个 tab 视图不会卸载非活动 tab，只把它 `display:none`（Block / 编辑器组件
+ * 照常挂载）。这些隐形实例会随正文同步跑到 `/` 右侧，同样派发 slash-command-trigger ——
+ * 但它们的 DOM 没有几何，`coordsAtPos` 恒返回 (0,0)。一旦采纳，刚摆好的面板会被拽到视口
+ * 左上角（实测 left/top 由 655px 变 8px，正是「输入 / 后很快跳到 app 左上角」）。
+ * 它也不可能是用户正在输入的那一个，直接丢弃。
+ */
+function isTriggerFromRenderedView(view: EditorView | null | undefined): boolean {
+  const dom = view?.dom as HTMLElement | undefined
+  // 测试替身 / 无 DOM 上下文：无从判断，保持旧行为（可信）。
+  if (!dom || typeof dom.getBoundingClientRect !== 'function') return true
+  if (!dom.isConnected) return false
+  return !hasHiddenAncestor(dom)
+}
+
 // 监听 slash-command-trigger 事件
 function handleSlashCommandTrigger(event: Event) {
   const customEvent = event as CustomEvent<{
@@ -91,10 +106,19 @@ function handleSlashCommandTrigger(event: Event) {
     range: { from: number; to: number }
   }>
 
-  const { position: pos, range: r } = customEvent.detail
+  const { position: pos, range: r, view } = customEvent.detail
+
+  // 非活动 tab 里的同源编辑器也会派发本事件（见 isTriggerFromRenderedView），先丢弃。
+  if (!isTriggerFromRenderedView(view)) return
+
+  // 去重守卫：面板已打开且锚点（同一编辑器同一位置）未变时忽略重复触发。
+  // 键入 `/` 本身会先后触发 handleTextInput 与 extension view.update 的光标检测，
+  // 不去重会把刚同步的 query 重置掉。
+  if (visible.value && anchorView.value === view && anchorPos.value === pos) {
+    return
+  }
 
   // 获取光标位置（屏幕坐标）
-  const view = customEvent.detail.view
   const coords = view.coordsAtPos(pos)
 
   visible.value = true
@@ -103,26 +127,28 @@ function handleSlashCommandTrigger(event: Event) {
   anchorPos.value = pos
   range.value = r
   query.value = ''
-  selectedIndex.value = NO_SELECTION
+  // 面板打开即选中第一项，回车直接执行
+  selectedIndex.value = 0
 }
 
-// 由 ProseMirror 文本位置反查光标所在 DOM 元素，作为 BasePopover 的避让锚点。
-// 文本节点取其父元素；元素节点直接用。失败（如 view 无 domAtPos）则回退到 position 模式。
-function anchorFromView(view: EditorView, pos: number): HTMLElement | null {
+// 锚点必须是光标的精确视口坐标，不能用 domAtPos 返回的段落元素：那是整行盒子，
+// left 固定在行首，会把面板从光标下方横向拽到内容区左缘（「跑到左上角」）。
+// coordsAtPos 给出光标点，构造 0×0 矩形交给 BasePopover，避让/翻转/收边照常生效。
+// 失败（如 view 已销毁）返回 null，回退到 position 点模式。
+function anchorRectFromView(view: EditorView, pos: number): DOMRect | null {
   try {
-    const { node } = view.domAtPos(pos)
-    const el = node.nodeType === Node.TEXT_NODE ? node.parentElement : (node as HTMLElement)
-    return el ?? null
+    const c = view.coordsAtPos(pos)
+    return new DOMRect(c.left, c.bottom, 0, 0)
   } catch {
     return null
   }
 }
 
 // 锚点 getter（ADR-0038）：未触发时返回 undefined，BasePopover 走 position 兜底；
-// 触发后返回一个每次重新反查光标的 getter，使滚动时面板实时跟随而不遮挡输入框。
-const anchorElProp = computed<HTMLElement | (() => HTMLElement | null) | undefined>(() => {
+// 触发后每次调用都实时重算光标坐标，滚动/布局变动时面板精确跟随光标。
+const anchorElProp = computed<DOMRect | (() => DOMRect | null) | undefined>(() => {
   const view = anchorView.value
-  return view ? () => anchorFromView(view, anchorPos.value) : undefined
+  return view ? () => anchorRectFromView(view, anchorPos.value) : undefined
 })
 
 // 监听键盘事件
@@ -161,14 +187,11 @@ function handleKeyDown(event: KeyboardEvent) {
       } else {
         // 强制从当前编辑器同步 query：避免依赖 editor.on('update') 的绑定时机。
         // 同步失败（range 失效 / 编辑器已替换 / 命令文本已不是 '/' 开头）时绝不回车执行——
-        // query 为空会让 flatCommands 退化成全部命令、selectedIndex=0 命中第一个命令
-        // time 并插入当前时间 "HH:MM"（#122）。无法确认命令文本时只关面板。
+        // 无法确认命令文本时只关面板（syncQuery 内部已 close，这里再兜底一次）。
         if (!syncQuery()) {
           close()
           break
         }
-        // 空 query（只打了 '/'）：无选中项，回车不响应 —— 见 NO_SELECTION 注释（#122）
-        if (selectedIndex.value === NO_SELECTION) break
         const cmd = flatCommands.value[selectedIndex.value]
         if (cmd) {
           void executeCommand(cmd)
@@ -194,7 +217,8 @@ function handleKeyDown(event: KeyboardEvent) {
  *
  * 取 range.from（'/' 所在位置）到光标的整段文本并要求其以 '/' 开头：
  * 这样 range 失效（编辑器被替换 / 位置漂移）时能当场识别，而不是把空字符串
- * 当成「无过滤」静默放大成全部命令（首项 /time，见 #122）。
+ * 当成「无过滤」静默放大成全部命令。光标移到 '/' 之前或文本不再以 '/' 开头
+ * （即光标离开了 '/' 右侧）⇒ 关闭面板，维持「光标在 '/' 右侧 ⇔ 面板打开」不变式。
  */
 function syncQuery(): boolean {
   if (!visible.value || !range.value) return false
@@ -204,18 +228,24 @@ function syncQuery(): boolean {
 
   const { from } = editor.state.selection
   const startPos = range.value.from
-  if (from < startPos) return false
+  if (from < startPos) {
+    close()
+    return false
+  }
 
   const textWithSlash = editor.state.doc.textBetween(startPos, from)
-  if (!textWithSlash.startsWith('/')) return false
+  if (!textWithSlash.startsWith('/')) {
+    close()
+    return false
+  }
 
   const newQuery = textWithSlash.slice(1)
 
   // 只在 query 实际变化时重置选中索引（避免 ArrowDown 等非文本操作触发重置）；
-  // 空 query 重置为「无选中」而非 0 —— 0 会让回车命中首项 /time（#122）
+  // query 变化后重新回到第一项
   if (newQuery !== query.value) {
     query.value = newQuery
-    selectedIndex.value = newQuery === '' ? NO_SELECTION : 0
+    selectedIndex.value = 0
   }
 
   // 检测 /template list 切换到模板子视图
@@ -223,7 +253,7 @@ function syncQuery(): boolean {
   return true
 }
 
-/** 编辑器 update / compositionend 回调：同步失败时忽略（面板状态交由回车路径裁决）。 */
+/** 编辑器 update / selectionUpdate / compositionend 回调：光标离开 '/' 右侧时由 syncQuery 关闭面板。 */
 function updateQuery() {
   syncQuery()
 }
@@ -265,31 +295,33 @@ async function executeCommand(command: Command) {
     .focus()
     .run()
 
-  // 处理属性命令
-  if (command.propertyKey && blockId) {
-    // 清除属性（如 /clear-priority 删除 priority）
-    if (command.clearProperty) {
-      const target = propertyStore
-        .getBlockProperties(blockId)
-        .find(p => p.key === command.propertyKey)
+  // 处理字段值命令
+  if (command.fieldKey && blockId) {
+    // 清除字段值（如 /clear-priority 删除 priority）
+    if (command.clearFieldValue) {
+      const target = fieldValueStore
+        .getBlockFieldValues(blockId)
+        .find(fv => fv.key === command.fieldKey)
       if (target) {
-        await propertyStore.deleteProperty(target.id, blockId)
+        await fieldValueStore.deleteFieldValue(target.id, blockId)
       }
+      // 字段值已变更：刷新块卡片投影，让任务中心（四象限/看板等）即时反映（#midium 类回归）
+      await blockCardStore.getCards()
       return
     }
 
-    // 立即执行设置属性（如 /todo, /done、/high、/medium、/low 等）
-    if (command.immediate && command.propertyValue) {
-      await propertyStore.setProperty(
+    // 立即执行设置字段值（如 /todo, /done、/high、/medium、/low 等）
+    if (command.immediate && command.fieldValue) {
+      await fieldValueStore.setFieldValue(
         blockId,
-        command.propertyKey,
-        command.propertyValue as string
+        command.fieldKey,
+        command.fieldValue as string
       )
-      // 设置优先级（与 /schedule 一致）：block 尚无 status 时自动补 Todo
-      if (command.propertyKey === 'priority') {
-        // fire-and-forget：补 Todo 失败不影响属性写入，避免未处理异常阻断编辑
-        propertyStore.ensureTodo(blockId).catch(() => {})
-      }
+      // status ↔ priority 成对（/low 补默认 Todo、/todo 补默认 Low）由
+      // fieldValueStore.setFieldValue 写入收口统一处理；此处只管设值 + 刷投影，
+      // 不自动挂 #任务 tag（打标仅属于 ensureTodo 的显式任务路径）。
+      // 字段值已变更：刷新块卡片投影
+      await blockCardStore.getCards()
       return
     }
 
@@ -298,32 +330,34 @@ async function executeCommand(command: Command) {
       let value: string = argument
 
       // 对于日期类型进行特殊处理
-      if (command.propertyKey === 'deadline' || command.propertyKey === 'scheduled') {
+      if (command.fieldKey === 'deadline' || command.fieldKey === 'scheduled') {
         const parsedDate = await getCoreClient()!.parseDateInput(argument)
         if (parsedDate) {
           value = parsedDate
         }
       }
 
-      await propertyStore.setProperty(
+      await fieldValueStore.setFieldValue(
         blockId,
-        command.propertyKey,
+        command.fieldKey,
         value
       )
+      // 字段值已变更：刷新块卡片投影
+      await blockCardStore.getCards()
       return
     }
 
     // 打开编辑器（如 /status, /priority, /deadline 不带参数）
     if (command.openEditor) {
-      editorStore.showQuickPropertyEditor(blockId, command.propertyKey, position.value)
+      editorStore.showQuickFieldValueEditor(blockId, command.fieldKey, position.value)
       return
     }
   }
 
-  // 特殊处理属性命令
-  if (command.id === 'property') {
+  // 特殊处理「新增字段值」命令
+  if (command.id === 'field_value') {
     if (blockId) {
-      editorStore.showPropertyEditor(blockId, undefined, position.value)
+      editorStore.showFieldValueEditor(blockId, undefined, position.value)
     }
     return
   }
@@ -461,7 +495,10 @@ function bindEditorUpdate() {
     updateQuery()
   }
 
+  // update：doc 变化（输入/删除命令文本）；selectionUpdate：纯光标移动（点击/方向键
+  // 离开 '/' 右侧时同步关闭面板）。二者共用同一回调，syncQuery 幂等。
   editor.on('update', editorUpdateListener)
+  editor.on('selectionUpdate', editorUpdateListener)
 
   // IME 组合结束：组合文本此刻才进入文档（组合期 update 不含它），需立即同步 query，
   // 否则中文输入法下输入命令字母时列表一直是全量、回车即命中首项 /time（#122）。
@@ -477,6 +514,7 @@ function unbindEditorUpdate() {
   if (!editorUpdateListener) return
   if (boundEditor) {
     boundEditor.off?.('update', editorUpdateListener)
+    boundEditor.off?.('selectionUpdate', editorUpdateListener)
   }
   if (boundEditorDom) {
     boundEditorDom.removeEventListener('compositionend', editorUpdateListener)
@@ -689,7 +727,7 @@ watch(
   gap: 8px;
   padding: 8px 12px;
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition: background var(--dur-fast) var(--ease-out);
 }
 
 .slash-command-item.selected {

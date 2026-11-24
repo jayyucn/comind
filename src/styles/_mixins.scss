@@ -22,18 +22,8 @@
   }
 }
 
-// 过渡动画
-@mixin transition-base {
-  transition: all var(--transition-base);
-}
-
-@mixin transition-fast {
-  transition: all var(--transition-fast);
-}
-
-@mixin transition-slow {
-  transition: all var(--transition-slow);
-}
+// 过渡动画：不再提供 transition:all 类 mixin（不可控且拖累渲染，ADR-0053）。
+// 时长/缓动一律用 --dur-* / --ease-* token，按实际属性显式声明。
 
 // 文本截断
 @mixin text-ellipsis {
@@ -75,17 +65,25 @@
   color: var(--text-secondary);
   font-size: var(--text-sm);
   cursor: pointer;
-  @include transition-base;
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
 
   &:hover:not(:disabled) {
     background: var(--bg-hover);
     color: var(--text-primary);
     border-color: var(--border-strong);
+    box-shadow: var(--shadow-elevation-hover);
+    transform: translateY(-1px); // 维度①：物理抬升微反馈
   }
 
   &:active:not(:disabled) {
     background: var(--bg-active);
     transform: scale(0.98);
+    box-shadow: none;
   }
 
   &:disabled {
@@ -112,7 +110,11 @@
   background: var(--bg-base);
   color: var(--text-primary);
   font-size: var(--text-base);
-  @include transition-base;
+  box-shadow: var(--shadow-inset-top);
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out);
 
   &:hover:not(:disabled) {
     border-color: var(--border-strong);
@@ -121,7 +123,7 @@
   &:focus {
     outline: none;
     border-color: var(--accent);
-    box-shadow: var(--shadow-focus);
+    box-shadow: var(--shadow-focus), var(--shadow-inset-top);
   }
 
   &::placeholder {

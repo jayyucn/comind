@@ -158,7 +158,7 @@ function makeBlock(id: string, content: string): Block {
     pos: 1000,
     content,
     format: {},
-    type: 'bullet',
+    type: 'text',
     createdAt: 1,
     updatedAt: 1,
   }

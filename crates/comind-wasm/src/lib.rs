@@ -35,7 +35,11 @@ mod wasm_impl {
     }
 
     #[wasm_bindgen]
-    pub fn init() -> Result<(), JsValue> {
+    pub fn init(seed_json: Option<String>) -> Result<(), JsValue> {
+        // dev 模式运行时注入 seed（改 systemFieldSeed.json 免重编）；生产传 None 走编译期 include_str 默认。
+        if let Some(json) = seed_json {
+            comind_core::types::field_definition::set_seed_override(Some(json));
+        }
         let mut adapter = ADAPTER
             .lock()
             .map_err(|e| JsValue::from_str(&format!("Failed to lock adapter: {}", e)))?;
@@ -94,6 +98,10 @@ mod wasm_impl {
         content: String,
         format: String,
         r#type: String,
+        /// 是否允许按 content 自动建/复活标签（提交时点 = true；编辑器防抖打字保存 = false，
+        /// 否则 `#f`、`#fo` 中间前缀会各建一个垃圾标签）。缺省 true 保持旧调用方行为。
+        #[serde(default = "default_true")]
+        create_missing_tags: bool,
         #[serde(default = "default_timestamp")]
         created_at: i64,
         #[serde(default = "default_timestamp")]
@@ -102,6 +110,10 @@ mod wasm_impl {
 
     fn default_timestamp() -> i64 {
         chrono::Utc::now().timestamp_millis()
+    }
+
+    fn default_true() -> bool {
+        true
     }
 
     #[wasm_bindgen]
@@ -121,6 +133,9 @@ mod wasm_impl {
             )));
         }
 
+        // 同一调用内的块共享一个建签门（前端 _doSave 每次只提交一个块；
+        // 多块调用按「全为提交语义」才放行，保守不误建）。
+        let create_missing_tags = updates.iter().all(|u| u.create_missing_tags);
         let blocks: Vec<Block> = updates
             .into_iter()
             .map(|u| Block {
@@ -135,6 +150,7 @@ mod wasm_impl {
                 updated_at: u.updated_at,
                 version: 0,
                 deleted_at: None,
+                tags: Vec::new(),
             })
             .collect();
 
@@ -143,7 +159,7 @@ mod wasm_impl {
             // + page touch, aligned with the Tauri path. Transaction is the
             // pass-through no-op (Q7). Sync has no peer on web — sync_changes
             // are dropped here.
-            let outcome = BlockWriteService::save_blocks(adapter, blocks)?;
+            let outcome = BlockWriteService::save_blocks(adapter, blocks, create_missing_tags)?;
             Ok(serde_json::to_string(&outcome.results).unwrap_or_else(|_| "[]".to_string()))
         })
     }
@@ -318,40 +334,36 @@ mod wasm_impl {
     }
 
     #[wasm_bindgen]
-    pub fn get_properties(block_id: &str) -> Result<JsValue, JsValue> {
+    pub fn get_field_values(block_id: &str) -> Result<JsValue, JsValue> {
         with_adapter(|adapter| {
-            let props = PropertyService::get_by_block_id(adapter, block_id)?;
+            let props = FieldValueService::get_by_block_id(adapter, block_id)?;
             Ok(to_js_value(props))
         })
     }
 
     #[wasm_bindgen]
-    pub fn set_property(
+    pub fn set_field_value(
         block_id: &str,
         key: &str,
         value: &str,
         type_: &str,
     ) -> Result<JsValue, JsValue> {
         with_adapter(|adapter| {
-            let existing = PropertyService::get_by_block_id_and_key(adapter, block_id, key)?;
+            let existing = FieldValueService::get_by_block_id_and_key(adapter, block_id, key)?;
             match existing {
-                Some(mut prop) => {
-                    prop.value = value.to_string();
-                    prop.r#type = type_.to_string();
-                    prop.updated_at = chrono::Utc::now().timestamp_millis();
-                    PropertyService::update(
+                Some(prop) => {
+                    let updated = FieldValueService::update(
                         adapter,
                         &prop.id,
                         Some(value),
                         Some(type_),
                         None,
-                        None,
                     )?;
-                    Ok(to_js_value(prop))
+                    Ok(to_js_value(updated))
                 }
                 None => {
                     let created =
-                        PropertyService::create(adapter, block_id, key, value, type_, 0, 0, 1)?;
+                        FieldValueService::create(adapter, block_id, key, value, type_, 0)?;
                     Ok(to_js_value(created))
                 }
             }
@@ -359,11 +371,11 @@ mod wasm_impl {
     }
 
     #[wasm_bindgen]
-    pub fn delete_property(block_id: &str, key: &str) -> Result<JsValue, JsValue> {
+    pub fn delete_field_value(block_id: &str, key: &str) -> Result<JsValue, JsValue> {
         with_adapter(|adapter| {
-            let existing = PropertyService::get_by_block_id_and_key(adapter, block_id, key)?;
+            let existing = FieldValueService::get_by_block_id_and_key(adapter, block_id, key)?;
             if let Some(prop) = existing {
-                PropertyService::delete(adapter, &prop.id)?;
+                FieldValueService::delete(adapter, &prop.id)?;
             }
             Ok(to_js_value(json!({"success": true})))
         })
@@ -447,53 +459,6 @@ mod wasm_impl {
         })
     }
 
-    // ---- Block versions（共享 BlockVersionService，与 Tauri commands.rs 同构薄转发） ----
-    #[wasm_bindgen]
-    pub fn create_block_version(
-        block_id: &str,
-        snapshot: &str,
-        hash: &str,
-        reason: &str,
-        checkpoint_name: Option<String>,
-    ) -> Result<JsValue, JsValue> {
-        with_adapter(|adapter| {
-            let version = BlockVersionService::create(
-                adapter,
-                block_id,
-                snapshot,
-                hash,
-                reason,
-                checkpoint_name.as_deref(),
-                None,
-            )?;
-            Ok(to_js_value(version))
-        })
-    }
-
-    #[wasm_bindgen]
-    pub fn get_block_versions(block_id: &str) -> Result<JsValue, JsValue> {
-        with_adapter(|adapter| {
-            let versions = BlockVersionService::list(adapter, block_id)?;
-            Ok(to_js_value(versions))
-        })
-    }
-
-    #[wasm_bindgen]
-    pub fn get_block_version_by_id(id: &str) -> Result<JsValue, JsValue> {
-        with_adapter(|adapter| {
-            let version = BlockVersionService::get_by_id(adapter, id)?;
-            Ok(to_js_value(version))
-        })
-    }
-
-    #[wasm_bindgen]
-    pub fn restore_block_version(version_id: &str) -> Result<JsValue, JsValue> {
-        with_adapter(|adapter| {
-            let version = BlockVersionService::restore(adapter, version_id)?;
-            Ok(to_js_value(version))
-        })
-    }
-
     /// 撤销软删除（ADR-0046 D10）：复活每个请求 id 及其下整棵软删子树，
     /// 返回 `HashMap<SyncTable, Vec<String>>` 的 JSON 串（与 delete_block_cascade 对称）。
     #[wasm_bindgen]
@@ -507,19 +472,18 @@ mod wasm_impl {
         })
     }
 
+    /// 搬移一组块（ADR-0025 D4b）：「剪切 → 粘贴 = 搬走同一个块」的落库原语。
+    /// 入参是 `BlockMoveTarget[]` 的 JSON；返回 `HashMap<SyncTable, Vec<String>>` 的 JSON 串。
+    /// 任一目标不可复活时整体失败，错误串带 `BLOCK_MOVE_NOT_REVIVABLE` / `BLOCK_MOVE_INTO_SELF`，
+    /// 由前端据此回落「新建副本」。
     #[wasm_bindgen]
-    pub fn cleanup_block_versions(retention_days: i64) -> Result<JsValue, JsValue> {
+    pub fn move_blocks(targets_json: &str) -> Result<String, JsValue> {
+        let targets: Vec<comind_core::services::BlockMoveTarget> = serde_json::from_str(targets_json)
+            .map_err(|e| JsValue::from_str(&format!("Failed to parse move targets: {}", e)))?;
         with_adapter(|adapter| {
-            BlockVersionService::cleanup(adapter, retention_days)?;
-            Ok(to_js_value(json!({"success": true})))
-        })
-    }
-
-    #[wasm_bindgen]
-    pub fn delete_block_version(version_id: &str) -> Result<JsValue, JsValue> {
-        with_adapter(|adapter| {
-            BlockVersionService::delete(adapter, version_id)?;
-            Ok(to_js_value(json!({"success": true})))
+            let sync_changes = BlockWriteService::move_blocks(adapter, &targets)?;
+            serde_json::to_string(&sync_changes)
+                .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
         })
     }
 

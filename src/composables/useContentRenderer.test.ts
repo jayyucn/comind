@@ -1,5 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { useContentRenderer, parseHeading } from './useContentRenderer'
+import {
+  parseHeading,
+  parseList,
+  parseParagraphStyle,
+  paragraphPrefixOf,
+  shiftSegments,
+  useContentRenderer,
+} from './useContentRenderer'
 import { segmentVisibleText } from '../services/render-text'
 import type { RenderSegment } from '../wasm/types'
 import { useRelationshipTypes } from './useRelationshipTypes'
@@ -27,15 +34,20 @@ describe('useContentRenderer — 回退路径（无 segments）', () => {
     expect(renderContentToHtml({ segments: [], content: '&' })).toBe('&amp;')
   })
 
-  it('#tag 渲染为 block-link block-tag span', () => {
+  it('#tag 渲染为 block-link block-tag span，`#` 按字面渲染（与编辑态同形，ADR-0050 D11）', () => {
     const html = renderContentToHtml({ segments: [], content: '这是 #标签' })
     expect(html).toContain('block-tag')
-    expect(html).toContain('data-page="标签"')
+    expect(html).toContain('data-tag-title="标签"')
+    // `#` 字符留在 DOM 文本里 ——
+    // services/render-text 的 tag 段靠它维持「可见长度 ≡ 存储长度」的明文对应
+    expect(html).toContain('>#标签</span>')
+    expect(html).not.toContain('tag-hash')
+    expect(html.replace(/<[^>]*>/g, '')).toBe('这是 #标签')
   })
 
   it('#tag 中文标签', () => {
     const html = renderContentToHtml({ segments: [], content: '#中文' })
-    expect(html).toContain('data-page="中文"')
+    expect(html).toContain('data-tag-title="中文"')
   })
 
   it('#tag 含点号时部分匹配（tag 截断在点号前）', () => {
@@ -44,7 +56,7 @@ describe('useContentRenderer — 回退路径（无 segments）', () => {
     // 但 tag 含 '.' 时代码返回原字符串 #v1（含 '.' 判断），所以不生成 block-tag span
     // 实际行为：'v1' 被渲染为 tag，'.0' 作为纯文本
     expect(html).toContain('block-tag')
-    expect(html).toContain('data-page="v1"')
+    expect(html).toContain('data-tag-title="v1"')
   })
 
   it('纯文本不做额外渲染', () => {
@@ -83,7 +95,6 @@ describe('useContentRenderer — 回退路径（无 segments）', () => {
     // 应为干净的 block-link（data-page="#测试"），不产生嵌套 block-tag span
     expect(html).toContain('data-page="#测试"')
     expect(html).not.toContain('block-tag')
-    expect(html).not.toContain('<span class="block-tag" data-page=')
   })
 
   it('dateRef 语法在回退路径不渲染（由结构化 segments 处理）', () => {
@@ -114,7 +125,7 @@ describe('结构化渲染片段（pre-computed segments）', () => {
       // content.slice(0, 9) = 'Hello #ta'（"Hello #tag" 的前 9 个字符）
       // 正则匹配 '#ta'，因 tag 含 '.' 判断为 false，生成 block-tag span
       expect(html).toContain('block-tag')
-      expect(html).toContain('data-page="ta"')
+      expect(html).toContain('data-tag-title="ta"')
     })
 
     it('文本片段内 HTML 特殊字符被转义', () => {
@@ -159,7 +170,7 @@ describe('结构化渲染片段（pre-computed segments）', () => {
         blockId: 'b1',
       })
       expect(html).toContain('block-tag')
-      expect(html).toContain('data-page="ff0000"')
+      expect(html).toContain('data-tag-title="ff0000"')
     })
   })
 
@@ -407,6 +418,24 @@ describe('结构化渲染片段（pre-computed segments）', () => {
       // content.slice(7, 24) = '@2026-08-09 📅'
       expect(html).toContain('>@2026-08-09 📅<')
     })
+
+    it('尾随 pad 空白渲染在 chip 外（阅读态不比编辑态宽）', () => {
+      // Rust 段边界含尾随 pad 空白；chip 内不得显示该空白，否则盖进背景变宽
+      const html = renderContentToHtml({
+        segments: [{
+          type: 'date_ref', start: 0, end: 14,
+          kind: 'deadline', iso: '2026-10-20', recurrence: 'none',
+          lead_minutes: 0, is_overdue: false,
+        }],
+        content: '@2026-10-20 ⏰ ',
+        blockId: 'b1',
+      })
+      // chip 内文本止于 emoji，空白作为裸文本紧跟 </span> 之后
+      expect(html).toContain('>@2026-10-20 ⏰</span> ')
+      expect(html).not.toContain('⏰ </span>')
+      // data-raw 仍为段原文（含 pad），点击比对处自行 trim
+      expect(html).toContain('data-raw="@2026-10-20 ⏰ "')
+    })
   })
 
   describe('混合片段', () => {
@@ -459,7 +488,7 @@ describe('结构化渲染片段（pre-computed segments）', () => {
       })
       // 回退路径：wiki link 兜底渲染，tag 渲染
       expect(html).toContain('data-page="项目A"')
-      expect(html).toContain('data-page="tag"')
+      expect(html).toContain('data-tag-title="tag"')
     })
 
     it('segments 为 undefined 时回退到回退路径', () => {
@@ -495,6 +524,49 @@ describe('结构化渲染片段（pre-computed segments）', () => {
       expect(html).toContain('--rel-color:#f5222d')
       expect(html).not.toContain('data-page="f5222d"')
     })
+  })
+})
+
+describe('useContentRenderer — 行内格式', () => {
+  it('回退路径按区间包裹文本', () => {
+    const html = renderContentToHtml({
+      segments: [],
+      content: 'hello world',
+      inlineMarks: [{ start: 0, end: 5, bold: true }],
+    })
+    expect(html).toBe('<strong>hello</strong> world')
+  })
+
+  it('segments 文本段按 marks 切分，段外不染色', () => {
+    const html = renderContentToHtml({
+      segments: [{ type: 'text', start: 0, end: 11 }],
+      content: 'hello world',
+      inlineMarks: [
+        { start: 0, end: 5, bold: true },
+        { start: 6, end: 11, color: '--tag-color-2' },
+      ],
+    })
+    expect(html).toBe('<strong>hello</strong> <span data-inline-color="--tag-color-2" style="color: var(--tag-color-2)">world</span>')
+  })
+
+  it('非文本段整体被格式覆盖时包裹结构化 HTML', () => {
+    const html = renderContentToHtml({
+      segments: [{ type: 'tag', start: 0, end: 4, title: 'tag', tag_id: '', is_system: false, color: '' }],
+      content: '#tag',
+      inlineMarks: [{ start: 0, end: 4, italic: true }],
+    })
+    expect(html.startsWith('<em><span class="block-tag"')).toBe(true)
+    expect(html.endsWith('</span></em>')).toBe(true)
+  })
+
+  it('markOffset 用于标题去前缀后的坐标系对齐', () => {
+    const html = renderContentToHtml({
+      segments: [],
+      content: 'Title',
+      markOffset: -2,
+      inlineMarks: [{ start: 2, end: 7, underline: true }],
+    })
+    expect(html).toBe('<u>Title</u>')
   })
 })
 
@@ -543,6 +615,14 @@ describe('parseHeading — 标题解析测试', () => {
   it('标题含 wiki 链接', () => {
     const result = parseHeading('## [[页面A]]')
     expect(result).toEqual({ level: 2, title: '[[页面A]]' })
+  })
+
+  // Shift-Enter 的硬换行会进正文：标记只认首行，标题文本吃掉剩余全部（含 `\n`）。
+  // 旧实现用 `.+`（不跨行）+ `$`，一有换行就整体不匹配，标题静默退回普通正文。
+  it('标题含硬换行时仍识别为标题，正文保留换行', () => {
+    expect(parseHeading('# 第一行\n第二行')).toEqual({ level: 1, title: '第一行\n第二行' })
+    expect(parseHeading('## 第一行\n\n第三行', { allowEmptyTitle: true }))
+      .toEqual({ level: 2, title: '第一行\n\n第三行' })
   })
 
   it('空标题不识别', () => {
@@ -649,11 +729,298 @@ describe('segmentVisibleText 与渲染输出同源（#93）', () => {
         textSeg(28, 29),
       ],
     },
+    {
+      name: 'tag 显示存储原文（`#` 包成图标位后字符仍在文本里）',
+      content: '前置 #标签 后置',
+      segments: [
+        textSeg(0, 3),
+        { type: 'tag', start: 3, end: 6, title: '标签', tag_id: 't1', is_system: false, color: '' },
+        textSeg(6, 9),
+      ],
+    },
   ]
 
   it.each(cases)('$name', ({ content, segments }) => {
     const html = renderContentToHtml({ content, segments, blockId: 'b1' })
     const visible = segments.map(seg => segmentVisibleText(content, seg)).join('')
     expect(htmlToText(html)).toBe(visible)
+  })
+})
+
+/**
+ * Rust 端 `render_segments` 给出的结构化 `tag` 段（ADR-0049）：
+ * `#` 按字面渲染（与编辑态同形，ADR-0050 D11），另带 data-tag-id 与系统变体类。
+ */
+describe('结构化 tag 段（Rust render_segments 提供 segments 时）', () => {
+  it('用户 tag：`#` 字面保留，tag 名保留，去标签即原文', () => {
+    const content = '前置 #标签'
+    const segments: RenderSegment[] = [
+      { type: 'text', start: 0, end: 3 },
+      { type: 'tag', start: 3, end: 6, title: '标签', tag_id: 't1', is_system: false, color: '' },
+    ]
+    const html = renderContentToHtml({ content, segments, blockId: 'b1' })
+    expect(html).toContain('data-tag-id="t1"')
+    expect(html).toContain('#标签</span>')
+    expect(html.replace(/<[^>]*>/g, '')).toBe(content)
+  })
+
+  it('系统 tag 带 block-tag--system 修饰类', () => {
+    const content = '#系统'
+    const segments: RenderSegment[] = [
+      { type: 'tag', start: 0, end: 3, title: '系统', tag_id: 't2', is_system: true, color: '' },
+    ]
+    const html = renderContentToHtml({ content, segments, blockId: 'b1' })
+    expect(html).toContain('block-tag--system')
+    expect(html).toContain('#系统</span>')
+    expect(html.replace(/<[^>]*>/g, '')).toBe(content)
+  })
+
+  // ── 标签色（ADR-0050 D11）：chip 自证身份，色值随段下发 ──
+
+  it('带色的 tag：文字取该色 + 底色 10% 淡染（color-mix 现算）', () => {
+    const content = '#项目'
+    const segments: RenderSegment[] = [
+      { type: 'tag', start: 0, end: 3, title: '项目', tag_id: 't1', is_system: false, color: '--tag-color-3' },
+    ]
+    const html = renderContentToHtml({ content, segments, blockId: 'b1' })
+    expect(html).toContain(
+      'style="color:var(--tag-color-3);background:color-mix(in srgb, var(--tag-color-3) 10%, transparent)"',
+    )
+    // 加样式不得改变可见文本（选区/偏移换算依赖 textContent）
+    expect(html.replace(/<[^>]*>/g, '')).toBe(content)
+  })
+
+  it('无色（空串）不带内联样式 —— 落回 .block-tag 的默认色', () => {
+    const segments: RenderSegment[] = [
+      { type: 'tag', start: 0, end: 3, title: '项目', tag_id: 't1', is_system: false, color: '' },
+    ]
+    const html = renderContentToHtml({ content: '#项目', segments, blockId: 'b1' })
+    expect(html).not.toContain('style=')
+  })
+
+  it('未白名单的色值不进 HTML（存储是不可信输入，防 CSS 注入）', () => {
+    const segments: RenderSegment[] = [
+      {
+        type: 'tag', start: 0, end: 3, title: '项目', tag_id: 't1', is_system: false,
+        color: 'red;}</style><img src=x onerror=alert(1)>',
+      },
+    ]
+    const html = renderContentToHtml({ content: '#项目', segments, blockId: 'b1' })
+    expect(html).not.toContain('style=')
+    expect(html).not.toContain('<img')
+  })
+
+  // ── 动态取色（resolveTagColor，ADR-0050 D11）：色真相在 tags store，
+  //    渲染时实时解析 → 标签改色即响应；段内快照只作「未就绪」兜底。 ──
+
+  it('resolveTagColor 命中：chip 用解析色，不用段内快照色', () => {
+    const segments: RenderSegment[] = [
+      { type: 'tag', start: 0, end: 3, title: '项目', tag_id: 't1', is_system: false, color: '--tag-color-1' },
+    ]
+    const html = renderContentToHtml({
+      content: '#项目', segments, blockId: 'b1',
+      resolveTagColor: (id, title) => {
+        expect(id).toBe('t1')
+        expect(title).toBe('项目')
+        return '--tag-color-5'
+      },
+    })
+    expect(html).toContain('color:var(--tag-color-5)')
+    expect(html).not.toContain('--tag-color-1')
+  })
+
+  it('resolveTagColor 返回 undefined（标签树未就绪）：回退段内快照色', () => {
+    const segments: RenderSegment[] = [
+      { type: 'tag', start: 0, end: 3, title: '项目', tag_id: 't1', is_system: false, color: '--tag-color-3' },
+    ]
+    const html = renderContentToHtml({
+      content: '#项目', segments, blockId: 'b1',
+      resolveTagColor: () => undefined,
+    })
+    expect(html).toContain('color:var(--tag-color-3)')
+  })
+
+  it('resolveTagColor 返回空串（查无/已删）：无色，不带内联样式', () => {
+    const segments: RenderSegment[] = [
+      { type: 'tag', start: 0, end: 3, title: '项目', tag_id: 't1', is_system: false, color: '--tag-color-3' },
+    ]
+    const html = renderContentToHtml({
+      content: '#项目', segments, blockId: 'b1',
+      resolveTagColor: () => '',
+    })
+    expect(html).not.toContain('style=')
+  })
+
+  it('省缺 resolveTagColor：沿用段内快照色（行为与引入前一致）', () => {
+    const segments: RenderSegment[] = [
+      { type: 'tag', start: 0, end: 3, title: '项目', tag_id: 't1', is_system: false, color: '--tag-color-2' },
+    ]
+    const html = renderContentToHtml({ content: '#项目', segments, blockId: 'b1' })
+    expect(html).toContain('color:var(--tag-color-2)')
+  })
+})
+
+describe('parseList — 列表标记解析', () => {
+  it('无序：`- ` 起头', () => {
+    expect(parseList('- 条目')).toEqual({ kind: 'unordered', index: null, title: '条目' })
+  })
+
+  it('有序：`1. ` 起头，序号取出', () => {
+    expect(parseList('12. 条目')).toEqual({ kind: 'ordered', index: 12, title: '条目' })
+  })
+
+  it('空正文也算列表项（标记要留住）', () => {
+    expect(parseList('- ')).toEqual({ kind: 'unordered', index: null, title: '' })
+    expect(parseList('3. ')).toEqual({ kind: 'ordered', index: 3, title: '' })
+  })
+
+  it('不带空格的破折号不是列表（`-5 度`）', () => {
+    expect(parseList('-5 度')).toBeNull()
+  })
+
+  it('小数不是有序列表（`1.5 米`）', () => {
+    expect(parseList('1.5 米')).toBeNull()
+  })
+
+  it('`* ` / `+ ` 不认（`* ` 与行内斜体、乘号歧义太大）', () => {
+    expect(parseList('* 强调')).toBeNull()
+    expect(parseList('+ 加号')).toBeNull()
+  })
+
+  // 同 parseHeading：硬换行进正文后，标记仍只认首行
+  it('列表项含硬换行时仍保留标记', () => {
+    expect(parseList('- 第一行\n第二行'))
+      .toEqual({ kind: 'unordered', index: null, title: '第一行\n第二行' })
+    expect(parseList('7. 第一行\n第二行'))
+      .toEqual({ kind: 'ordered', index: 7, title: '第一行\n第二行' })
+  })
+})
+
+describe('parseParagraphStyle — 段落样式单源', () => {
+  it('普通文本 → text，无前缀', () => {
+    expect(parseParagraphStyle('随便写点')).toEqual({
+      style: 'text', level: null, prefixLength: 0, title: '随便写点', listIndex: null,
+    })
+  })
+
+  it('标题 → hN，前缀长含 `#` 与空格', () => {
+    expect(parseParagraphStyle('## 标题')).toEqual({
+      style: 'h2', level: 2, prefixLength: 3, title: '标题', listIndex: null,
+    })
+  })
+
+  it('跨行标题：前缀长度只算首行标记，正文吃掉换行', () => {
+    expect(parseParagraphStyle('# 甲\n乙')).toEqual({
+      style: 'h1', level: 1, prefixLength: 2, title: '甲\n乙', listIndex: null,
+    })
+  })
+
+  it('h4–h6 → style null 但前缀长度照给（切换时要把旧前缀整段换掉）', () => {
+    // level 照给（编辑态标记要出 `H4`），style 落 null（样式行四格都不点亮）
+    expect(parseParagraphStyle('#### 四级')).toEqual({
+      style: null, level: 4, prefixLength: 5, title: '四级', listIndex: null,
+    })
+  })
+
+  it('无序 / 有序列表', () => {
+    expect(parseParagraphStyle('- 项')).toMatchObject({ style: 'ul', prefixLength: 2, title: '项' })
+    expect(parseParagraphStyle('7. 项')).toMatchObject({ style: 'ol', prefixLength: 3, title: '项', listIndex: 7 })
+  })
+
+  it('标题优先于列表：`# - x` 是标题，标题里写什么都算正文', () => {
+    expect(parseParagraphStyle('# - x')).toMatchObject({ style: 'h1', title: '- x' })
+  })
+
+  it('allowEmptyTitle：`# ` 也算 H1（编辑态预览要敲下空格就生效），默认不认', () => {
+    expect(parseParagraphStyle('# ').style).toBe('text')
+    expect(parseParagraphStyle('# ', { allowEmptyTitle: true })).toMatchObject({
+      style: 'h1', level: 1, prefixLength: 2, title: '',
+    })
+  })
+})
+
+describe('paragraphPrefixOf — 样式 → 前缀', () => {
+  it.each([
+    ['text', ''],
+    ['h1', '# '],
+    ['h2', '## '],
+    ['h3', '### '],
+    ['ul', '- '],
+    ['ol', '1. '],
+  ] as const)('%s → %j', (style, prefix) => {
+    expect(paragraphPrefixOf(style)).toBe(prefix)
+  })
+
+  it('有序列表可指定起始序号', () => {
+    expect(paragraphPrefixOf('ol', 4)).toBe('4. ')
+  })
+})
+
+describe('shiftSegments — 去前缀后的坐标系平移', () => {
+  it('整体左移，前缀自身的段被丢弃', () => {
+    const segments: RenderSegment[] = [
+      { type: 'text', start: 0, end: 2, text: '# ' },
+      { type: 'tag', start: 2, end: 6, title: 'tag', tag_id: '', is_system: false, color: '' },
+    ]
+    const shifted = shiftSegments(segments, 2)
+    expect(shifted).toHaveLength(1)
+    expect(shifted[0]).toMatchObject({ type: 'tag', start: 0, end: 4 })
+  })
+
+  it('跨前缀的段被裁到前缀之后', () => {
+    const segments: RenderSegment[] = [{ type: 'text', start: 0, end: 10, text: '1. 一段正文' }]
+    expect(shiftSegments(segments, 3)[0]).toMatchObject({ start: 0, end: 7 })
+  })
+
+  it('prefixLength 为 0 时原样返回（同一份引用，不做无谓拷贝）', () => {
+    const segments: RenderSegment[] = [{ type: 'text', start: 0, end: 3, text: 'abc' }]
+    expect(shiftSegments(segments, 0)).toBe(segments)
+  })
+})
+
+describe('parseParagraphStyle — 标题的 format 双读兜底', () => {
+  it('正文无前缀但 format 声明 heading：按 format.level 认出标题', () => {
+    const info = parseParagraphStyle('二阶思维', { format: { type: 'heading', level: 2 } })
+    expect(info).toMatchObject({ style: 'h2', level: 2, prefixLength: 0, title: '二阶思维' })
+  })
+
+  it('前缀优先于 format（用户改样式后以正文为准）', () => {
+    const info = parseParagraphStyle('# 一阶', { format: { type: 'heading', level: 2 } })
+    expect(info).toMatchObject({ style: 'h1', level: 1, prefixLength: 2, title: '一阶' })
+  })
+
+  it('format 缺 level 时按 2 级兜底', () => {
+    expect(parseParagraphStyle('标题', { format: { type: 'heading' } }).style).toBe('h2')
+  })
+
+  it('4–6 级：level 保留但不点亮样式行', () => {
+    const info = parseParagraphStyle('四阶', { format: { type: 'heading', level: 4 } })
+    expect(info).toMatchObject({ style: null, level: 4 })
+  })
+
+  it('format 不是 heading（含 callout）时不影响判定', () => {
+    expect(parseParagraphStyle('重点', { format: { callout: 'warn' } }).style).toBe('text')
+  })
+
+  it('不传 format 时行为与原先一致', () => {
+    expect(parseParagraphStyle('普通段落').style).toBe('text')
+  })
+})
+
+describe('末尾换行落地（渲染态空末行不塌）', () => {
+  it('content 以 \\n 结尾：输出末尾补零宽空格，撑起空末行盒', () => {
+    const html = renderContentToHtml({ segments: [], content: '首行\n' })
+    expect(html).toContain('&#8203;')
+  })
+
+  it('content 不以 \\n 结尾：不补（不影响既有断言与选择行为）', () => {
+    const html = renderContentToHtml({ segments: [], content: '首行' })
+    expect(html).not.toContain('&#8203;')
+  })
+
+  it('结构化 segments 路径同样补', () => {
+    const segments: RenderSegment[] = [{ type: 'text', start: 0, end: 3, text: '首行\n' }]
+    const html = renderContentToHtml({ segments, content: '首行\n' })
+    expect(html).toContain('&#8203;')
   })
 })

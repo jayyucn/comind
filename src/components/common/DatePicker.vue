@@ -23,10 +23,11 @@
  * - v-model（modelValue / update:modelValue）
  * - 取值通过 modelValue 传入，选择通过 update:modelValue 回传。
  */
-import { computed, nextTick, ref, watch } from 'vue'
 import { Calendar } from 'lucide-vue-next'
-import CalendarPopover from '../CalendarPopover.vue'
+import { computed, nextTick, ref, watch } from 'vue'
+
 import { formatRelativeExpr, parseRelativeDate, relativeDateShortcuts } from '../../utils/date-parser'
+import CalendarPopover from '../CalendarPopover.vue'
 
 export type DatePickerValue = string | [string, string] | undefined
 
@@ -67,7 +68,7 @@ const rangeTuple = computed<[string, string]>(() => {
 
 /* —— 展示文本 —— */
 const placeholderText = computed(() =>
-  props.placeholder || (props.mode === 'single' ? '选择日期' : '选择日期范围'),
+  props.placeholder || (props.mode === 'single' ? '选择或输入日期' : '选择或输入日期范围'),
 )
 const hasValue = computed(() =>
   props.mode === 'single' ? !!singleValue.value : !!(rangeTuple.value[0] || rangeTuple.value[1]),
@@ -352,8 +353,6 @@ function clearValue() {
 </template>
 
 <style scoped>
-@use '../styles/mixins' as *;
-
 .date-picker {
   display: inline-flex;
   min-width: 0;
@@ -364,19 +363,23 @@ function clearValue() {
   align-items: center;
   gap: 6px;
   padding: 4px 10px;
-  border: 1px solid var(--border);
+  /* 28px 高度基线：与 NumberInput 静止态外框对齐（BlockFieldZone 同列并排） */
+  min-height: 28px;
+  box-sizing: border-box;
+  border: none;
+  outline: none;
   border-radius: var(--radius-sm);
   background: var(--bg-base);
   color: var(--text-primary);
   font-size: var(--text-sm);
   font-family: inherit;
   cursor: pointer;
-  outline: none;
-  transition: border-color var(--transition-base);
+  transition: background var(--dur-base) var(--ease-out);
 
+  /* 无边框后改用底色深浅承接 hover / 展开反馈 */
   &:hover,
   &.open {
-    border-color: var(--accent);
+    background: var(--bg-hover);
   }
 }
 
@@ -402,11 +405,22 @@ function clearValue() {
   line-height: 1;
   padding: 0 2px;
   border-radius: 4px;
+  /* 仅 hover 触发按钮时显示（透明占位避免宽度跳动）；隐形态必须 pointer-events:none */
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-base) var(--ease-out);
 
   &:hover {
     color: var(--error);
     background: var(--bg-hover);
   }
+}
+
+.dp-trigger:hover .dp-clear,
+.dp-trigger.open .dp-clear,
+.dp-clear:hover {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 /* 浮动面板：Teleport 到 body，fixed 定位（避免被 FilterBuilder 面板 overflow 裁切） */
@@ -429,7 +443,7 @@ function clearValue() {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--bg-base);
-  box-shadow: var(--shadow-modal);
+  box-shadow: var(--shadow-floating);
 }
 
 .dp-range-hint {
@@ -458,7 +472,7 @@ function clearValue() {
   font-size: var(--text-xs);
   cursor: pointer;
   outline: none;
-  transition: border-color var(--transition-base), background var(--transition-base);
+  transition: border-color var(--dur-base) var(--ease-out), background var(--dur-base) var(--ease-out);
 
   &:hover {
     border-color: var(--accent);

@@ -2,7 +2,7 @@ import { describe, test, expect, beforeEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import type { BlockClipPayload } from '../types/block'
 
-// Mock WASM client（pasteBlocks 会 flushSave + setProperty，需完整 mock）
+// Mock WASM client（pasteBlocks 会 flushSave + setFieldValue，需完整 mock）
 const {
   mockInitCoreClient,
   mockSaveBlockTree,
@@ -22,7 +22,7 @@ vi.mock('../wasm/client', () => ({
 }))
 
 function payload(content: string, children: BlockClipPayload[] = [], extra: Partial<BlockClipPayload> = {}): BlockClipPayload {
-  return { content, type: 'bullet', format: null, properties: null, children, ...extra }
+  return { content, type: 'text', format: null, properties: null, children, ...extra }
 }
 
 describe('pasteBlocks（ADR-0025 D6/D7/D8/D11）', () => {
@@ -35,28 +35,28 @@ describe('pasteBlocks（ADR-0025 D6/D7/D8/D11）', () => {
 
     const mockClient = {
       saveBlockTree: mockSaveBlockTree,
-      setProperty: mockSetProperty,
-      getProperties: mockGetProperties,
+      setFieldValue: mockSetProperty,
+      getFieldValues: mockGetProperties,
       getPageWithBlocks: vi.fn().mockResolvedValue(null),
       getBlocksByPage: vi.fn().mockResolvedValue([]),
       getPage: vi.fn(),
     }
 
     mockSaveBlockTree.mockImplementation(async (updates: Array<{ id: string; content: string }>) => [
-      { id: updates[0].id, block: { id: updates[0].id, content: updates[0].content }, render_segments: [], snapshot: null },
+      { id: updates[0].id, block: { id: updates[0].id, content: updates[0].content }, render_segments: [] },
     ])
     mockSetProperty.mockImplementation(async (blockId: string, key: string, value: string, type: string) => ({
-      id: `prop-${blockId}-${key}`,
+      id: `fv-${blockId}-${key}`,
       block_id: blockId,
+      field_definition_id: `fd-${key}`,
       key,
-      value: String(value),
-      type,
-      sort_order: 0,
-      is_hidden: 0,
-      is_deleted: 0,
-      schema_version: 1,
+      value_json: String(value),
+      value_type: type,
+      seq: 0,
       created_at: 0,
       updated_at: 0,
+      version: 0,
+      deleted_at: null,
     }))
     mockGetProperties.mockResolvedValue([])
 
@@ -159,10 +159,10 @@ describe('pasteBlocks（ADR-0025 D6/D7/D8/D11）', () => {
     const forest: BlockClipPayload[] = [{
       id: 'o1',
       content: '引用 o1 和 o2 与 ext-999',
-      type: 'bullet',
+      type: 'text',
       format: null,
       properties: null,
-      children: [{ id: 'o2', content: '目标块', type: 'bullet', format: null, properties: null, children: [] }],
+      children: [{ id: 'o2', content: '目标块', type: 'text', format: null, properties: null, children: [] }],
     }]
 
     const created = await store.pasteBlocks(forest, { pageId, anchorBlockId: anchor.id })
@@ -182,5 +182,38 @@ describe('pasteBlocks（ADR-0025 D6/D7/D8/D11）', () => {
     const store = useBlockStore()
     const created = await store.pasteBlocks([], { pageId: 'page-1' })
     expect(created).toEqual([])
+  })
+
+  test('同一锚点反复粘贴触发 gap 耗尽后，新块仍紧邻锚点（不漂到块栈中部）', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-gap-paste'
+
+    // 锚点前必须存在更小的 pos：重编号按「全局（跨页）pos 排序后索引」重排，
+    // 锚点不在全局首位时其新 pos 才会偏离旧值，陈旧快照才会真的算错。
+    await store.createBlock({ pageId, content: 'pre1', pos: 100 })
+    await store.createBlock({ pageId, content: 'pre2', pos: 500 })
+    const anchor = await store.createBlock({ pageId, content: 'anchor', pos: 1000 })
+    const tail = await store.createBlock({ pageId, content: 'tail', pos: 2000 })
+
+    const trace: string[] = []
+    // 反复粘贴到同一锚点后：pos 不断向 tail 逼近，必然触发 gap 耗尽 + 重编号恢复
+    for (let i = 0; i < 14; i++) {
+      const created = await store.pasteBlocks([payload(`pasted-${i}`)], {
+        pageId,
+        anchorBlockId: anchor.id,
+      })
+      expect(created).toHaveLength(1)
+
+      const siblings = store.blocks
+        .filter(b => b.pageId === pageId && b.parentId === null)
+        .sort((a, b) => a.pos - b.pos)
+      const anchorIdx = siblings.findIndex(b => b.id === anchor.id)
+      const newIdx = siblings.findIndex(b => b.id === created[0].id)
+      trace.push(`#${i + 1} pos=${created[0].pos} 落点=${newIdx} 期望=${anchorIdx + 1}`)
+
+      expect(newIdx, `第 ${i + 1} 次粘贴落点错位\n${trace.join('\n')}`).toBe(anchorIdx + 1)
+      expect(created[0].pos).toBeGreaterThan(anchor.pos)
+      expect(created[0].pos).toBeLessThan(tail.pos)
+    }
   })
 })

@@ -29,7 +29,7 @@ const BLOCK_ID = 'blk-empty-1'
 function mkBlock(pageId: string, id = BLOCK_ID, content = '') {
   return {
     id, pageId, parentId: null, pos: 1000, content,
-    format: {}, type: 'bullet' as const, properties: {},
+    format: {}, type: 'text' as const, properties: {},
     createdAt: Date.now(), updatedAt: Date.now()
   }
 }

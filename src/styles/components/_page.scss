@@ -14,17 +14,20 @@
 
 .main-content {
   max-width: var(--max-width);
-  min-height: calc(100vh * 0.618);
   width: 100%;
   margin: 0 auto;
   box-sizing: border-box;
-  flex: 1;
+  // 左/右统一内边距：页面标题与正文 block 共享同一左缘，窄 pane 下不再贴边
+  padding-left: var(--space-6);
+  padding-right: var(--space-6);
+  // 高度由实际内容决定；BlockList 自身保留空白编辑区，短页不再把反链推离正文。
+  flex: 0 1 auto;
 }
 
 .page-header {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   margin-bottom: var(--space-8);
   padding-bottom: var(--space-1);
 }
@@ -42,14 +45,14 @@
   margin: 0;
   letter-spacing: var(--letter-tight);
   line-height: var(--leading-tight);
-  text-align: center;
+  text-align: left;
 }
 
 .page-title--display {
   cursor: default;
   border-radius: var(--radius-sm);
   border: 1px solid transparent;
-  transition: border-color 150ms ease, background 150ms ease;
+  transition: border-color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out);
 }
 
 .page-title--editable:hover {
@@ -65,7 +68,7 @@
   border-radius: var(--radius-sm);
   box-shadow: var(--shadow-focus);
   width: 100%;
-  text-align: center;
+  text-align: left;
   font-size: var(--font-size-page-title);
   font-weight: var(--font-bold);
 }

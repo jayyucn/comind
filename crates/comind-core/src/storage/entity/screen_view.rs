@@ -91,6 +91,35 @@ pub fn screen_view_get_all_by_entity<E: Executor>(
     exec.query_map(&sql, &params, |row| row_to_screen_view_native(row)).map_err(bx)
 }
 
+/// 全表列举（不分实体）—— 孤儿命名空间核销需要先知道「库里有哪些 entity」，这是唯一一条
+/// 不按 entity 过滤的读取。行数 = 全站视图配置总量（百级），全表扫不必加索引。
+#[cfg(not(target_arch = "wasm32"))]
+pub fn screen_view_get_all<E: Executor>(exec: &E) -> Result<Vec<ScreenView>, Box<dyn Error>> {
+    let sql = format!(
+        "SELECT {} FROM screen_view ORDER BY entity ASC, sort_order ASC, created_at DESC",
+        screen_view_select_cols()
+    );
+    let params: Vec<&dyn ToSql> = vec![];
+    exec.query_map(&sql, &params, |row| row_to_screen_view_native(row)).map_err(bx)
+}
+
+/// 改写单行 entity（命名空间归属）。单独一条而不并进 `screen_view_update`：改名与搬家是两件事，
+/// 让 `update` 顺带改 entity 会让「保存配置」有机会把行搬到别的命名空间。
+#[cfg(not(target_arch = "wasm32"))]
+pub fn screen_view_set_entity<E: Executor>(
+    exec: &E,
+    id: &str,
+    entity: &str,
+    updated_at: i64,
+) -> Result<(), Box<dyn Error>> {
+    let params: Vec<&dyn ToSql> = vec![&entity, &updated_at, &id];
+    exec.execute(
+        "UPDATE screen_view SET entity = ?1, updated_at = ?2 WHERE id = ?3",
+        &params,
+    )?;
+    Ok(())
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 pub fn screen_view_get_by_id<E: Executor>(exec: &E, id: &str) -> Result<ScreenView, Box<dyn Error>> {
     let sql = format!("SELECT {} FROM screen_view WHERE id = ?1", screen_view_select_cols());

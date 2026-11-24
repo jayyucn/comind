@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>质感 · 超越 box-shadow 的更激进维度</title>
+<style>
+  :root {
+    --bg-app: #F5F5F4;
+    --bg-base: #ffffff;
+    --bg-hover: #E7E5E4;
+    --border: #E7E5E4;
+    --border-strong: #C9C8C3;
+    --text-primary: #1C1917;
+    --text-secondary: #57534E;
+    --text-tertiary: #A8A29E;
+    --accent: #6366F1;
+    --accent-hover: #4F46E5;
+    --accent-subtle: rgba(99, 102, 241, 0.08);
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --radius-lg: 14px;
+    --surface-muted: #FAFAF9;
+
+    --shadow-modal: 0 8px 32px rgba(28, 25, 23, 0.10);
+    --shadow-focus: 0 0 0 3px rgba(99, 102, 241, 0.12);
+    --shadow-glow-accent: 0 1px 8px rgba(99, 102, 241, 0.35);
+    --hairline-top: rgba(0, 0, 0, 0.05);
+    --shadow-inset-top: inset 0 1px 0 var(--hairline-top);
+    --shadow-floating: var(--shadow-modal), var(--shadow-inset-top);
+    --shadow-elevation-hover: 0 2px 6px rgba(28, 25, 23, 0.10);
+
+    /* —— 激进维度原语（主题感知） —— */
+    --grad-surface: linear-gradient(180deg, #ffffff 0%, #fafaf9 100%);
+    --grad-border: linear-gradient(180deg, rgba(255,255,255,0.95), rgba(0,0,0,0.07));
+    --corner-glow: radial-gradient(120% 90% at 50% 0%, rgba(99,102,241,0.10), transparent 60%);
+    --glass-bg: rgba(255, 255, 255, 0.72);
+    --glass-blur: blur(14px) saturate(1.5);
+    --grad-accent: linear-gradient(180deg, var(--accent-hover), var(--accent));
+  }
+
+  [data-theme="dark"] {
+    --bg-app: #151517;
+    --bg-base: #1A1A1E;
+    --bg-hover: #2E2E32;
+    --border: #2E2E32;
+    --border-strong: #4A4A50;
+    --text-primary: #E4E4E7;
+    --text-secondary: #A1A1AA;
+    --text-tertiary: #71717A;
+    --accent: #818CF8;
+    --accent-hover: #6366F1;
+    --accent-subtle: rgba(129, 140, 248, 0.10);
+
+    --shadow-modal: 0 8px 32px rgba(0, 0, 0, 0.30);
+    --shadow-focus: 0 0 0 3px rgba(129, 140, 248, 0.15);
+    --shadow-glow-accent: 0 1px 8px rgba(129, 140, 248, 0.35);
+    --hairline-top: rgba(255, 255, 255, 0.07);
+    --shadow-inset-top: inset 0 1px 0 var(--hairline-top);
+    --shadow-floating: var(--shadow-modal), var(--shadow-inset-top);
+    --shadow-elevation-hover: inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 2px 8px rgba(0, 0, 0, 0.55);
+
+    --grad-surface: linear-gradient(180deg, #202024 0%, #1A1A1E 100%);
+    --grad-border: linear-gradient(180deg, rgba(255,255,255,0.18), rgba(255,255,255,0.02));
+    --corner-glow: radial-gradient(120% 90% at 50% 0%, rgba(129,140,248,0.16), transparent 60%);
+    --glass-bg: rgba(26, 26, 30, 0.62);
+    --glass-blur: blur(14px) saturate(1.5);
+    --grad-accent: linear-gradient(180deg, var(--accent-hover), var(--accent));
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: 'Noto Sans SC', 'PingFang SC', system-ui, sans-serif;
+    background: var(--bg-app);
+    color: var(--text-primary);
+    transition: background 220ms ease, color 220ms ease;
+    padding-bottom: 60px;
+  }
+
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 18px 28px; border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; background: var(--bg-app); z-index: 10;
+  }
+  header h1 { font-size: 16px; margin: 0; font-weight: 600; }
+  header .sub { font-size: 12px; color: var(--text-tertiary); margin-top: 3px; max-width: 640px; line-height: 1.5; }
+  .toggle {
+    border: 1px solid var(--border-strong); background: var(--bg-base); color: var(--text-primary);
+    padding: 7px 14px; border-radius: var(--radius-sm); cursor: pointer; font-size: 13px; flex-shrink: 0;
+  }
+  .toggle:hover { background: var(--bg-hover); }
+
+  .wrap { max-width: 1000px; margin: 0 auto; padding: 28px; display: flex; flex-direction: column; gap: 30px; }
+
+  .exp {
+    border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 20px 22px;
+    background: var(--bg-base); box-shadow: var(--shadow-floating);
+  }
+  .exp-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 6px; }
+  .exp h2 { font-size: 15px; margin: 0 0 4px; }
+  .exp .desc { font-size: 12.5px; color: var(--text-secondary); line-height: 1.6; margin: 0; }
+  .exp .risk { font-size: 11.5px; color: var(--text-tertiary); margin-top: 6px; }
+  .exp .risk b { color: #DC2626; font-weight: 600; }
+
+  /* 维度开关 */
+  .switch { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-secondary); flex-shrink: 0; cursor: pointer; user-select: none; }
+  .switch input { display: none; }
+  .track { width: 38px; height: 22px; border-radius: 999px; background: var(--border-strong); position: relative; transition: background 160ms ease; }
+  .track::after { content: ''; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: transform 160ms ease; box-shadow: 0 1px 2px rgba(0,0,0,.3); }
+  .switch input:checked + .track { background: var(--accent); }
+  .switch input:checked + .track::after { transform: translateX(16px); }
+
+  .stage { margin-top: 16px; padding: 22px; border-radius: var(--radius-md); background: var(--surface-muted); border: 1px solid var(--border); position: relative; overflow: hidden; }
+
+  /* —— 基线浮层（始终含 box-shadow MVP） —— */
+  .surface { background: var(--bg-base); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 16px; box-shadow: var(--shadow-floating); }
+
+  /* ===== 维度 1：动效 / 微交互 ===== */
+  #exp-motion.on .btn { transition: transform 140ms cubic-bezier(.2,.8,.2,1), box-shadow 140ms ease, background 120ms ease; }
+  #exp-motion.on .btn:hover { transform: translateY(-1px); box-shadow: var(--shadow-elevation-hover); }
+  #exp-motion.on .btn:active { transform: translateY(0); box-shadow: none; }
+  #exp-motion.on .list-item { opacity: 0; animation: fade-up 260ms cubic-bezier(.2,.8,.2,1) forwards; }
+  #exp-motion.on .list-item:nth-child(1){animation-delay:20ms} #exp-motion.on .list-item:nth-child(2){animation-delay:80ms} #exp-motion.on .list-item:nth-child(3){animation-delay:140ms}
+  @keyframes fade-up { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+  .pop-anchor { position: relative; }
+  .pop-mini { position: absolute; top: 40px; left: 0; min-width: 180px; background: var(--bg-base); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 6px; box-shadow: var(--shadow-floating); }
+  #exp-motion.on .pop-mini { animation: pop-in 180ms cubic-bezier(.2,.8,.2,1); }
+  @keyframes pop-in { from { opacity: 0; transform: translateY(8px) scale(.96); } to { opacity: 1; transform: translateY(0) scale(1); } }
+
+  .btn { display: inline-flex; align-items: center; justify-content: center; height: 30px; padding: 0 14px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--bg-base); color: var(--text-secondary); font-size: 13px; cursor: pointer; }
+  .btn:hover { background: var(--bg-hover); color: var(--text-primary); }
+  .btn.primary { background: var(--accent); border-color: transparent; color: #141417; font-weight: 600; }
+  .row { display: flex; align-items: center; gap: 8px; padding: 9px 10px; border-radius: var(--radius-sm); background: var(--bg-base); border: 1px solid var(--border); color: var(--text-secondary); font-size: 13px; margin-bottom: 6px; }
+
+  /* ===== 维度 2：表面渐变 + 光照 ===== */
+  #exp-gradient.on .lit { background: var(--grad-surface); position: relative; }
+  #exp-gradient.on .lit::before { content: ''; position: absolute; inset: 0; border-radius: inherit; background: var(--corner-glow); pointer-events: none; }
+  #exp-gradient.on .lit::after { content: ''; position: absolute; inset: 0; border-radius: inherit; padding: 1px;
+    background: var(--grad-border); -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; pointer-events: none; }
+
+  /* ===== 维度 3：材质玻璃 ===== */
+  #exp-glass .stage { background: linear-gradient(120deg, #6366F1, #EC4899, #F59E0B); }
+  #exp-glass.on .glass { background: var(--glass-bg); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); }
+
+  /* ===== 维度 4：色彩鲜活 ===== */
+  #exp-color.on .btn.primary { background: var(--grad-accent); box-shadow: var(--shadow-glow-accent); }
+  #exp-color.on .btn.primary:hover { filter: saturate(1.25) brightness(1.04); }
+  #exp-color.on .pill { background: var(--accent-subtle); color: var(--accent); border: 1px solid transparent; box-shadow: 0 0 0 1px var(--accent-subtle); }
+
+  .demo-row { display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-start; }
+  .demo-row > div { flex: 1; min-width: 200px; }
+  .mini-label { font-size: 11px; color: var(--text-tertiary); margin-bottom: 8px; }
+  .pill { display: inline-block; padding: 4px 10px; border-radius: 999px; font-size: 12px; color: var(--text-secondary); }
+  .hint { font-size: 11px; color: var(--text-tertiary); margin-top: 8px; }
+</style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>质感 · 超越 box-shadow 的更激进维度</h1>
+      <div class="sub">所有维度都<b>叠加在已落地的 box-shadow MVP 之上</b>（顶部高光 + 抬升阴影）。勾选开关即可即时对比「仅 box-shadow」↔「+ 该激进维度」。右上角切换亮/暗。</div>
+    </div>
+    <button class="toggle" onclick="toggleTheme()">切换 亮 / 暗</button>
+  </header>
+
+  <div class="wrap">
+
+    <!-- 维度 1 动效 -->
+    <section class="exp" id="exp-motion">
+      <div class="exp-head">
+        <div>
+          <h2>① 动效 / 微交互</h2>
+          <p class="desc">浮层入场 fade+scale、按钮物理 hover（抬升回弹）、列表 stagger。不改变极简定位，却让「质感」从静态好看升级到「用起来有生命」——性价比最高的激进维度。</p>
+          <p class="risk">风险：<b>低</b>。与极简风几乎无冲突；需注意尊重 <code>prefers-reduced-motion</code>。</p>
+        </div>
+        <label class="switch"><input type="checkbox" onchange="toggleExp('exp-motion', this.checked)"><span class="track"></span>启用动效</label>
+      </div>
+      <div class="stage">
+        <div class="demo-row">
+          <div>
+            <div class="mini-label">按钮 hover（悬停查看抬升回弹）</div>
+            <button class="btn">默认</button>
+            <button class="btn primary" style="margin-left:8px;">主要</button>
+          </div>
+          <div>
+            <div class="mini-label">列表 stagger 入场</div>
+            <div class="row list-item">⟡ 任务中心 · 表格视图</div>
+            <div class="row list-item">⟡ 任务中心 · 看板视图</div>
+            <div class="row list-item">⟡ 任务中心 · 日历视图</div>
+          </div>
+          <div>
+            <div class="mini-label">浮层入场（点按钮看动画）</div>
+            <div class="pop-anchor">
+              <button class="btn" onclick="replayPop(this)">打开浮层</button>
+              <div class="pop-mini" id="pop-mini" style="display:none;">
+                <div class="row" style="margin:0;background:transparent;border:none;">✎ 重命名</div>
+                <div class="row" style="margin:0;background:transparent;border:none;">⧉ 复制视图</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 维度 2 渐变+光照 -->
+    <section class="exp" id="exp-gradient">
+      <div class="exp-head">
+        <div>
+          <h2>② 表面渐变 + 光照模型</h2>
+          <p class="desc">卡片背景改顶部微亮线性渐变（受光感）、顶部渐变描边（gradient border）、角落环境光晕（corner glow）。开始有「材质感」但仍克制。</p>
+          <p class="risk">风险：<b>中低</b>。渐变描边需 mask 技巧；角落光晕饱和度要压住，否则显脏。</p>
+        </div>
+        <label class="switch"><input type="checkbox" onchange="toggleExp('exp-gradient', this.checked)"><span class="track"></span>启用光照</label>
+      </div>
+      <div class="stage">
+        <div class="demo-row">
+          <div>
+            <div class="mini-label">仅 box-shadow MVP（基线）</div>
+            <div class="surface">常规浮面 · 平填充 + 顶部高光</div>
+          </div>
+          <div>
+            <div class="mini-label">+ 渐变 + 光照</div>
+            <div class="surface lit">受光浮面 · 顶亮渐变 + 渐变描边 + 角光晕</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 维度 3 玻璃 -->
+    <section class="exp" id="exp-glass">
+      <div class="exp-head">
+        <div>
+          <h2>③ 材质玻璃拟态（Material / Glass）</h2>
+          <p class="desc"><code>backdrop-filter: blur() saturate()</code> 半透明毛玻璃弹层。最「激进」的视觉，浮层像悬浮在内容之上。</p>
+          <p class="risk">风险：<b>高</b>。典型玻璃拟态，与 Logseq 极简扁平风<b>冲突风险最高</b>；需谨慎处理可读性、性能与降级。</p>
+        </div>
+        <label class="switch"><input type="checkbox" onchange="toggleExp('exp-glass', this.checked)"><span class="track"></span>启用玻璃</label>
+      </div>
+      <div class="stage">
+        <div class="demo-row" style="align-items:center;">
+          <div class="surface" style="flex:0 0 auto;position:relative;z-index:1;">常规浮面（不透明）</div>
+          <div class="surface glass" style="flex:0 0 auto;position:relative;z-index:1;">毛玻璃浮层（模糊下层）</div>
+        </div>
+        <div class="hint">背景为彩色渐变，用于凸显模糊效果；真实场景模糊的是页面内容。</div>
+      </div>
+    </section>
+
+    <!-- 维度 4 色彩 -->
+    <section class="exp" id="exp-color">
+      <div class="exp-head">
+        <div>
+          <h2>④ 色彩鲜活度</h2>
+          <p class="desc">primary 按钮改渐变填充、hover 提饱和；强调色 pill 加发光环。让关键操作「跳」出来，引导视觉焦点。</p>
+          <p class="risk">风险：<b>中</b>。渐变填充若过艳会偏离极简；发光环只在强调态用，不可泛滥。</p>
+        </div>
+        <label class="switch"><input type="checkbox" onchange="toggleExp('exp-color', this.checked)"><span class="track"></span>启用鲜活</label>
+      </div>
+      <div class="stage">
+        <div class="demo-row" style="align-items:center;">
+          <div><div class="mini-label">仅 box-shadow</div><button class="btn primary">主要操作</button></div>
+          <div><div class="mini-label">+ 渐变填充 + 发光</div><button class="btn primary">主要操作</button></div>
+          <div><div class="mini-label">强调 pill</div><span class="pill">🔥 进行中</span></div>
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+  <script>
+    function toggleTheme() {
+      const el = document.documentElement;
+      el.setAttribute('data-theme', el.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+    }
+    function toggleExp(id, on) { document.getElementById(id).classList.toggle('on', on); }
+    function replayPop(btn) {
+      const pop = document.getElementById('pop-mini');
+      const sec = document.getElementById('exp-motion');
+      pop.style.display = pop.style.display === 'none' ? 'block' : 'none';
+      if (pop.style.display === 'block' && sec.classList.contains('on')) {
+        pop.style.animation = 'none'; void pop.offsetWidth; pop.style.animation = '';
+      }
+    }
+  </script>
+</body>
+</html>

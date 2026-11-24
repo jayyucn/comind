@@ -65,7 +65,7 @@ const emit = defineEmits<{
   background: var(--bg-base);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  box-shadow: var(--shadow-modal);
+  box-shadow: var(--shadow-floating);
 }
 
 .toolbar-btn {
@@ -80,7 +80,7 @@ const emit = defineEmits<{
   border-radius: var(--radius-sm);
   font-size: var(--text-sm);
   color: var(--text-secondary);
-  transition: all 100ms ease;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
   white-space: nowrap;
 
   &:hover:not(:disabled) {

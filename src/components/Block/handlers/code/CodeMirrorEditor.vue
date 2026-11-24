@@ -14,6 +14,7 @@ import { oneDark, oneDarkHighlightStyle } from '@codemirror/theme-one-dark'
 import { EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers } from '@codemirror/view'
 import { tags } from '@lezer/highlight'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
+
 import { useBlockRegistry } from '../../../../composables/useBlockRegistry'
 import { useTheme } from '../../../../composables/useTheme'
 import BasePopover from '../../../common/BasePopover.vue'
@@ -41,6 +42,7 @@ const emit = defineEmits<{
   (e: 'backspace-empty'): void
   (e: 'exit-edit'): void
   (e: 'cursor-change', pos: number): void
+  (e: 'selection-change', payload: { from: number; to: number; contentChanged: boolean }): void
   (e: 'language-change', lang: string): void
 }>()
 
@@ -238,7 +240,7 @@ function createEditor() {
           return false
         }
       },
-      // 空文档按 Backspace → 交给 Block 层转为 bullet（Notion 惯例）；
+      // 空文档按 Backspace → 交给 Block 层转为 text（Notion 惯例）；
       // 非空则返回 false 落入 defaultKeymap 正常删字符。
       {
         key: 'Backspace',
@@ -305,6 +307,11 @@ function createEditor() {
       }
       if (update.selectionSet) {
         emit('cursor-change', update.state.selection.main.head)
+      }
+      // 选区上报（撤销历史用）：与正文改动同事务时标 contentChanged，语义同 Editor.vue
+      if (!props.readonly && (update.docChanged || update.selectionSet)) {
+        const { from, to } = update.state.selection.main
+        emit('selection-change', { from, to, contentChanged: update.docChanged })
       }
     }),
   ]
@@ -456,8 +463,9 @@ function focus(pos?: number | 'start' | 'end') {
   if (view.value) {
     view.value.focus()
     if (typeof pos === 'number') {
+      // 钳进合法区间：撤销/重做恢复的是撤销前的位置，内容可能已被撤短
       view.value.dispatch({
-        selection: { anchor: pos }
+        selection: { anchor: Math.max(0, Math.min(pos, view.value.state.doc.length)) }
       })
     } else if (pos === 'start') {
       view.value.dispatch({
@@ -471,6 +479,16 @@ function focus(pos?: number | 'start' | 'end') {
   }
 }
 
+/** 恢复一段选区（撤销/重做）：from === to 即为折叠光标。两端都钳进合法区间。 */
+function focusRange(from: number, to: number) {
+  if (!view.value) return
+  const len = view.value.state.doc.length
+  const f = Math.max(0, Math.min(from, len))
+  const t = Math.max(f, Math.min(to, len))
+  view.value.focus()
+  view.value.dispatch({ selection: { anchor: f, head: t } })
+}
+
 function getText() {
   return view.value?.state.doc.toString() ?? ''
 }
@@ -481,7 +499,7 @@ function getEditor() {
   return view.value
 }
 
-defineExpose({ syncContent, focus, getText, markSaved, getEditor })
+defineExpose({ syncContent, focus, focusRange, getText, markSaved, getEditor })
 </script>
 
 <template>
@@ -489,7 +507,10 @@ defineExpose({ syncContent, focus, getText, markSaved, getEditor })
     class="code-editor-wrapper"
     :class="{ 'is-collapsed': collapsed }"
   >
-    <header class="code-header">
+    <header
+      class="code-header"
+      data-text-selection-ignore
+    >
       <button
         type="button"
         class="code-toggle"
@@ -618,6 +639,8 @@ defineExpose({ syncContent, focus, getText, markSaved, getEditor })
   background: transparent;
   font-size: var(--text-xs);
   color: var(--text-secondary);
+  /* 头部是纯交互区（折叠开关 / 语言 / 换行 / 复制），拖拽不应选中文字 */
+  user-select: none;
 }
 
 .code-editor-wrapper:not(.is-collapsed) .code-header {
@@ -637,7 +660,6 @@ defineExpose({ syncContent, focus, getText, markSaved, getEditor })
   font-size: var(--text-xs);
   font-weight: var(--font-medium);
   cursor: pointer;
-  user-select: none;
 }
 
 .code-toggle:hover {
@@ -648,7 +670,7 @@ defineExpose({ syncContent, focus, getText, markSaved, getEditor })
 .code-toggle-chevron {
   display: inline-block;
   font-size: 10px;
-  transition: transform 0.18s ease;
+  transition: transform var(--dur-base) var(--ease-out);
 }
 
 .code-toggle-chevron.is-collapsed {
@@ -663,7 +685,7 @@ defineExpose({ syncContent, focus, getText, markSaved, getEditor })
   gap: var(--space-1, 4px);
   opacity: 0;
   visibility: hidden;
-  transition: opacity 0.2s, visibility 0.2s;
+  transition: opacity var(--dur-base), visibility var(--dur-base);
 }
 
 .code-editor-wrapper:hover .code-toolbar {
@@ -682,7 +704,7 @@ defineExpose({ syncContent, focus, getText, markSaved, getEditor })
   color: var(--text-secondary);
   font-size: var(--text-xs);
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  transition: background var(--dur-fast), color var(--dur-fast);
 }
 
 .code-toolbar-btn:hover {
@@ -765,7 +787,7 @@ defineExpose({ syncContent, focus, getText, markSaved, getEditor })
   font-size: var(--text-sm);
   color: var(--text-secondary);
   cursor: pointer;
-  transition: background 0.2s;
+  transition: background var(--dur-base);
 }
 
 .lang-item:hover {

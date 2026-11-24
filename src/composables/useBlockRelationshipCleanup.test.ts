@@ -4,6 +4,7 @@ import { useBlockStore } from '../stores/blocks'
 import { usePageStore } from '../stores/pages'
 import { useBlockRelationshipCleanup } from './useBlockRelationshipCleanup'
 import { useRelationshipTypes } from './useRelationshipTypes'
+import { getCoreClient } from '../wasm/client'
 import { cleanupRelationshipTypes } from '../../tests/core-client'
 
 // 4.3: Mock wasm/client (getCoreClient) so cleanupAfterDelete works in Vitest (no Tauri runtime).
@@ -155,6 +156,34 @@ describe('useBlockRelationshipCleanup', () => {
   })
 
   describe('cleanupAfterDelete', () => {
+    test('链接提取器不可用时降级：关系清理跳过，删除照常执行（Web/WASM 运行时）', async () => {
+      const cleanup = useBlockRelationshipCleanup()
+      const { ourPage } = await createPagesWithTitles()
+      const block = await blockStore.createBlock({ pageId: ourPage.id, content: 'see ((depends-on<->required-by))[[X]]' })
+
+      // Web/WASM 的 extractLinksFromContent 直接 throw（src/wasm/client.ts:990）
+      const client = getCoreClient() as unknown as { extractLinksFromContent: (c: string) => Promise<unknown> }
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const delSpy = vi.spyOn(blockStore, 'deleteBlocks')
+      const spy = vi.spyOn(client, 'extractLinksFromContent').mockRejectedValue(
+        new Error('WASM: extract_links_from_content not supported')
+      )
+
+      try {
+        const result = await cleanup.cleanupAfterDelete(ourPage.id, [block.id])
+
+        expect(spy).toHaveBeenCalled()
+        // 核心：可选的清理失败不得把删除一起废掉（该 API 是 deleteBlocks 的前置调用）
+        expect(delSpy).toHaveBeenCalledWith([block.id])
+        expect(result.orphanedTargets).toEqual([])
+        expect(result.modifiedCrossPageBlocks).toEqual([])
+      } finally {
+        spy.mockRestore()
+        delSpy.mockRestore()
+        warn.mockRestore()
+      }
+    })
+
     test('空 deletedBlockIds 时应立即返回且不调 deleteBlock', async () => {
       const cleanup = useBlockRelationshipCleanup()
       const { ourPage } = await createPagesWithTitles()
@@ -166,8 +195,7 @@ describe('useBlockRelationshipCleanup', () => {
       expect(blockStore.blocks.length).toBe(0)
     })
 
-    test('被删 block 无 typed-link 时不应触发跨页清理', async () => {
-      const cleanup = useBlockRelationshipCleanup()
+    test('被删 block 无 typed-link 时不应触发跨页清理', async () => {      const cleanup = useBlockRelationshipCleanup()
       const { ourPage, targetPage } = await createPagesWithTitles()
 
       const block = await blockStore.createBlock({ pageId: ourPage.id, content: 'see [[X]]' })

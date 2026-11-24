@@ -1,5 +1,9 @@
 import type { Block } from '../types/block'
+import type { InlineMarkRange } from '../utils/inline-marks'
+import { normalizeInlineMarks, readInlineMarks, shiftInlineMarks, sliceInlineMarks } from '../utils/inline-marks'
 import { renderedOffsetToEncodedOffset } from './render-text'
+import { cellRangeHasContent } from './table-cell-range'
+import { readTableData, serializeTableTsv } from './table-model'
 
 /**
  * 文本选区纯计算模块（ADR-0035 D3/D5 的无 DOM 地基）。
@@ -19,6 +23,16 @@ export interface BlockOffset {
 export interface TextRange {
   anchor: BlockOffset
   head: BlockOffset
+}
+
+/**
+ * 渲染文本坐标下的一个「内联原子单元」区间 [start, end)（UTF-16 码元）。
+ * 单元的视觉边界由渲染层决定（`.block-tag` / `.date-ref` / `.block-link` 等），
+ * 由 `selection-geometry.atomicUnitSpans` 从实时 DOM 量出。
+ */
+export interface RenderedUnitSpan {
+  start: number
+  end: number
 }
 
 /** 文档序归一化后的文本范围 */
@@ -113,6 +127,10 @@ export function normalizeTextRange(blocks: Block[], range: TextRange): Normalize
  * 端点 offset 来自界面渲染文本（含隐藏了类型名/target 的内联标记），
  * 而本函数切的是存储原文（encoded）——先经 `renderedOffsetToEncodedOffset`
  * 换算，否则含标记的块上会错位（#93 / ADR-0035 开放问题 #1）。
+ *
+ * 表格是原子块：内部文本没有可切分的语义（见 selection-geometry 的
+ * `ATOMIC_BLOCK_SELECTOR`），一律整表输出 TSV，忽略端点偏移——否则按偏移切
+ * `content`（恒为空）会复制出空串。
  */
 export function textRangeToText(blocks: Block[], range: TextRange): string {
   const { start, end, middleBlockIds } = normalizeTextRange(blocks, range)
@@ -121,21 +139,165 @@ export function textRangeToText(blocks: Block[], range: TextRange): string {
   const endBlock = byId.get(end.blockId)
   if (!startBlock || !endBlock) return ''
 
-  // 换算内部已按 content 长度钳制
-  const lo = renderedOffsetToEncodedOffset(startBlock.content, startBlock.renderSegments, start.offset)
-  const hi = renderedOffsetToEncodedOffset(endBlock.content, endBlock.renderSegments, end.offset)
-
   if (start.blockId === end.blockId) {
     // normalizeTextRange 已保证 start.offset <= end.offset，换算保持单调
-    return startBlock.content.slice(lo, hi)
+    return sliceBlockText(startBlock, start.offset, end.offset)
   }
 
   const parts: string[] = []
-  parts.push(startBlock.content.slice(lo))
+  parts.push(sliceBlockText(startBlock, start.offset, null))
   for (const id of middleBlockIds) {
     const b = byId.get(id)
-    if (b) parts.push(b.content)
+    if (b) parts.push(sliceBlockText(b, null, null))
   }
-  parts.push(endBlock.content.slice(0, hi))
+  parts.push(sliceBlockText(endBlock, null, end.offset))
   return parts.join('\n')
+}
+
+/** 表格块的整表文本（TSV）；整表为空时不产出（避免选到空表却粘出一堆制表符） */
+function tableBlockText(block: Block): string {
+  const data = readTableData(block.format)
+  const range = { row1: 0, col1: 0, row2: data.rows.length - 1, col2: (data.rows[0]?.length ?? 1) - 1 }
+  if (!cellRangeHasContent(data, range)) return ''
+  return serializeTableTsv(data)
+}
+
+/**
+ * 单块取文。`from` / `to` 为渲染文本偏移，null 表示取该侧到块边界。
+ * 表格块忽略偏移（原子不可切分），直接给整表。
+ */
+function sliceBlockText(block: Block, from: number | null, to: number | null): string {
+  if (block.type === 'table') return tableBlockText(block)
+  const lo = from === null ? 0 : renderedOffsetToEncodedOffset(block.content, block.renderSegments, from)
+  const hi = to === null
+    ? block.content.length
+    : renderedOffsetToEncodedOffset(block.content, block.renderSegments, to)
+  return block.content.slice(lo, hi)
+}
+
+/**
+ * 端点若严格落在某个原子单元内部，吸附到该单元的**外侧**边界（扩张方向）。
+ *
+ * `side` 是端点在整个选区里的角色：起点往左扩（`start`）、终点往右扩（`end`）。
+ * 两条都只会**扩大**选区，绝不收缩——原子单元要么整体入选、要么完全不入选。
+ */
+function snapOutward(
+  offset: number,
+  units: RenderedUnitSpan[],
+  side: 'start' | 'end',
+): number {
+  for (const u of units) {
+    if (offset > u.start && offset < u.end) return side === 'start' ? u.start : u.end
+  }
+  return offset
+}
+
+/**
+ * 把文本选区两端吸附出内联原子单元（inline chip / date-ref / wiki link）。
+ *
+ * 为什么必须有这一层：跨块文本选区的端点是**渲染文本的字符偏移**，
+ * 删除时由 `planTextRangeDeletion` 直接按该偏移切 `block.content`——
+ * 端点落在 `#任务` 中间就会切出 `#任` 这种半截 chip（真机实证：右→左拖到
+ * chip 中间按 Backspace，`vanished: ["务 后面"]`）。ProseMirror 侧的选区
+ * 原子化管不到这条路径：拖拽超过 4px 时 BlockList 已 `deactivateBlock()`，
+ * 编辑器根本不在场，删除完全由本模块的偏移驱动。
+ *
+ * 口径与 PM 侧 `createInlineUnitKeyboardPlugin` 的选区闸门一致：
+ * **端点永不落在单元内部**，单元整体参与选区。端点不碰单元时原样返回。
+ *
+ * @param blocks 用于确定两端点的文档序（`normalizeTextRange` 同源）
+ * @param range  待吸附的选区（渲染文本坐标）
+ * @param unitsOf 取某 block 内全部原子单元区间（渲染文本坐标）
+ */
+export function snapTextRangeToUnits(
+  blocks: Block[],
+  range: TextRange,
+  unitsOf: (blockId: string) => RenderedUnitSpan[],
+): TextRange {
+  // 同块（拖拽的绝大多数情形）直接按偏移判序，省掉 normalizeTextRange 对整库
+  // 建文档序的 O(n) 开销——本函数在 mousemove 里逐帧调用。
+  const sameBlock = range.anchor.blockId === range.head.blockId
+  let start: BlockOffset
+  let end: BlockOffset
+  if (sameBlock) {
+    const forward = range.anchor.offset <= range.head.offset
+    start = forward ? range.anchor : range.head
+    end = forward ? range.head : range.anchor
+  } else {
+    const normalized = normalizeTextRange(blocks, range)
+    start = normalized.start
+    end = normalized.end
+  }
+
+  // 折叠端点：没有可删内容，吸附会凭空造出选区，保持原样
+  if (sameBlock && start.offset === end.offset) return range
+
+  const nextStart = snapOutward(start.offset, unitsOf(start.blockId), 'start')
+  const nextEnd = snapOutward(end.offset, unitsOf(end.blockId), 'end')
+  if (nextStart === start.offset && nextEnd === end.offset) return range
+
+  // 保持原选区的方向性（anchor/head 角色不因吸附而互换）：
+  // shift+click 延伸依赖 anchor 仍是固定端。
+  const anchorIsStart =
+    range.anchor.blockId === start.blockId && range.anchor.offset === start.offset
+  return {
+    anchor: { ...range.anchor, offset: anchorIsStart ? nextStart : nextEnd },
+    head: { ...range.head, offset: anchorIsStart ? nextEnd : nextStart },
+  }
+}
+
+/** 单块内区间替换的计划（与删除计划同源：同一套偏移换算 + marks 切片） */
+export interface TextRangeReplacement {
+  blockId: string
+  /** 替换后的块内容（encoded） */
+  content: string
+  /** 替换后按新长度归一化的行内格式 */
+  inlineMarks: InlineMarkRange[]
+  /** 替换文本末尾的编码偏移；光标落点（PM position）由调用方 +1 */
+  caretOffset: number
+}
+
+/**
+ * 把单块内的文本选区替换成 `replacement`（选区包裹为 `[[页名]]` 的写回路径）。
+ *
+ * 与 `planTextRangeDeletion` 共用同一套坐标链：先 `normalizeTextRange` 归一，
+ * 再 `renderedOffsetToEncodedOffset` 换成编码偏移（渲染态 vs 存储原文的换算），
+ * 最后在 `block.content` 上拼接。
+ *
+ * 刻意**不复用/不改动**删除计划：删除的裁剪与合并在回归网里钉得很死，替换只需要
+ * 「同块 + 纯文本块」这一条最窄的分支。跨块返回 null —— 跨块选区没有单一页名语义。
+ *
+ * 格式口径（D6）：括号本身不带格式，插入点两侧的 marks 按切片保留、不扩张到
+ * 括号上；右侧 marks 按插入长度整体平移。
+ */
+export function planTextRangeReplacement(
+  blocks: Block[],
+  range: TextRange,
+  replacement: string,
+): TextRangeReplacement | null {
+  const { start, end } = normalizeTextRange(blocks, range)
+  if (start.blockId !== end.blockId) return null
+
+  const block = blocks.find(b => b.id === start.blockId)
+  // 只有普通文本块有「部分选中」语义；表格等原子块的 content 不承载正文
+  if (!block || block.type !== 'text') return null
+
+  const lo = renderedOffsetToEncodedOffset(block.content, block.renderSegments, start.offset)
+  const hi = renderedOffsetToEncodedOffset(block.content, block.renderSegments, end.offset)
+  if (hi <= lo) return null
+
+  const content = block.content.slice(0, lo) + replacement + block.content.slice(hi)
+  const marks = readInlineMarks(block.format, block.content.length)
+  const inlineMarks = normalizeInlineMarks(
+    [
+      ...sliceInlineMarks(marks, 0, lo),
+      ...shiftInlineMarks(
+        sliceInlineMarks(marks, hi, block.content.length),
+        lo + replacement.length,
+      ),
+    ],
+    content.length,
+  )
+
+  return { blockId: block.id, content, inlineMarks, caretOffset: lo + replacement.length }
 }

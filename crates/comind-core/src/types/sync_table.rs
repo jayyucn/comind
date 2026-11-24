@@ -8,12 +8,14 @@ pub enum SyncTable {
     Block,
     Page,
     Link,
-    Property,
     DateRef,
     RelationshipType,
     Template,
     Notification,
     NotificationConfig,
+    Tag,
+    FieldDefinition,
+    FieldValue,
 }
 
 impl SyncTable {
@@ -22,12 +24,14 @@ impl SyncTable {
             SyncTable::Block => "Block",
             SyncTable::Page => "Page",
             SyncTable::Link => "Link",
-            SyncTable::Property => "Property",
             SyncTable::DateRef => "DateRef",
             SyncTable::RelationshipType => "RelationshipType",
             SyncTable::Template => "UserTemplate",
             SyncTable::Notification => "Notification",
             SyncTable::NotificationConfig => "NotificationConfig",
+            SyncTable::Tag => "Tag",
+            SyncTable::FieldDefinition => "FieldDefinition",
+            SyncTable::FieldValue => "FieldValue",
         }
     }
 
@@ -38,10 +42,12 @@ impl SyncTable {
             SyncTable::Page,
             SyncTable::Block,
             SyncTable::Link,
-            SyncTable::Property,
             SyncTable::DateRef,
             SyncTable::Notification,
             SyncTable::NotificationConfig,
+            SyncTable::Tag,
+            SyncTable::FieldDefinition,
+            SyncTable::FieldValue,
         ]
     }
 }

@@ -1,6 +1,10 @@
 import { invoke } from '@tauri-apps/api/core'
+
 import { isTauriEnvironment, type TauriBatchCheckAndFireData, type TauriGraphEdgeRecord } from './tauri-platform'
 export { isTauriEnvironment } from './tauri-platform'
+// dev 免重编：seed 静态 import 进入 Vite 模块图（编辑 JSON 触发 HMR 整页刷新），
+// 启动时经 reload_system_seed 命令注入原生 Rust（Tauri 运行时数据走原生 SQLite）。
+import seedJson from '../types/systemFieldSeed.json'
 import { initWasmClient, type WasmClient } from './wasm-client'
 
 function parseJsonResult<T>(result: unknown): T {
@@ -9,13 +13,40 @@ function parseJsonResult<T>(result: unknown): T {
   }
   return result as T
 }
+import type { FieldValue } from '../types/field-value'
 import type {
-  Block, Page, Property, Link, RelationshipType, LinkDraft,
-  UserTemplate, SearchResult, BlockUpdate, BlockSaveResult, PageUpdate,
-  BatchOperation, BatchResult, ExportResult, ImportResult, SyncConfig, BlockVersion,
-  Notification, DateRefRecord, IncompleteTask, BlockCard, SavedFilterRust, ScreenViewRust,
-  NotificationSettings, PageWithBlocks, BookHighlightRust, BookProgressRust
-} from './types'
+  CreateFieldDefinitionParams,   CreateTagParams,   DeleteFieldDefinitionResult,
+PersistedFieldDefinition,
+  PersistedTag, PersistedTagTreeEntry, SetTagParentParams,
+UpdateFieldDefinitionParams,
+UpdateTagParams} from '../types/tag-persisted'
+import type {
+  BatchOperation, BatchResult,   Block, BlockCard, BlockSaveResult, BlockUpdate, BookHighlightRust, BookProgressRust,
+DateRefRecord, ExportResult, ImportResult, IncompleteTask, Link, LinkDraft,
+  Notification,   NotificationSettings, Page, PageUpdate,
+PageWithBlocks, RelationshipType, SavedFilterRust, ScreenViewRust,
+SearchResult, SyncConfig,
+  UserTemplate} from './types'
+
+/** `cleanup_orphan_screen_views` 的返回值（Rust `OrphanCleanupReport` 的 serde 形状）。 */
+export interface OrphanCleanupReportRust {
+  deleted_screens: number
+  deleted_tabs: number
+  restored: number
+}
+
+/**
+ * `moveBlocks` 的一个目标（Rust `BlockMoveTarget` 的 serde 形状，camelCase）。
+ *
+ * 把 `blockId` 这棵子树搬到 `pageId` 下的 `parentId`（`null` = 页面顶层）第 `pos` 位。
+ * 语义是**搬走**（id 不变）而非复制，前置条件是这些根块此刻在本库仍处于软删状态。
+ */
+export interface BlockMoveTargetInput {
+  blockId: string
+  pageId: string
+  parentId: string | null
+  pos: number
+}
 
 export interface CoreClient {
   getBlock(blockId: string): Promise<Block>
@@ -24,6 +55,13 @@ export interface CoreClient {
   deleteBlock(blockId: string): Promise<void>
   /** 撤销软删除（ADR-0046 D10）：复活块及其下整棵软删子树 */
   undeleteBlocks(ids: string[]): Promise<void>
+  /**
+   * 搬移一组块（ADR-0025 D4b）：复活 + 换页 + 换父级/位置，id 不变。
+   *
+   * 任一目标不可复活时整组失败，错误串带 `BLOCK_MOVE_NOT_REVIVABLE`（跨机器/跨库、
+   * 连粘第二次、源块已被回收站恢复）或 `BLOCK_MOVE_INTO_SELF`（环），调用方据此回落新建副本。
+   */
+  moveBlocks(targets: BlockMoveTargetInput[]): Promise<void>
 
   getPage(pageId: string): Promise<Page>
   getAllPages(): Promise<Page[]>
@@ -44,24 +82,45 @@ export interface CoreClient {
   getBacklinks(pageId: string): Promise<Link[]>
   getOutlinks(pageId: string): Promise<Link[]>
 
-  getProperties(blockId: string): Promise<Property[]>
-  setProperty(blockId: string, key: string, value: string, type: string): Promise<Property>
-  deleteProperty(blockId: string, key: string): Promise<void>
+  getFieldValues(blockId: string): Promise<FieldValue[]>
+  /** 按定义反查值行（ADR-0057「使用于」）：弹窗展示持有该字段值的块列表；软删行天然排除。 */
+  getFieldValuesByField(fieldDefinitionId: string): Promise<FieldValue[]>
+  setFieldValue(blockId: string, key: string, value: string, type: string): Promise<FieldValue>
+  deleteFieldValue(blockId: string, key: string): Promise<void>
 
   getRelationshipTypes(): Promise<RelationshipType[]>
 
   getTemplates(): Promise<UserTemplate[]>
 
+  /** ADR-0049 D6：打标/摘标唯一写入口（只改 Block.tags，不动内容派生）。 */
+  setBlockTags(blockId: string, tags: string[]): Promise<Block>
+
+  // ---- ADR-0049 D6：Tag 统一字段模型（落库持久化形）；ADR-0050 D10 单父 + 解析 ----
+  // 全部走 execute_batch（ADR-0048 单源分派），故两侧实现形状一致。
+  getTags(): Promise<PersistedTag[]>
+  /** 标签树读接口：原始行 + 解析后有效字段 + 后代闭包（解析单源在 Rust，前端不得重实现） */
+  getTagTree(): Promise<PersistedTagTreeEntry[]>
+  createTag(params: CreateTagParams): Promise<PersistedTag>
+  updateTag(params: UpdateTagParams): Promise<PersistedTag>
+  /** 单父槽位：null / 空串 → 清空回顶级；成环与系统 tag 由 Rust 侧拒绝 */
+  setTagParent(params: SetTagParentParams): Promise<PersistedTag>
+  /** 软删 Tag；block.tags 中的悬空引用保留不动（undo 可完整还原） */
+  deleteTag(id: string): Promise<void>
+
+  getFieldDefinitions(): Promise<PersistedFieldDefinition[]>
+  createFieldDefinition(params: CreateFieldDefinitionParams): Promise<PersistedFieldDefinition>
+  updateFieldDefinition(params: UpdateFieldDefinitionParams): Promise<PersistedFieldDefinition>
+  /** 级联软删引用它的 FieldValue；系统 seed 行会被 Rust 拒绝 */
+  deleteFieldDefinition(id: string): Promise<DeleteFieldDefinitionResult>
+
+  /** 被软删的预设字段定义列表（「恢复内置预设」按钮可见性判断用） */
+  getDeletedPresetFieldDefinitions(): Promise<PersistedFieldDefinition[]>
+  /** 批量复活被软删的预设字段定义；返回本次复活的条数 */
+  restoreBuiltinPresets(): Promise<{ restored: number }>
+
   search(query: string): Promise<SearchResult[]>
 
   executeBatch(operations: BatchOperation[]): Promise<BatchResult[]>
-
-  createBlockVersion(blockId: string, snapshot: string, hash: string, reason: string, checkpointName?: string): Promise<BlockVersion>
-  getBlockVersions(blockId: string): Promise<BlockVersion[]>
-  getBlockVersionById(id: string): Promise<BlockVersion>
-  restoreBlockVersion(versionId: string): Promise<BlockVersion>
-  deleteBlockVersion(versionId: string): Promise<void>
-  cleanupBlockVersions(retentionDays: number): Promise<void>
 
   getNotification(id: string): Promise<Notification>
   getNotificationsByBlock(blockId: string): Promise<Notification[]>
@@ -117,6 +176,13 @@ export interface CoreClient {
   setDefaultScreen(id: string): Promise<ScreenViewRust>
   /** 批量原子重排某 (entity, parentId) 下 Tabs 顺序（ADR-0044，拖拽持久化）。 */
   reorderScreenViews(entity: string, parentId: string, orderedIds: string[]): Promise<void>
+  /**
+   * 孤儿查询块视图的标记：把 `<livePrefix><blockId>` 命名空间下的全部行改挂到 orphan 前缀。
+   * 块删除时调用；只改 entity 不改内容 ⇒ 撤销复活后配置原样可用。
+   */
+  markOrphanScreenViews(livePrefix: string, orphanPrefix: string, blockId: string): Promise<number>
+  /** 孤儿视图核销（启动时一次性）：块已不存在 → 删；块仍在 → 改回 live 前缀。 */
+  cleanupOrphanScreenViews(orphanPrefix: string, livePrefix: string): Promise<OrphanCleanupReportRust>
 
   // Book highlights & progress（ADR-0040：仅桌面本地，不入 SyncTable）
   upsertBookHighlight(highlight: BookHighlightRust): Promise<BookHighlightRust>
@@ -223,6 +289,14 @@ class TauriClient implements CoreClient {
     return invoke('reorder_screen_views', { entity, parentId, orderedIds })
   }
 
+  async markOrphanScreenViews(livePrefix: string, orphanPrefix: string, blockId: string): Promise<number> {
+    return invoke('mark_orphan_screen_views', { livePrefix, orphanPrefix, blockId })
+  }
+
+  async cleanupOrphanScreenViews(orphanPrefix: string, livePrefix: string): Promise<OrphanCleanupReportRust> {
+    return invoke('cleanup_orphan_screen_views', { orphanPrefix, livePrefix })
+  }
+
   async saveBlockTree(blocks: BlockUpdate[]): Promise<BlockSaveResult[]> {
     return invoke('save_block_tree', { blocks })
   }
@@ -233,6 +307,10 @@ class TauriClient implements CoreClient {
 
   async undeleteBlocks(ids: string[]): Promise<void> {
     return invoke('undelete_blocks', { ids })
+  }
+
+  async moveBlocks(targets: BlockMoveTargetInput[]): Promise<void> {
+    return invoke('move_blocks', { targets })
   }
 
   async getPage(pageId: string): Promise<Page> {
@@ -285,16 +363,22 @@ class TauriClient implements CoreClient {
     return invoke('get_outlinks', { pageId })
   }
 
-  async getProperties(blockId: string): Promise<Property[]> {
-    return invoke('get_properties', { blockId })
+  async getFieldValues(blockId: string): Promise<FieldValue[]> {
+    return invoke('get_field_values', { blockId })
   }
 
-  async setProperty(blockId: string, key: string, value: string, type: string): Promise<Property> {
-    return invoke('set_property', { blockId, key, value, type })
+  async getFieldValuesByField(fieldDefinitionId: string): Promise<FieldValue[]> {
+    const results = await this.executeBatch([{ entity: 'field_value', action: 'get_by_field', params: { field_definition_id: fieldDefinitionId } }])
+    const first = Array.isArray(results) ? results[0] : results
+    return (Array.isArray(first) ? first : []) as unknown as FieldValue[]
   }
 
-  async deleteProperty(blockId: string, key: string): Promise<void> {
-    return invoke('delete_property', { blockId, key })
+  async setFieldValue(blockId: string, key: string, value: string, type: string): Promise<FieldValue> {
+    return invoke('set_field_value', { blockId, key, value, type })
+  }
+
+  async deleteFieldValue(blockId: string, key: string): Promise<void> {
+    return invoke('delete_field_value', { blockId, key })
   }
 
   async getRelationshipTypes(): Promise<RelationshipType[]> {
@@ -305,6 +389,79 @@ class TauriClient implements CoreClient {
     return invoke('get_templates')
   }
 
+  async setBlockTags(blockId: string, tags: string[]): Promise<Block> {
+    const results = await this.executeBatch([
+      { entity: 'block', action: 'set_tags', params: { id: blockId, tags } },
+    ])
+    const first = Array.isArray(results) ? results[0] : results
+    return first as unknown as Block
+  }
+
+  // ---- ADR-0049 D6：Tag 统一字段模型（均走 execute_batch 单源分派） ----
+  async getTags(): Promise<PersistedTag[]> {
+    const results = await this.executeBatch([{ entity: 'tag', action: 'get', params: {} }])
+    const first = Array.isArray(results) ? results[0] : results
+    return (first as unknown as PersistedTag[]) ?? []
+  }
+
+  async getTagTree(): Promise<PersistedTagTreeEntry[]> {
+    const results = await this.executeBatch([{ entity: 'tag', action: 'tree', params: {} }])
+    const first = Array.isArray(results) ? results[0] : results
+    return (first as unknown as PersistedTagTreeEntry[]) ?? []
+  }
+
+  async createTag(params: CreateTagParams): Promise<PersistedTag> {
+    const results = await this.executeBatch([{ entity: 'tag', action: 'create', params }])
+    return (Array.isArray(results) ? results[0] : results) as unknown as PersistedTag
+  }
+
+  async updateTag(params: UpdateTagParams): Promise<PersistedTag> {
+    const results = await this.executeBatch([{ entity: 'tag', action: 'update', params }])
+    return (Array.isArray(results) ? results[0] : results) as unknown as PersistedTag
+  }
+
+  async setTagParent(params: SetTagParentParams): Promise<PersistedTag> {
+    const results = await this.executeBatch([{ entity: 'tag', action: 'set_parent', params }])
+    return (Array.isArray(results) ? results[0] : results) as unknown as PersistedTag
+  }
+
+  async deleteTag(id: string): Promise<void> {
+    await this.executeBatch([{ entity: 'tag', action: 'delete', params: { id } }])
+  }
+
+  async getFieldDefinitions(): Promise<PersistedFieldDefinition[]> {
+    const results = await this.executeBatch([{ entity: 'field_definition', action: 'get', params: {} }])
+    const first = Array.isArray(results) ? results[0] : results
+    return (first as unknown as PersistedFieldDefinition[]) ?? []
+  }
+
+  async createFieldDefinition(params: CreateFieldDefinitionParams): Promise<PersistedFieldDefinition> {
+    const results = await this.executeBatch([{ entity: 'field_definition', action: 'create', params }])
+    return (Array.isArray(results) ? results[0] : results) as unknown as PersistedFieldDefinition
+  }
+
+  async updateFieldDefinition(params: UpdateFieldDefinitionParams): Promise<PersistedFieldDefinition> {
+    const results = await this.executeBatch([{ entity: 'field_definition', action: 'update', params }])
+    return (Array.isArray(results) ? results[0] : results) as unknown as PersistedFieldDefinition
+  }
+
+  async deleteFieldDefinition(id: string): Promise<DeleteFieldDefinitionResult> {
+    const results = await this.executeBatch([{ entity: 'field_definition', action: 'delete', params: { id } }])
+    return (Array.isArray(results) ? results[0] : results) as unknown as DeleteFieldDefinitionResult
+  }
+
+  async getDeletedPresetFieldDefinitions(): Promise<PersistedFieldDefinition[]> {
+    const results = await this.executeBatch([{ entity: 'field_definition', action: 'get_deleted_presets', params: {} }])
+    const first = Array.isArray(results) ? results[0] : results
+    return (first as unknown as PersistedFieldDefinition[]) ?? []
+  }
+
+  async restoreBuiltinPresets(): Promise<{ restored: number }> {
+    const results = await this.executeBatch([{ entity: 'field_definition', action: 'restore_presets', params: {} }])
+    const first = Array.isArray(results) ? results[0] : results
+    return (first as unknown as { restored: number }) ?? { restored: 0 }
+  }
+
   async search(query: string): Promise<SearchResult[]> {
     return invoke('search', { query })
   }
@@ -313,31 +470,7 @@ class TauriClient implements CoreClient {
     return invoke('execute_batch', { operations })
   }
 
-  async createBlockVersion(blockId: string, snapshot: string, hash: string, reason: string, checkpointName?: string): Promise<BlockVersion> {
-    return invoke('create_block_version', { blockId, snapshot, hash, reason, checkpointName })
-  }
-
-  async getBlockVersions(blockId: string): Promise<BlockVersion[]> {
-    return invoke('get_block_versions', { blockId })
-  }
-
-  async getBlockVersionById(id: string): Promise<BlockVersion> {
-    return invoke('get_block_version_by_id', { id })
-  }
-
-  async restoreBlockVersion(versionId: string): Promise<BlockVersion> {
-    return invoke('restore_block_version', { versionId })
-  }
-
-  async deleteBlockVersion(versionId: string): Promise<void> {
-      return invoke('delete_block_version', { versionId })
-    }
-
-    async cleanupBlockVersions(retentionDays: number): Promise<void> {
-      return invoke('cleanup_block_versions', { retentionDays })
-    }
-
-    async getNotification(id: string): Promise<Notification> {
+  async getNotification(id: string): Promise<Notification> {
       return invoke('get_notification', { id })
     }
 
@@ -574,6 +707,16 @@ class WasmClientAdapter implements CoreClient {
     throw new Error('WASM: screens not supported')
   }
 
+  // 网页端 screen_view 本身就是空实现（getScreenViews 返回 []），孤儿清理无对象可清 —— 静默跳过，
+  // 不抛错以免启动钩子在 dev/网页端反复打红。
+  async markOrphanScreenViews(_livePrefix: string, _orphanPrefix: string, _blockId: string): Promise<number> {
+    return 0
+  }
+
+  async cleanupOrphanScreenViews(_orphanPrefix: string, _livePrefix: string): Promise<OrphanCleanupReportRust> {
+    return { deleted_screens: 0, deleted_tabs: 0, restored: 0 }
+  }
+
   async saveBlockTree(blocks: BlockUpdate[]): Promise<BlockSaveResult[]> {
     const blocksJson = JSON.stringify(blocks)
     const result = await this.wasm.save_block_tree(blocksJson)
@@ -591,6 +734,10 @@ class WasmClientAdapter implements CoreClient {
 
   async undeleteBlocks(ids: string[]): Promise<void> {
     await this.wasm.undelete_blocks(JSON.stringify(ids))
+  }
+
+  async moveBlocks(targets: BlockMoveTargetInput[]): Promise<void> {
+    await this.wasm.move_blocks(JSON.stringify(targets))
   }
 
   async getPage(pageId: string): Promise<Page> {
@@ -646,16 +793,22 @@ class WasmClientAdapter implements CoreClient {
     return this.wasm.get_outlinks(pageId)
   }
 
-  async getProperties(blockId: string): Promise<Property[]> {
-    return this.wasm.get_properties(blockId)
+  async getFieldValues(blockId: string): Promise<FieldValue[]> {
+    return this.wasm.get_field_values(blockId)
   }
 
-  async setProperty(blockId: string, key: string, value: string, type: string): Promise<Property> {
-    return this.wasm.set_property(blockId, key, value, type)
+  async getFieldValuesByField(fieldDefinitionId: string): Promise<FieldValue[]> {
+    const results = await this.executeBatch([{ entity: 'field_value', action: 'get_by_field', params: { field_definition_id: fieldDefinitionId } }])
+    const first = Array.isArray(results) ? results[0] : results
+    return (Array.isArray(first) ? first : []) as unknown as FieldValue[]
   }
 
-  async deleteProperty(blockId: string, key: string): Promise<void> {
-    return this.wasm.delete_property(blockId, key)
+  async setFieldValue(blockId: string, key: string, value: string, type: string): Promise<FieldValue> {
+    return this.wasm.set_field_value(blockId, key, value, type)
+  }
+
+  async deleteFieldValue(blockId: string, key: string): Promise<void> {
+    return this.wasm.delete_field_value(blockId, key)
   }
 
   async getRelationshipTypes(): Promise<RelationshipType[]> {
@@ -675,6 +828,79 @@ class WasmClientAdapter implements CoreClient {
     return (first as unknown as UserTemplate[]) || []
   }
 
+  async setBlockTags(blockId: string, tags: string[]): Promise<Block> {
+    const results = await this.executeBatch([
+      { entity: 'block', action: 'set_tags', params: { id: blockId, tags } },
+    ])
+    const first = Array.isArray(results) ? results[0] : results
+    return first as unknown as Block
+  }
+
+  // ---- ADR-0049 D6：Tag 统一字段模型（均走 execute_batch 单源分派） ----
+  async getTags(): Promise<PersistedTag[]> {
+    const results = await this.executeBatch([{ entity: 'tag', action: 'get', params: {} }])
+    const first = Array.isArray(results) ? results[0] : results
+    return (first as unknown as PersistedTag[]) ?? []
+  }
+
+  async getTagTree(): Promise<PersistedTagTreeEntry[]> {
+    const results = await this.executeBatch([{ entity: 'tag', action: 'tree', params: {} }])
+    const first = Array.isArray(results) ? results[0] : results
+    return (first as unknown as PersistedTagTreeEntry[]) ?? []
+  }
+
+  async createTag(params: CreateTagParams): Promise<PersistedTag> {
+    const results = await this.executeBatch([{ entity: 'tag', action: 'create', params }])
+    return (Array.isArray(results) ? results[0] : results) as unknown as PersistedTag
+  }
+
+  async updateTag(params: UpdateTagParams): Promise<PersistedTag> {
+    const results = await this.executeBatch([{ entity: 'tag', action: 'update', params }])
+    return (Array.isArray(results) ? results[0] : results) as unknown as PersistedTag
+  }
+
+  async setTagParent(params: SetTagParentParams): Promise<PersistedTag> {
+    const results = await this.executeBatch([{ entity: 'tag', action: 'set_parent', params }])
+    return (Array.isArray(results) ? results[0] : results) as unknown as PersistedTag
+  }
+
+  async deleteTag(id: string): Promise<void> {
+    await this.executeBatch([{ entity: 'tag', action: 'delete', params: { id } }])
+  }
+
+  async getFieldDefinitions(): Promise<PersistedFieldDefinition[]> {
+    const results = await this.executeBatch([{ entity: 'field_definition', action: 'get', params: {} }])
+    const first = Array.isArray(results) ? results[0] : results
+    return (first as unknown as PersistedFieldDefinition[]) ?? []
+  }
+
+  async createFieldDefinition(params: CreateFieldDefinitionParams): Promise<PersistedFieldDefinition> {
+    const results = await this.executeBatch([{ entity: 'field_definition', action: 'create', params }])
+    return (Array.isArray(results) ? results[0] : results) as unknown as PersistedFieldDefinition
+  }
+
+  async updateFieldDefinition(params: UpdateFieldDefinitionParams): Promise<PersistedFieldDefinition> {
+    const results = await this.executeBatch([{ entity: 'field_definition', action: 'update', params }])
+    return (Array.isArray(results) ? results[0] : results) as unknown as PersistedFieldDefinition
+  }
+
+  async deleteFieldDefinition(id: string): Promise<DeleteFieldDefinitionResult> {
+    const results = await this.executeBatch([{ entity: 'field_definition', action: 'delete', params: { id } }])
+    return (Array.isArray(results) ? results[0] : results) as unknown as DeleteFieldDefinitionResult
+  }
+
+  async getDeletedPresetFieldDefinitions(): Promise<PersistedFieldDefinition[]> {
+    const results = await this.executeBatch([{ entity: 'field_definition', action: 'get_deleted_presets', params: {} }])
+    const first = Array.isArray(results) ? results[0] : results
+    return (first as unknown as PersistedFieldDefinition[]) ?? []
+  }
+
+  async restoreBuiltinPresets(): Promise<{ restored: number }> {
+    const results = await this.executeBatch([{ entity: 'field_definition', action: 'restore_presets', params: {} }])
+    const first = Array.isArray(results) ? results[0] : results
+    return (first as unknown as { restored: number }) ?? { restored: 0 }
+  }
+
   async search(query: string): Promise<SearchResult[]> {
     return this.wasm.search(query)
   }
@@ -683,30 +909,6 @@ class WasmClientAdapter implements CoreClient {
     const opsJson = JSON.stringify(operations)
     const result = await this.wasm.execute_batch(opsJson)
     return parseJsonResult(result)
-  }
-
-  async createBlockVersion(blockId: string, snapshot: string, hash: string, reason: string, checkpointName?: string): Promise<BlockVersion> {
-    return this.wasm.create_block_version(blockId, snapshot, hash, reason, checkpointName)
-  }
-
-  async getBlockVersions(blockId: string): Promise<BlockVersion[]> {
-    return this.wasm.get_block_versions(blockId)
-  }
-
-  async getBlockVersionById(id: string): Promise<BlockVersion> {
-    return this.wasm.get_block_version_by_id(id)
-  }
-
-  async restoreBlockVersion(versionId: string): Promise<BlockVersion> {
-    return this.wasm.restore_block_version(versionId)
-  }
-
-  async deleteBlockVersion(versionId: string): Promise<void> {
-    await this.wasm.delete_block_version(versionId)
-  }
-
-  async cleanupBlockVersions(retentionDays: number): Promise<void> {
-    await this.wasm.cleanup_block_versions(retentionDays)
   }
 
   async getNotification(id: string): Promise<Notification> {
@@ -869,6 +1071,17 @@ export async function initCoreClient(): Promise<CoreClient> {
 
   if (isTauriEnvironment()) {
     coreClient = new TauriClient()
+    // dev 免重编：Tauri 数据走原生 SQLite，seed 需经命令注入并重跑幂等 seeding；
+    // 改 systemFieldSeed.json → HMR 整页刷新 → 此处以最新值重注入，无需重编/重启。
+    // 生产 / vitest 不注入（Rust 走编译期 include_str / 内置默认）。
+    if (import.meta.env.DEV && import.meta.env.MODE === 'development') {
+      try {
+        await invoke('reload_system_seed', { seedJson: JSON.stringify(seedJson) })
+        console.info('[CoreClient] dev seed injected & re-seeded')
+      } catch (err) {
+        console.warn('[CoreClient] dev seed reload failed (non-fatal):', err)
+      }
+    }
     console.info('[CoreClient] Using Tauri Command client')
   } else {
     const wasm = await initWasmClient()

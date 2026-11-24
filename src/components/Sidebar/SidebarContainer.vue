@@ -1,33 +1,27 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
+
 import { useLayoutShell } from '../../composables/useLayoutShell'
 import { useSidebar } from '../../composables/useSidebar'
 import Icon from '../Icons/Icon.vue'
-import SidebarFavorites from './SidebarFavorites.vue'
 import SidebarFooter from './SidebarFooter.vue'
 import SidebarGraphItem from './SidebarGraphItem.vue'
-import SidebarHeader from './SidebarHeader.vue'
 import SidebarIdeas from './SidebarIdeas.vue'
 import SidebarPages from './SidebarPages.vue'
+import SidebarPinned from './SidebarPinned.vue'
 import SidebarRecent from './SidebarRecent.vue'
+import SidebarTagItem from './SidebarTagItem.vue'
 import SidebarTaskItem from './SidebarTaskItem.vue'
 
-const { isCollapsed, toggle } = useSidebar()
+const { isCollapsed } = useSidebar()
 
 // 把侧栏根元素写入布局壳，供 Toc 实测定位（取代全局 querySelector('.sidebar')）。
 const shell = useLayoutShell()
 const sidebarRef = ref<HTMLElement | null>(null)
 watch(sidebarRef, el => { shell.sidebarEl.value = el }, { immediate: true })
 
-defineProps<{
-  canGoBack: boolean
-  canGoForward: boolean
-}>()
-
 defineEmits<{
   (e: 'open-search'): void
-  (e: 'goBack'): void
-  (e: 'goForward'): void
 }>()
 </script>
 
@@ -36,28 +30,11 @@ defineEmits<{
     class="sidebar-wrapper"
     :class="{ collapsed: isCollapsed }"
   >
-    <button
-      class="sidebar-floating-toggle"
-      :title="isCollapsed ? '展开侧边栏' : '折叠侧边栏'"
-      :class="{ collapsed: isCollapsed }"
-      @click="toggle"
-    >
-      <Icon
-        :name="isCollapsed ? 'icon-panel-left-open' : 'icon-panel-left-close'"
-        :size="16"
-      />
-    </button>
     <aside
       ref="sidebarRef"
       class="sidebar"
     >
-      <SidebarHeader
-        :can-go-back="canGoBack"
-        :can-go-forward="canGoForward"
-        @go-back="$emit('goBack')"
-        @go-forward="$emit('goForward')"
-      />
-
+      <!-- <SidebarHeader /> -->
       <div class="sidebar-content">
         <!-- 搜索触发 -->
         <div
@@ -79,12 +56,13 @@ defineEmits<{
         <SidebarPages />
         <SidebarGraphItem />
         <SidebarTaskItem />
+        <SidebarTagItem />
+
+        <!-- 置顶列表（随内容取高，条目多时自身滚动） -->
+        <SidebarPinned />
 
         <!-- 最近列表（固定高度，不滚动） -->
         <SidebarRecent />
-
-        <!-- 收藏列表（flex 撑满，独立滚动） -->
-        <SidebarFavorites />
       </div>
 
       <SidebarFooter />
@@ -104,41 +82,16 @@ defineEmits<{
   transform: translateX(-8px);
 }
 
-.sidebar-floating-toggle {
-  position: fixed;
-  top: calc(var(--nav-height) / 2 - 13px);
-  left: var(--space-2);
-  width: 26px;
-  height: 26px;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--radius-sm);
-  color: var(--text-tertiary);
-  transition: background 100ms ease, color 100ms ease, left 200ms ease;
-  z-index: var(--z-dropdown);
-}
-
-.sidebar-floating-toggle:hover {
-  background: var(--bg-hover);
-  color: var(--text-secondary);
-}
-
-.sidebar-floating-toggle:active {
-  transform: scale(0.95);
-}
-
 .sidebar-content {
   flex: 1;
   overflow: hidden;
   min-height: 0;
   display: flex;
   flex-direction: column;
+  // border-right: 1px solid var(--border);
   gap: var(--space-2);
-  padding: 8px 8px;
+  // 原 32px 顶部留白用于避开覆盖式顶栏；顶栏入文档流后改为常规 8px
+  padding: 8px 8px 8px;
 }
 
 .search-trigger {
@@ -150,7 +103,7 @@ defineEmits<{
   border-radius: var(--radius-sm);
   background: var(--bg-hover);
   cursor: pointer;
-  transition: background 80ms ease;
+  transition: background var(--dur-fast) var(--ease-out);
 }
 
 .search-trigger:hover {

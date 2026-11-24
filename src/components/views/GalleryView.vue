@@ -8,6 +8,7 @@
  */
 import { Book } from 'lucide-vue-next'
 import { computed, ref, watch } from 'vue'
+
 import type { FieldDescriptor } from '../../core/query'
 import type { GalleryConfig } from '../../core/view'
 import { assetStorage } from '../../utils/asset'
@@ -35,7 +36,7 @@ function idOf(item: T): string {
 
 /** 卡片标题字段：title（或首个 text 字段），与 CalendarView 约定一致。 */
 const titleField = computed<FieldDescriptor | undefined>(
-  () => props.fields.find((f) => f.key === 'title') ?? props.fields.find((f) => f.type === 'text'),
+  () => props.fields.find((f) => f.key === 'title') ?? props.fields.find((f) => f.type === 'string'),
 )
 
 /** 卡片副标题字段：aliases（书 Page 的作者按票 01 导入约定存 aliases[0]）。 */
@@ -191,15 +192,15 @@ watch(
   flex-direction: column;
   border: 1px solid var(--border);
   border-radius: var(--radius-md, 10px);
-  background: var(--bg-base2);
+  background: var(--grad-surface); // 维度②：顶亮渐变表面
   overflow: hidden;
   cursor: pointer;
-  transition: border-color 100ms ease, transform 100ms ease, box-shadow 100ms ease;
+  transition: border-color var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
 
   &:hover {
     border-color: var(--accent);
     transform: translateY(-2px);
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+    box-shadow: var(--shadow-elevation-hover); // 维度①：物理抬升 + token 化（替换硬编码阴影）
   }
 }
 

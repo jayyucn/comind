@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ChevronLeft, ChevronRight } from 'lucide-vue-next';
-import { computed, ref, watch } from 'vue';
-import BasePopover from './common/BasePopover.vue';
+import { ChevronLeft, ChevronRight } from 'lucide-vue-next'
+import { computed, ref, watch } from 'vue'
+
+import BasePopover from './common/BasePopover.vue'
 
 const props = withDefaults(defineProps<{
   visible: boolean
@@ -294,14 +295,12 @@ watch(
 </template>
 
 <style scoped>
-@use '../styles/mixins' as *;
-
 /* Popover 容器 */
 .cal-popover {
   background: var(--bg-base);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  box-shadow: var(--shadow-modal);
+  box-shadow: var(--shadow-floating);
   padding: var(--space-3);
   display: flex;
   flex-direction: column;
@@ -343,7 +342,7 @@ watch(
   background-position: right 5px center;
   background-size: 10px;
   min-width: 72px;
-  transition: border-color var(--transition-base);
+  transition: border-color var(--dur-base) var(--ease-out);
 
   &:hover { border-color: var(--border-strong); }
   &:focus { border-color: var(--accent); box-shadow: var(--shadow-focus); }
@@ -373,7 +372,7 @@ watch(
   cursor: pointer;
   border-radius: var(--radius-sm);
   padding: 0;
-  transition: background var(--transition-base);
+  transition: background var(--dur-base) var(--ease-out);
 
   &:hover { background: var(--bg-hover); color: var(--text-primary); }
 
@@ -418,7 +417,7 @@ watch(
   border-radius: 50%;
   font-size: var(--text-xs);
   padding: 0;
-  transition: background var(--transition-base), color var(--transition-base);
+  transition: background var(--dur-base) var(--ease-out), color var(--dur-base) var(--ease-out);
 
   &:hover { background: var(--bg-hover); }
 }

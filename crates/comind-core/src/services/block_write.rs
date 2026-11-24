@@ -1,11 +1,35 @@
 use crate::services::{
-    build_segments_for_block, BlockService, BlockVersionService, LinkService, NotificationService,
-    PageService, PropertyService,
+    build_segments_for_block, BlockService, FieldValueService, LinkService, NotificationService,
+    PageService,
 };
-use crate::storage::{StorageAdapter, TransactionalStorageAdapter};
+use crate::storage::{repository, StorageAdapter, TransactionalStorageAdapter};
 use crate::types::{Block, BlockSaveResult, SyncTable};
 use std::collections::HashMap;
 use std::error::Error;
+
+/// 搬移失败的错误码：根块不是「本库仍软删」，无法复活 ⇒ 前端回落新建副本。
+pub const BLOCK_MOVE_NOT_REVIVABLE: &str = "BLOCK_MOVE_NOT_REVIVABLE";
+/// 搬移失败的错误码：目标父块在自己子树内（环）。
+pub const BLOCK_MOVE_INTO_SELF: &str = "BLOCK_MOVE_INTO_SELF";
+
+/// `move_blocks` 的一个目标：把 `block_id` 这棵子树搬到 `page_id` 下的
+/// `parent_id`（`None` = 页面顶层）第 `pos` 位。
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BlockMoveTarget {
+    pub block_id: String,
+    pub page_id: String,
+    pub parent_id: Option<String>,
+    pub pos: i64,
+}
+
+/// 错误码 + 相关 id 拼成一条可被前端字符串匹配的错误（IPC 只透传 `Display`）。
+fn move_error(code: &str, id: &str) -> Box<dyn Error> {
+    Box::new(std::io::Error::new(
+        std::io::ErrorKind::InvalidInput,
+        format!("{}:{}", code, id),
+    ))
+}
 
 /// Outcome of `save_blocks`: per-block results for the frontend, plus the
 /// (table, ids) sets the sync layer must be notified about after commit.
@@ -25,18 +49,24 @@ pub struct SaveOutcome {
 pub struct BlockWriteService;
 
 impl BlockWriteService {
-    /// Upsert a batch of blocks and build the frontend save results (snapshot +
+    /// Upsert a batch of blocks and build the frontend save results (block +
     /// render segments) plus the sync-changes set, all inside one transaction.
     ///
     /// Behavior preserved from the previous IPC-layer orchestration:
     /// - upsert by existence check (existing → update, missing → create);
-    /// - snapshot and render segments are best-effort (`unwrap_or_default`);
+    /// - render segments are best-effort (`unwrap_or_default`);
     /// - page touch + word_count recount (`PageService::recount_word_count`) is
     ///   best-effort and in-transaction;
     /// - per-block id is reported under `SyncTable::Block`.
+    /// `create_missing_tags`：是否允许按 content 自动建/复活标签（ADR-0050 content 联动）。
+    /// 编辑器防抖打字保存传 `false`（否则 `#f`、`#fo` 中间前缀会各建一个垃圾标签），
+    /// 提交动作（blur / 拆分 / 粘贴 / 整树保存）传 `true` —— 与 `[[page]]` 的创建语义对齐。
+    /// 同一个开关同时门控 `[[page]]` 的目标页创建（`ContentParseService::sync_links_for_block`），
+    /// 二者都是「内容里写出的名字在提交时点落成实体」。
     pub fn save_blocks<S: TransactionalStorageAdapter>(
         adapter: &mut S,
         blocks: Vec<Block>,
+        create_missing_tags: bool,
     ) -> Result<SaveOutcome, Box<dyn Error>> {
         adapter.transaction(|storage| {
             let mut results = Vec::new();
@@ -61,6 +91,7 @@ impl BlockWriteService {
                             Some(&block.r#type),
                             block.parent_id.as_deref(),
                             Some(block.pos),
+                            create_missing_tags,
                         )?;
                         // `update` 的 parent_id 为 None 表示「不修改」，无法表达「移到根级」；
                         // 保存路径下 parent_id 是权威值，与库中不一致时显式写回（含清空为 NULL）。
@@ -82,13 +113,9 @@ impl BlockWriteService {
                         &block.format,
                         &block.r#type,
                         Some(&block.id),
+                        create_missing_tags,
                     )?,
                 };
-
-                // Build snapshot inside the transaction (block/properties/links
-                // are just-written; zero extra round-trips beyond the reads here).
-                let snapshot =
-                    BlockVersionService::build_snapshot(storage, &saved_block.id).unwrap_or_default();
 
                 // Render segments built during save so the frontend can restore
                 // link/dateRef rendering immediately after edit→render transition.
@@ -97,7 +124,6 @@ impl BlockWriteService {
 
                 results.push(BlockSaveResult {
                     block: saved_block,
-                    snapshot,
                     render_segments,
                 });
             }
@@ -111,9 +137,9 @@ impl BlockWriteService {
                     .or_insert_with(Vec::new)
                     .extend(links.iter().map(|l| l.id.clone()));
                 let props =
-                    PropertyService::get_by_block_id(storage, &res.block.id).unwrap_or_default();
+                    FieldValueService::get_by_block_id(storage, &res.block.id).unwrap_or_default();
                 sync_changes
-                    .entry(SyncTable::Property)
+                    .entry(SyncTable::FieldValue)
                     .or_insert_with(Vec::new)
                     .extend(props.iter().map(|p| p.id.clone()));
                 let notifs =
@@ -136,8 +162,8 @@ impl BlockWriteService {
         })
     }
 
-    /// Delete a single block and its cascade (versions → links → properties →
-    /// block), reporting the deleted ids for sync, then page touch.
+    /// Delete a single block and its cascade (links → properties → block),
+    /// reporting the deleted ids for sync, then page touch.
     pub fn delete_block_cascade<S: TransactionalStorageAdapter>(
         adapter: &mut S,
         block_id: &str,
@@ -220,6 +246,108 @@ impl BlockWriteService {
         })
     }
 
+    /// 搬移一组块（ADR-0025 D4b 的「剪切 → 粘贴 = 搬走同一个块」）。
+    ///
+    /// 语义是**移动**而非复制：id 不变，因此挂在这个 id 上的东西（`(( ))` 引用、
+    /// 查询块的命名视图、字段值、块卡缓存）全部跟着走，不需要任何重建。
+    /// 调用方（前端）负责算好每个根块的目标 `page_id` / `parent_id` / `pos`。
+    ///
+    /// 前置条件是「这些根块此刻仍在本库处于软删状态」（= 刚被剪切）；任一条不满足
+    /// 即返回 `BLOCK_MOVE_NOT_REVIVABLE:<id>`，由前端回落到「新建副本」路径 ——
+    /// 剪贴板是系统级共享资源，可能来自另一台机器/另一个库，不能假定一定能复活。
+    /// 搬进自己的子树返回 `BLOCK_MOVE_INTO_SELF:<id>`（环）。
+    ///
+    /// 整组在**一个事务**里做：任一目标失败全部回滚，不会出现「一半搬了、一半没搬」。
+    /// 子树归属页跟着改（含仍软删的后代 —— 它们不可见，但被回收站恢复后应落在新页）。
+    pub fn move_blocks<S: TransactionalStorageAdapter>(
+        adapter: &mut S,
+        targets: &[BlockMoveTarget],
+    ) -> Result<HashMap<SyncTable, Vec<String>>, Box<dyn Error>> {
+        adapter.transaction(|storage| {
+            // ① 先整组校验，再动任何一行 —— 校验失败时事务里什么都还没写。
+            for t in targets {
+                let root = BlockService::get_by_id_including_deleted(storage, &t.block_id)
+                    .map_err(|_| move_error(BLOCK_MOVE_NOT_REVIVABLE, &t.block_id))?;
+                if root.deleted_at.is_none() {
+                    // 已 live：可能是复制（源块还在）、连粘第二次、或用户已从回收站恢复。
+                    return Err(move_error(BLOCK_MOVE_NOT_REVIVABLE, &t.block_id));
+                }
+                if let Some(parent_id) = &t.parent_id {
+                    if Self::collect_subtree_ids(storage, &t.block_id)?.contains(parent_id) {
+                        return Err(move_error(BLOCK_MOVE_INTO_SELF, &t.block_id));
+                    }
+                    // 目标父块必须在目标页且 live，否则会搬出一个跨页挂着的孤儿。
+                    let parent = BlockService::get_by_id(storage, parent_id)
+                        .map_err(|_| move_error(BLOCK_MOVE_NOT_REVIVABLE, parent_id))?;
+                    if parent.page_id != t.page_id {
+                        return Err(move_error(BLOCK_MOVE_NOT_REVIVABLE, parent_id));
+                    }
+                }
+            }
+
+            let mut sync_changes: HashMap<SyncTable, Vec<String>> = HashMap::new();
+            let mut touched_pages: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+            for t in targets {
+                // ② 复活整棵仍软删的子树（live 子节点不碰，口径同 undelete_blocks）。
+                let source_page = BlockService::get_by_id_including_deleted(storage, &t.block_id)
+                    .map(|b| b.page_id)
+                    .unwrap_or_default();
+                touched_pages.insert(source_page);
+                Self::undelete_block_subtree_inner(storage, &t.block_id, &mut sync_changes)?;
+
+                // ③ 整棵子树改归属页（含仍软删的后代：它们复活后应落在新页）。
+                let ids = Self::collect_subtree_ids(storage, &t.block_id)?;
+                for id in &ids {
+                    let mut block = BlockService::get_by_id_including_deleted(storage, id)?;
+                    if block.page_id == t.page_id {
+                        continue;
+                    }
+                    block.page_id = t.page_id.clone();
+                    repository::BlockRepository::update(storage.blocks(), &block)?;
+                }
+
+                // ④ 根块换父级与位置；后代的 parent_id 不动（子树内部结构原样保留）。
+                let mut root = BlockService::get_by_id(storage, &t.block_id)?;
+                root.parent_id = t.parent_id.clone();
+                root.pos = t.pos;
+                repository::BlockRepository::update(storage.blocks(), &root)?;
+
+                sync_changes
+                    .entry(SyncTable::Block)
+                    .or_insert_with(Vec::new)
+                    .extend(ids);
+                touched_pages.insert(t.page_id.clone());
+            }
+
+            // ⑤ 去重（复活与改页会重复记同一 id），并重算受影响页字数。
+            if let Some(blocks) = sync_changes.get_mut(&SyncTable::Block) {
+                let mut seen = std::collections::HashSet::new();
+                blocks.retain(|id| seen.insert(id.clone()));
+            }
+            for page_id in &touched_pages {
+                let _ = PageService::recount_word_count(storage, page_id);
+            }
+            Ok(sync_changes)
+        })
+    }
+
+    /// 收集一棵子树的全部 id（根在最前），**含仍软删的后代**。
+    fn collect_subtree_ids(
+        storage: &mut dyn StorageAdapter,
+        root_id: &str,
+    ) -> Result<Vec<String>, Box<dyn Error>> {
+        let mut out = Vec::new();
+        let mut stack = vec![root_id.to_string()];
+        while let Some(current) = stack.pop() {
+            out.push(current.clone());
+            for child in BlockService::get_children_including_deleted(storage, &current)? {
+                stack.push(child.id);
+            }
+        }
+        Ok(out)
+    }
+
     /// Single-block delete skeleton (ADR-0019 Q8/Q14), shared by
     /// `delete_block_cascade` and `delete_page_cascade`. Runs on a
     /// `&mut dyn StorageAdapter` so callers wrap it in their own transaction.
@@ -239,16 +367,14 @@ impl BlockWriteService {
             .entry(SyncTable::Link)
             .or_insert_with(Vec::new)
             .extend(links.iter().map(|l| l.id.clone()));
-        let props = PropertyService::get_by_block_id(storage, block_id)?;
+        let props = FieldValueService::get_by_block_id(storage, block_id)?;
         sync_changes
-            .entry(SyncTable::Property)
+            .entry(SyncTable::FieldValue)
             .or_insert_with(Vec::new)
             .extend(props.iter().map(|p| p.id.clone()));
 
-        // BlockVersion has FK (block_id) RESTRICT — must delete before Block.
-        BlockVersionService::delete_by_block_id(storage, block_id)?;
         LinkService::delete_by_source_block_id(storage, block_id)?;
-        PropertyService::delete_by_block_id(storage, block_id)?;
+        FieldValueService::delete_by_block_id(storage, block_id)?;
         // BlockService::delete handles dateRef + notification cleanup.
         BlockService::delete(storage, block_id)?;
 
@@ -310,7 +436,18 @@ impl BlockWriteService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::services::{FieldDefinitionService, TagService};
     use crate::storage::{repository, StorageAdapter, SQLiteAdapter};
+    use crate::types::field_definition::FieldDefinitionCreateOptions;
+    use crate::types::tag::{TagCreateOptions};
+
+    /// 测试默认走提交语义（create_missing_tags = true）；建签门控由专用用例覆盖。
+    fn save(
+        adapter: &mut SQLiteAdapter,
+        blocks: Vec<Block>,
+    ) -> Result<SaveOutcome, Box<dyn Error>> {
+        BlockWriteService::save_blocks(adapter, blocks, true)
+    }
 
     fn block(id: &str, page_id: &str, parent_id: Option<&str>, pos: i64) -> Block {
         Block {
@@ -320,11 +457,12 @@ mod tests {
             pos,
             content: "test content".to_string(),
             format: "{}".to_string(),
-            r#type: "bullet".to_string(),
+            r#type: "text".to_string(),
             created_at: 1,
             updated_at: 1,
             version: 0,
             deleted_at: None,
+            tags: Vec::new(),
         }
     }
 
@@ -348,12 +486,121 @@ mod tests {
             .id
     }
 
+    /// 建签门穿透 save_blocks：打字保存（false）不建 `#f` 这类中间标签，
+    /// 提交保存（true）才建。内容联动派生的 Block.tags 随之有无。
+    #[test]
+    fn save_blocks_gates_tag_creation_on_create_missing() {
+        let mut adapter = SQLiteAdapter::open_in_memory().unwrap();
+        let p1 = seed_page(&mut adapter, "p1");
+
+        // 打字中间态：#f 未建
+        BlockWriteService::save_blocks(
+            &mut adapter,
+            vec![block_with_content("b1", &p1, None, 1000, "hello #f")],
+            false,
+        )
+        .unwrap();
+        assert!(
+            repository::TagRepository::get_by_title(adapter.tags(), "f")
+                .unwrap()
+                .is_none()
+        );
+        assert!(BlockService::get_by_id(&mut adapter, "b1").unwrap().tags.is_empty());
+
+        // 提交态：#foo 建行并链接
+        BlockWriteService::save_blocks(
+            &mut adapter,
+            vec![block_with_content("b1", &p1, None, 1000, "hello #foo")],
+            true,
+        )
+        .unwrap();
+        let tags = BlockService::get_by_id(&mut adapter, "b1").unwrap().tags;
+        assert_eq!(tags.len(), 1);
+        assert_eq!(
+            repository::TagRepository::get_by_id(adapter.tags(), &tags[0])
+                .unwrap()
+                .title,
+            "foo"
+        );
+    }
+
+    /// 建页门穿透 save_blocks：打字保存（false）不建 `[[项` 这类中间页；
+    /// 提交保存（true）才建页并写 link 行（反链/图谱靠这行）。
+    #[test]
+    fn save_blocks_gates_page_creation_on_create_missing() {
+        let mut adapter = SQLiteAdapter::open_in_memory().unwrap();
+        let p1 = seed_page(&mut adapter, "p1");
+
+        // 打字中间态：目标页未建，链接也不入表。
+        BlockWriteService::save_blocks(
+            &mut adapter,
+            vec![block_with_content("b1", &p1, None, 1000, "see [[Target Page]]")],
+            false,
+        )
+        .unwrap();
+        assert!(
+            repository::PageRepository::get_by_title(adapter.pages(), "Target Page")
+                .unwrap()
+                .is_none()
+        );
+        assert!(repository::LinkRepository::get_by_source_block_id(adapter.links(), "b1")
+            .unwrap()
+            .is_empty());
+
+        // 提交态：建页 + 写边。
+        BlockWriteService::save_blocks(
+            &mut adapter,
+            vec![block_with_content("b1", &p1, None, 1000, "see [[Target Page]]")],
+            true,
+        )
+        .unwrap();
+        let page = repository::PageRepository::get_by_title(adapter.pages(), "Target Page")
+            .unwrap()
+            .expect("提交时点应建页");
+        let links = repository::LinkRepository::get_by_source_block_id(adapter.links(), "b1")
+            .unwrap();
+        assert_eq!(links.len(), 1);
+        assert_eq!(links[0].target_page_id, page.id);
+        assert_eq!(page.deleted_at, None);
+    }
+
+    /// 幂等：同标题重复提交不产生第二个页面行（UNIQUE(title) 不被触发）。
+    #[test]
+    fn save_blocks_page_creation_is_idempotent() {
+        let mut adapter = SQLiteAdapter::open_in_memory().unwrap();
+        let p1 = seed_page(&mut adapter, "p1");
+        let content = "a [[Dup]] b";
+
+        BlockWriteService::save_blocks(
+            &mut adapter,
+            vec![block_with_content("b1", &p1, None, 1000, content)],
+            true,
+        )
+        .unwrap();
+        BlockWriteService::save_blocks(
+            &mut adapter,
+            vec![block_with_content("b1", &p1, None, 1000, content)],
+            true,
+        )
+        .unwrap();
+
+        let all = repository::PageRepository::get_all(adapter.pages()).unwrap();
+        assert_eq!(all.iter().filter(|p| p.title == "Dup").count(), 1);
+        assert_eq!(
+            repository::LinkRepository::get_by_source_block_id(adapter.links(), "b1")
+                .unwrap()
+                .len(),
+            1,
+            "重复提交后仍只有一条 link（先删后建）"
+        );
+    }
+
     #[test]
     fn save_blocks_writes_and_builds_outcome() {
         let mut adapter = SQLiteAdapter::open_in_memory().unwrap();
         let p1 = seed_page(&mut adapter, "p1");
 
-        let outcome = BlockWriteService::save_blocks(
+        let outcome = save(
             &mut adapter,
             vec![block("b1", &p1, None, 1000), block("b2", &p1, Some("b1"), 1000)],
         )
@@ -361,9 +608,6 @@ mod tests {
 
         assert_eq!(outcome.results.len(), 2);
         assert_eq!(outcome.results[0].block.id, "b1");
-        // Snapshot is a real serialized BlockSnapshot, not an empty string.
-        assert!(!outcome.results[0].snapshot.is_empty());
-        assert!(outcome.results[0].snapshot.contains("\"block\""));
 
         // Both blocks reported under SyncTable::Block.
         let blocks_sync = outcome.sync_changes.get(&SyncTable::Block).unwrap();
@@ -383,7 +627,7 @@ mod tests {
         let p1 = seed_page(&mut adapter, "p1");
 
         // b2 先落在 b1 之下
-        BlockWriteService::save_blocks(
+        save(
             &mut adapter,
             vec![block("b1", &p1, None, 1000), block("b2", &p1, Some("b1"), 1000)],
         )
@@ -395,12 +639,67 @@ mod tests {
 
         // 再以 parent_id = None 保存（拖回根级）
         let outcome =
-            BlockWriteService::save_blocks(&mut adapter, vec![block("b2", &p1, None, 2000)]).unwrap();
+            save(&mut adapter, vec![block("b2", &p1, None, 2000)]).unwrap();
 
         assert!(outcome.results[0].block.parent_id.is_none());
         // 回归：`BlockService::update` 的 None 语义是「不修改」，保存路径必须显式补写 NULL，
         // 否则块会静默留在旧父级下（拖回根级 → reload 回退）。
         assert!(BlockService::get_by_id(&mut adapter, "b2").unwrap().parent_id.is_none());
+    }
+
+    /// 回归 #2 核心侧：新获得标签的块，其标签字段默认值应被自动填充为 FieldValue。
+    /// 若此测通过而 UI 仍不显示默认值，则病在「保存后未回读 property store」（前端刷新）。
+    #[test]
+    fn save_block_with_new_tag_fills_field_defaults() {
+        let mut adapter = SQLiteAdapter::open_in_memory().unwrap();
+        let p1 = seed_page(&mut adapter, "p1");
+
+        // 带默认值的字段定义（用非系统 key，避免与 open_in_memory 的 seed 撞 UNIQUE）
+        let fd = FieldDefinitionService::create(
+            &mut adapter,
+            FieldDefinitionCreateOptions {
+                key: "review_state".to_string(),
+                title: "复核状态".to_string(),
+                r#type: "string".to_string(),
+                closed_values: None,
+                default_value: Some("\"待办\"".to_string()),
+                is_system: false,
+                min: None,
+                max: None,
+                step: None,
+            },
+        )
+        .unwrap();
+
+        // 标签携带该字段
+        let tag_id = TagService::create(
+            &mut adapter,
+            TagCreateOptions {
+                title: "工作".to_string(),
+                field_ids: vec![fd.id.clone()],
+                parent_id: None,
+            },
+        )
+        .unwrap()
+        .id;
+
+        // 块内容引用该标签（提交语义 → 建签 + 打默认）
+        let outcome = save(
+            &mut adapter,
+            vec![block_with_content("b1", &p1, None, 1000, "#工作")],
+        )
+        .unwrap();
+        assert_eq!(outcome.results[0].block.tags, vec![tag_id]);
+
+        // 新获得标签 → 自动填默认值，生成 FieldValue
+        let fvs =
+            repository::FieldValueRepository::get_by_block_id(adapter.field_values(), "b1").unwrap();
+        assert_eq!(fvs.len(), 1, "应自动填一个默认值 FieldValue");
+        assert_eq!(fvs[0].field_definition_id, fd.id);
+        // string 类型 value_json 直通存**原文**：default_value 列的 JSON 文本（带引号）
+        // 必须换形为裸文本，否则 UI 显示带引号、PropertyInline 图标匹配（closed_values
+        // 按 === 严格相等）失败。回归：默认值「不要带引号」。
+        assert_eq!(fvs[0].value_json, "待办");
     }
 
     #[test]
@@ -415,7 +714,7 @@ mod tests {
         adapter.blocks().delete("dup").unwrap();
 
         // First block is valid; the dup block forces a mid-transaction failure.
-        let err = BlockWriteService::save_blocks(
+        let err = save(
             &mut adapter,
             vec![block("b1", &p1, None, 1000), block("dup", &p1, None, 600)],
         )
@@ -433,7 +732,7 @@ mod tests {
     fn delete_block_cascade_removes_block_and_reports() {
         let mut adapter = SQLiteAdapter::open_in_memory().unwrap();
         let p1 = seed_page(&mut adapter, "p1");
-        BlockWriteService::save_blocks(
+        save(
             &mut adapter,
             vec![block("b1", &p1, None, 1000)],
         )
@@ -448,14 +747,14 @@ mod tests {
         );
         // Keys present even when the collected sets are empty (empty tables).
         assert!(sync.contains_key(&SyncTable::Link));
-        assert!(sync.contains_key(&SyncTable::Property));
+        assert!(sync.contains_key(&SyncTable::FieldValue));
     }
 
     #[test]
     fn delete_block_cascade_missing_id_errors_without_side_effects() {
         let mut adapter = SQLiteAdapter::open_in_memory().unwrap();
         let p1 = seed_page(&mut adapter, "p1");
-        BlockWriteService::save_blocks(
+        save(
             &mut adapter,
             vec![block("b1", &p1, None, 1000)],
         )
@@ -472,7 +771,7 @@ mod tests {
     fn delete_page_cascade_removes_whole_tree() {
         let mut adapter = SQLiteAdapter::open_in_memory().unwrap();
         let p1 = seed_page(&mut adapter, "p1");
-        BlockWriteService::save_blocks(
+        save(
             &mut adapter,
             vec![block("b1", &p1, None, 1000), block("b2", &p1, Some("b1"), 1000)],
         )
@@ -498,7 +797,7 @@ mod tests {
         let mut adapter = SQLiteAdapter::open_in_memory().unwrap();
         let p1 = seed_page(&mut adapter, "p1");
 
-        BlockWriteService::save_blocks(
+        save(
             &mut adapter,
             vec![
                 block_with_content("b1", &p1, None, 1000, "你好 hello"),
@@ -516,7 +815,7 @@ mod tests {
     fn delete_block_cascade_recounts_page_word_count() {
         let mut adapter = SQLiteAdapter::open_in_memory().unwrap();
         let p1 = seed_page(&mut adapter, "p1");
-        BlockWriteService::save_blocks(
+        save(
             &mut adapter,
             vec![
                 block_with_content("b1", &p1, None, 1000, "你好 hello"),
@@ -536,7 +835,7 @@ mod tests {
         let mut adapter = SQLiteAdapter::open_in_memory().unwrap();
         let p1 = seed_page(&mut adapter, "p1");
         // 一棵三层树：b1 -> b2 -> b3
-        BlockWriteService::save_blocks(
+        save(
             &mut adapter,
             vec![
                 block("b1", &p1, None, 1000),
@@ -578,7 +877,7 @@ mod tests {
     fn undelete_blocks_missing_id_errors_without_side_effects() {
         let mut adapter = SQLiteAdapter::open_in_memory().unwrap();
         let p1 = seed_page(&mut adapter, "p1");
-        BlockWriteService::save_blocks(
+        save(
             &mut adapter,
             vec![block("b1", &p1, None, 1000)],
         )
@@ -594,7 +893,7 @@ mod tests {
     fn undelete_blocks_single_block() {
         let mut adapter = SQLiteAdapter::open_in_memory().unwrap();
         let p1 = seed_page(&mut adapter, "p1");
-        BlockWriteService::save_blocks(
+        save(
             &mut adapter,
             vec![block("b1", &p1, None, 1000), block("b2", &p1, None, 2000)],
         )
@@ -616,7 +915,7 @@ mod tests {
     fn undelete_blocks_noop_on_live_block() {
         let mut adapter = SQLiteAdapter::open_in_memory().unwrap();
         let p1 = seed_page(&mut adapter, "p1");
-        BlockWriteService::save_blocks(
+        save(
             &mut adapter,
             vec![block("b1", &p1, None, 1000)],
         )
@@ -638,7 +937,7 @@ mod tests {
         let mut adapter = SQLiteAdapter::open_in_memory().unwrap();
         let p1 = seed_page(&mut adapter, "p1");
         // b1 为父，b2/b3 为其子。块级级联删除只删 b1 自身，子节点仍 live（仅被祖先隐藏）。
-        BlockWriteService::save_blocks(
+        save(
             &mut adapter,
             vec![
                 block("b1", &p1, None, 1000),
@@ -672,7 +971,7 @@ mod tests {
         let mut adapter = SQLiteAdapter::open_in_memory().unwrap();
         let pa = seed_page(&mut adapter, "pa");
         let pb = seed_page(&mut adapter, "pb");
-        BlockWriteService::save_blocks(
+        save(
             &mut adapter,
             vec![block("a1", &pa, None, 1000), block("b1", &pb, None, 1000)],
         )
@@ -684,5 +983,149 @@ mod tests {
         assert_eq!(sync.get(&SyncTable::Block).unwrap(), &vec!["a1".to_string()]);
         let b1 = BlockService::get_by_id(&mut adapter, "b1").unwrap();
         assert_eq!(b1.page_id, pb);
+    }
+
+    /// 搬移 = 移动同一个块：id 不变、整棵子树跟着换页、根块换父级与位置。
+    #[test]
+    fn move_blocks_revives_and_reparents_subtree() {
+        let mut adapter = SQLiteAdapter::open_in_memory().unwrap();
+        let pa = seed_page(&mut adapter, "pa");
+        let pb = seed_page(&mut adapter, "pb");
+        save(
+            &mut adapter,
+            vec![
+                block("anchor", &pb, None, 1000),
+                block("a1", &pa, None, 1000),
+                block("a2", &pa, Some("a1"), 1000),
+            ],
+        )
+        .unwrap();
+
+        // 剪切：软删整棵子树（真实路径是前端逐块删）。
+        BlockWriteService::delete_block_cascade(&mut adapter, "a2").unwrap();
+        BlockWriteService::delete_block_cascade(&mut adapter, "a1").unwrap();
+
+        let sync = BlockWriteService::move_blocks(
+            &mut adapter,
+            &[BlockMoveTarget {
+                block_id: "a1".to_string(),
+                page_id: pb.clone(),
+                parent_id: None,
+                pos: 1500,
+            }],
+        )
+        .unwrap();
+
+        // id 不变 ⇒ 挂在 id 上的引用 / 配置全部还能解析。
+        let a1 = BlockService::get_by_id(&mut adapter, "a1").unwrap();
+        assert_eq!(a1.page_id, pb);
+        assert_eq!(a1.pos, 1500);
+        assert_eq!(a1.parent_id, None);
+        // 子孙跟着换页，但子树内部结构不动。
+        let a2 = BlockService::get_by_id(&mut adapter, "a2").unwrap();
+        assert_eq!(a2.page_id, pb);
+        assert_eq!(a2.parent_id.as_deref(), Some("a1"));
+        // 原页与目标页的顶层数量都对（pb 原有 anchor + 搬来的 a1/a2）。
+        assert!(BlockService::get_by_page_id(&mut adapter, &pa).unwrap().is_empty());
+        assert_eq!(BlockService::get_by_page_id(&mut adapter, &pb).unwrap().len(), 3);
+        assert_eq!(sync.get(&SyncTable::Block).unwrap().len(), 2);
+    }
+
+    /// 根块仍 live（复制语义 / 连粘第二次 / 已被回收站恢复）⇒ 拒绝搬移，且不留副作用。
+    #[test]
+    fn move_blocks_rejects_live_root() {
+        let mut adapter = SQLiteAdapter::open_in_memory().unwrap();
+        let pa = seed_page(&mut adapter, "pa");
+        let pb = seed_page(&mut adapter, "pb");
+        save(&mut adapter, vec![block("a1", &pa, None, 1000)]).unwrap();
+
+        let err = BlockWriteService::move_blocks(
+            &mut adapter,
+            &[BlockMoveTarget {
+                block_id: "a1".to_string(),
+                page_id: pb.clone(),
+                parent_id: None,
+                pos: 1000,
+            }],
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains(BLOCK_MOVE_NOT_REVIVABLE));
+        assert_eq!(BlockService::get_by_id(&mut adapter, "a1").unwrap().page_id, pa);
+    }
+
+    /// 整组原子：第二条不可复活时，第一条也不许搬（事务回滚）。
+    #[test]
+    fn move_blocks_is_atomic_across_targets() {
+        let mut adapter = SQLiteAdapter::open_in_memory().unwrap();
+        let pa = seed_page(&mut adapter, "pa");
+        let pb = seed_page(&mut adapter, "pb");
+        save(
+            &mut adapter,
+            vec![block("a1", &pa, None, 1000), block("a2", &pa, None, 2000)],
+        )
+        .unwrap();
+        // 只剪 a1；a2 保持 live ⇒ 第二个目标必然失败。
+        BlockWriteService::delete_block_cascade(&mut adapter, "a1").unwrap();
+
+        let err = BlockWriteService::move_blocks(
+            &mut adapter,
+            &[
+                BlockMoveTarget {
+                    block_id: "a1".to_string(),
+                    page_id: pb.clone(),
+                    parent_id: None,
+                    pos: 1000,
+                },
+                BlockMoveTarget {
+                    block_id: "a2".to_string(),
+                    page_id: pb.clone(),
+                    parent_id: None,
+                    pos: 2000,
+                },
+            ],
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains(BLOCK_MOVE_NOT_REVIVABLE));
+
+        // a1 必须仍软删、仍在 pa —— 没有出现「一半搬了」。
+        assert!(BlockService::get_by_id(&mut adapter, "a1").is_err());
+        assert_eq!(
+            BlockService::get_by_id_including_deleted(&mut adapter, "a1")
+                .unwrap()
+                .page_id,
+            pa
+        );
+        assert!(BlockService::get_by_page_id(&mut adapter, &pb).unwrap().is_empty());
+    }
+
+    /// 搬进自己的子树 = 环，直接拒绝。
+    #[test]
+    fn move_blocks_rejects_cycle_into_own_subtree() {
+        let mut adapter = SQLiteAdapter::open_in_memory().unwrap();
+        let pa = seed_page(&mut adapter, "pa");
+        let pb = seed_page(&mut adapter, "pb");
+        save(
+            &mut adapter,
+            vec![
+                block("a1", &pa, None, 1000),
+                block("a2", &pa, Some("a1"), 1000),
+            ],
+        )
+        .unwrap();
+        BlockWriteService::delete_block_cascade(&mut adapter, "a2").unwrap();
+        BlockWriteService::delete_block_cascade(&mut adapter, "a1").unwrap();
+
+        let err = BlockWriteService::move_blocks(
+            &mut adapter,
+            &[BlockMoveTarget {
+                block_id: "a1".to_string(),
+                page_id: pb,
+                parent_id: Some("a2".to_string()),
+                pos: 1000,
+            }],
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains(BLOCK_MOVE_INTO_SELF));
+        assert!(BlockService::get_by_id(&mut adapter, "a1").is_err());
     }
 }

@@ -3,6 +3,8 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import BulletRender from './BulletRender.vue'
 import { useBlockStore } from '../../../../stores/blocks'
+import { useTagsStore } from '../../../../stores/tags'
+import type { PersistedTagTreeEntry } from '../../../../types/tag-persisted'
 
 beforeEach(() => {
   setActivePinia(createPinia())
@@ -194,5 +196,184 @@ describe('BulletRender content-disappear bug', () => {
     // content.slice(0, 5) = '' → shows nothing!
 
     // This confirms the bug: stale segments + changed content = wrong output
+  })
+})
+
+/**
+ * 标签改色 → 渲染态 chip 即时换色（ADR-0050 D11 动态取色）。
+ *
+ * 复现原 bug：`setIdentity({color})` 只更新 tagsStore + 落库，已加载块的
+ * renderSegments 快照（tag 段内嵌构建时的 color）不重建 → 改色后渲染态 chip
+ * 停留旧色直到重载。修复后 BulletRender 经 resolveTagColor 实时解析，
+ * 对 tagsStore 的读取在 computed 内被依赖收集，改色即重渲。
+ */
+describe('标签改色 → 渲染态 chip 即时换色', () => {
+  function seedTag(overrides: Partial<PersistedTagTreeEntry> = {}): PersistedTagTreeEntry {
+    return {
+      id: 't1', title: '项目', field_ids: [], parent_id: null, description: '',
+      color: '--tag-color-1', is_system: false,
+      created_at: 0, updated_at: 0, version: 1, deleted_at: null,
+      effective_field_ids: [], descendant_ids: [],
+      ...overrides,
+    }
+  }
+
+  test('改色后 chip 内联样式更新，renderSegments 快照不动', async () => {
+    const store = useBlockStore()
+    const tagsStore = useTagsStore()
+
+    // 标签树就绪：#项目 = t1，旧色 --tag-color-1
+    tagsStore.entries = [seedTag()]
+    tagsStore.loaded = true
+
+    const block = await store.createBlock({ pageId: 'page-1', content: '#项目' })
+    const blockInStore = store.getBlock(block.id)!
+    // 模拟 Rust 快照：tag 段内嵌旧色
+    blockInStore.renderSegments = [
+      { type: 'tag', start: 0, end: 3, title: '项目', tag_id: 't1', is_system: false, color: '--tag-color-1' },
+    ]
+
+    const wrapper = mount(BulletRender, {
+      props: { content: blockInStore.content, blockId: blockInStore.id },
+    })
+    expect(wrapper.html()).toContain('color:var(--tag-color-1)')
+
+    // 改色（与 setIdentity 乐观更新同款：直接改 store 行）—— renderSegments 不重建
+    tagsStore.entries[0].color = '--tag-color-5'
+    await flushPromises()
+
+    expect(wrapper.html()).toContain('color:var(--tag-color-5)')
+    expect(wrapper.html()).not.toContain('color:var(--tag-color-1)')
+  })
+
+  test('标签树未就绪（loaded=false）：回退段内快照色，加载后重渲为实时色', async () => {
+    const store = useBlockStore()
+    const tagsStore = useTagsStore()
+
+    const block = await store.createBlock({ pageId: 'page-1', content: '#项目' })
+    const blockInStore = store.getBlock(block.id)!
+    blockInStore.renderSegments = [
+      { type: 'tag', start: 0, end: 3, title: '项目', tag_id: 't1', is_system: false, color: '--tag-color-1' },
+    ]
+
+    const wrapper = mount(BulletRender, {
+      props: { content: blockInStore.content, blockId: blockInStore.id },
+    })
+    // 未就绪 → 快照兜底，不整批脱色
+    expect(wrapper.html()).toContain('color:var(--tag-color-1)')
+
+    // 树加载到位（BlockFieldZone 挂载即 ensureLoaded 的落位时刻）→ 实时色
+    tagsStore.entries = [seedTag({ color: '--tag-color-5' })]
+    tagsStore.loaded = true
+    await flushPromises()
+
+    expect(wrapper.html()).toContain('color:var(--tag-color-5)')
+    expect(wrapper.html()).not.toContain('color:var(--tag-color-1)')
+  })
+})
+
+/**
+ * 列表项渲染（`- ` / `1. `）：标记常显 + 正文去前缀。
+ * 与标题同一层语法 —— 都是正文前缀，不是块类型。
+ */
+describe('BulletRender 列表项', () => {
+  function mountWithContent(content: string, segments?: Array<{ type: 'text'; start: number; end: number }>) {
+    const store = useBlockStore()
+    const block = store.blocks[0]
+    if (segments && block) block.renderSegments = segments
+    return mount(BulletRender, { props: { content, blockId: block?.id ?? '' } })
+  }
+
+  function seed(content: string) {
+    const store = useBlockStore()
+    store.blocks = [
+      { id: 'b1', pageId: 'p1', parentId: null, pos: 0, content, format: {}, type: 'text', createdAt: 0, updatedAt: 0 },
+    ]
+  }
+
+  test('无序列表：画常显 `•` 标记，正文不含 `- `', async () => {
+    seed('- 条目一')
+    const wrapper = mountWithContent('- 条目一')
+    await flushPromises()
+    const marker = wrapper.find('.block-list-marker')
+    expect(marker.exists()).toBe(true)
+    expect(marker.text()).toBe('•')
+    expect(wrapper.find('.block-list-text').text()).toBe('条目一')
+    expect(wrapper.find('.block-list').classes()).toContain('is-unordered')
+    wrapper.unmount()
+  })
+
+  test('有序列表：标记用正文里的序号（`7. ` → `7.`）', async () => {
+    seed('7. 第七项')
+    const wrapper = mountWithContent('7. 第七项')
+    await flushPromises()
+    expect(wrapper.find('.block-list-marker').text()).toBe('7.')
+    expect(wrapper.find('.block-list').classes()).toContain('is-ordered')
+    wrapper.unmount()
+  })
+
+  test('空列表项：只画标记，正文为空', async () => {
+    seed('- ')
+    const wrapper = mountWithContent('- ')
+    await flushPromises()
+    expect(wrapper.find('.block-list-marker').text()).toBe('•')
+    expect(wrapper.find('.block-list-text').text()).toBe('')
+    wrapper.unmount()
+  })
+
+  test('segments 按前缀长度平移：含 #tag 的列表项不串字', async () => {
+    seed('- 看 #项目')
+    // Rust 按完整 content（`- 看 #项目`，UTF-16 长 7）切段：前缀 2 + 正文 5
+    const wrapper = mountWithContent('- 看 #项目', [{ type: 'text', start: 2, end: 7 }])
+    await flushPromises()
+    expect(wrapper.find('.block-list-text').text()).toBe('看 #项目')
+    wrapper.unmount()
+  })
+
+  test('普通文本不进入列表分支', async () => {
+    seed('普通文本')
+    const wrapper = mountWithContent('普通文本')
+    await flushPromises()
+    expect(wrapper.find('.block-list').exists()).toBe(false)
+    expect(wrapper.text()).toContain('普通文本')
+    wrapper.unmount()
+  })
+})
+
+describe('BulletRender 段落样式标题（1–6 级）', () => {
+  function seed(content: string) {
+    const store = useBlockStore()
+    store.blocks = [
+      { id: 'b1', pageId: 'p1', parentId: null, pos: 0, content, format: {}, type: 'text', createdAt: 0, updatedAt: 0 },
+    ]
+    return mount(BulletRender, { props: { content, blockId: 'b1' } })
+  }
+
+  // 回归：headingTag 曾只认 h1–h3，而 h4–h6 的前缀同样被 parseParagraphStyle 吃掉
+  // （prefixLength > 0 ⇒ normalContent 返回空串），渲染态整行空白，编辑态却按级放大。
+  for (const level of [1, 2, 3, 4, 5, 6]) {
+    test(`h${level}：出 h${level} 元素，正文不含前缀`, async () => {
+      const content = `${'#'.repeat(level)} 标题${level}`
+      const wrapper = seed(content)
+      await flushPromises()
+      const heading = wrapper.find(`h${level}`)
+      expect(heading.exists()).toBe(true)
+      expect(heading.text()).toBe(`标题${level}`)
+      wrapper.unmount()
+    })
+  }
+
+  test('模板遗留 format.type=heading（正文无前缀）不放大：与编辑态同口径', async () => {
+    const store = useBlockStore()
+    store.blocks = [
+      { id: 'b1', pageId: 'p1', parentId: null, pos: 0, content: '原标题', format: {}, type: 'text', createdAt: 0, updatedAt: 0 },
+    ]
+    const wrapper = mount(BulletRender, {
+      props: { content: '原标题', blockId: 'b1', blockFormat: { type: 'heading', level: 2 } },
+    })
+    await flushPromises()
+    expect(wrapper.find('h2').exists()).toBe(false)
+    expect(wrapper.text()).toContain('原标题')
+    wrapper.unmount()
   })
 })

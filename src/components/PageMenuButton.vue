@@ -1,19 +1,22 @@
 <script setup lang="ts">
-import { Monitor, Moon, Sun } from 'lucide-vue-next'
+import { Columns2, Monitor, Moon, Rows2, Sun } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useFavorites } from '../composables/useFavorites'
+
+import { usePinned } from '../composables/usePinned'
 import { useSettingsModal } from '../composables/useSettingsModal'
 import { useTheme } from '../composables/useTheme'
 import { usePageStore } from '../stores/pages'
-import ConfirmDialog from './ConfirmDialog.vue'
+import { type PaneLayoutDirection,usePanesStore } from '../stores/panes'
 import BasePopover from './common/BasePopover.vue'
+import ConfirmDialog from './ConfirmDialog.vue'
 import { Icon } from './Icons'
 
 const router = useRouter()
 const route = useRoute()
 const pageStore = usePageStore()
-const { isFavorite, toggleFavorite } = useFavorites()
+const panesStore = usePanesStore()
+const { isPinned, togglePin } = usePinned()
 const { open: openSettings } = useSettingsModal()
 const { theme, setTheme } = useTheme()
 
@@ -58,7 +61,7 @@ const shouldDelete = computed(() => {
   return currentPage.value.deleted ?? false
 })
 
-const favorited = computed(() => currentPage.value ? isFavorite(currentPage.value.id) : false)
+const pinned = computed(() => currentPage.value ? isPinned(currentPage.value.id) : false)
 
 function toggleMenu() {
   isMenuOpen.value = !isMenuOpen.value
@@ -72,9 +75,9 @@ function closeMenu() {
   isDeleteSubmenuOpen.value = false
 }
 
-function handleToggleFavorite() {
+function handleTogglePin() {
   if (currentPage.value) {
-    toggleFavorite(currentPage.value.id)
+    togglePin(currentPage.value.id)
   }
   closeMenu()
 }
@@ -125,6 +128,12 @@ function handleNavigateToSettings() {
   closeMenu()
   openSettings()
 }
+
+/** 分屏：切布局方向；单 pane 时以当前页打开第二个 pane（stores/panes.ts splitView） */
+function handleSplit(direction: PaneLayoutDirection) {
+  closeMenu()
+  panesStore.splitView(direction)
+}
 </script>
 
 <template>
@@ -150,13 +159,13 @@ function handleNavigateToSettings() {
         <template v-if="isOnPage && currentPage">
           <button
             class="menu-item"
-            @click="handleToggleFavorite"
+            @click="handleTogglePin"
           >
             <Icon
-              :name="favorited ? 'icon-star-filled' : 'icon-star'"
+              :name="pinned ? 'icon-pin-off' : 'icon-pin'"
               :size="16"
             />
-            <span>{{ favorited ? '取消收藏' : '添加收藏' }}</span>
+            <span>{{ pinned ? '取消置顶' : '置顶' }}</span>
           </button>
 
           <div
@@ -207,6 +216,28 @@ function handleNavigateToSettings() {
 
           <div class="menu-divider" />
         </template>
+
+        <!-- 分屏：切布局方向；单 pane 时以当前页开第二个 pane -->
+        <button
+          class="menu-item"
+          @click="handleSplit('horizontal')"
+        >
+          <Columns2
+            :size="16"
+            :stroke-width="1.75"
+          />
+          <span>左右分屏</span>
+        </button>
+        <button
+          class="menu-item"
+          @click="handleSplit('vertical')"
+        >
+          <Rows2
+            :size="16"
+            :stroke-width="1.75"
+          />
+          <span>上下分屏</span>
+        </button>
 
         <!-- 全局功能始终显示 -->
         <div class="theme-selector">
@@ -275,7 +306,7 @@ function handleNavigateToSettings() {
   align-items: center;
   justify-content: center;
   border-radius: var(--radius-xs);
-  transition: background 120ms ease, color 120ms ease;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
 }
 
 .menu-trigger:hover {
@@ -304,7 +335,7 @@ function handleNavigateToSettings() {
   color: var(--color-ink);
   font-family: inherit;
   text-align: left;
-  transition: background 80ms ease;
+  transition: background var(--dur-fast) var(--ease-out);
   white-space: nowrap;
 }
 
@@ -358,7 +389,7 @@ function handleNavigateToSettings() {
   cursor: pointer;
   border-radius: var(--radius-sm);
   color: var(--text-tertiary);
-  transition: background 80ms ease, color 80ms ease;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
   flex-shrink: 0;
 }
 
@@ -374,7 +405,7 @@ function handleNavigateToSettings() {
 }
 
 .arrow-icon {
-  transition: transform 150ms ease;
+  transition: transform var(--dur-fast) var(--ease-out);
   flex-shrink: 0;
 }
 
@@ -398,7 +429,7 @@ function handleNavigateToSettings() {
 
 .submenu-enter-active,
 .submenu-leave-active {
-  transition: opacity 100ms ease, height 100ms ease;
+  transition: opacity var(--dur-fast) var(--ease-out), height var(--dur-fast) var(--ease-in-out);
 }
 
 .submenu-enter-from,

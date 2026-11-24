@@ -63,7 +63,7 @@
  * 29 例（当时总数）由全绿转 **28 红 / 1 绿**。唯一未变红的是「别页块进同一 blocks 数组不改本页栈」——
  * 它不检验按键接线，只检验 T2 的逐页归因（对照信号在 T2 自己的单测里，与本文件分工不重叠）。
  * 每条「不接管」用例都自带对照组（同一夹具下 Ctrl+Z 必须被接管），故接线消失时它们也不会
- * 静默通过。现总数 39 例（2026-09-15 加 G 组落点 8 例）。
+ * 静默通过。现总数 41 例（2026-09-15 加 G 组落点 8 例；2026-10-23 加「撤销回删除前选区」2 例）。
  */
 import { describe, test, expect, beforeEach, afterEach, beforeAll, afterAll, vi, type MockInstance } from 'vitest'
 import { nextTick } from 'vue'
@@ -73,7 +73,7 @@ import BlockList from './BlockList.vue'
 import { useBlockStore } from '../stores/blocks'
 import { useEditorStore } from '../stores/editor'
 import { usePageStore } from '../stores/pages'
-import { usePropertyStore } from '../stores/property'
+import { useFieldValueStore } from '../stores/fieldValue'
 import type { Page } from '../types/page'
 import {
   resetUndoHistory,
@@ -332,6 +332,19 @@ async function flushAsync(): Promise<void> {
     await new Promise((r) => setTimeout(r, 0))
   }
   await flushPromises()
+}
+
+/**
+ * 等编辑器真正挂上：`focusActiveEditor` 是 nextTick + requestAnimationFrame 两跳，
+ * `flushAsync` 的几轮宏任务未必跨过一帧（jsdom 的 rAF 走 16ms 定时器），
+ * 断言 `activeEditor.state` 前必须等它到位，否则读到 null 变成假失败。
+ */
+async function waitActiveEditor(): Promise<ReturnType<typeof useEditorStore>['activeEditor']> {
+  const editorStore = useEditorStore()
+  for (let i = 0; i < 30 && !editorStore.activeEditor; i++) {
+    await new Promise((r) => setTimeout(r, 10))
+  }
+  return editorStore.activeEditor
 }
 
 /** 让逐页看门狗排程 + 越过 idle 窗口 ⇒ 上一步改动封口入栈，并落库到位 */
@@ -1430,6 +1443,58 @@ describe('G. 落点：闪烁 + 光标', () => {
     wrapper.unmount()
   })
 
+  test('撤销回删除前的光标：ABCDEF 删掉 D 后撤销 ⇒ 光标回到 D 右侧（不是行尾、不是 C 与 D 之间）', async () => {
+    const pageId = 'page-undo-caret-backspace'
+    // D 在中间（末尾的 D 会与「落点行尾」撞成同一答案，用例就没有牙齿）
+    const [id] = await seed(pageId, ['ABCDEF'])
+    const wrapper = await mountBlockList(pageId)
+    const editorStore = useEditorStore()
+
+    // 光标停在 D 右侧（"ABCDEF" 的合法位置 1..7；D 右侧 = 4）
+    editorStore.activateBlock(id, 4)
+    await flushAsync()
+    expect((await waitActiveEditor())?.state.selection.from).toBe(4)
+
+    // Backspace 删掉 D（等价于光标在 4 时的一次删除 → store 落成 "ABCEF"）
+    await typeStep(id, 'ABCEF')
+
+    undoKey(document.body)
+    await flushAsync()
+
+    expect(contentOf(id)).toBe('ABCDEF')
+    const sel = (await waitActiveEditor())?.state.selection
+    // 4 = D 右侧；行尾是 7（落点兜底会给这个），删除点后侧是 3
+    expect(sel?.from).toBe(4)
+    // 折叠光标，不是把 D 选中
+    expect(sel?.empty).toBe(true)
+    wrapper.unmount()
+  })
+
+  test('撤销回删除前的选区：ABCD 选中 D 删掉后撤销 ⇒ D 重新被选中', async () => {
+    const pageId = 'page-undo-caret-selection'
+    const [id] = await seed(pageId, ['ABCD'])
+    const wrapper = await mountBlockList(pageId)
+    const editorStore = useEditorStore()
+
+    editorStore.activateBlock(id, 5)
+    await flushAsync()
+    // 选中 D（"ABCD" 中 D 占 4..5）—— 纯选区变化，不产生新的历史步骤
+    ;(await waitActiveEditor())!.commands.setTextSelection({ from: 4, to: 5 })
+    await flushAsync()
+    expect((await waitActiveEditor())?.state.selection.empty).toBe(false)
+
+    await typeStep(id, 'ABC')
+
+    undoKey(document.body)
+    await flushAsync()
+
+    expect(contentOf(id)).toBe('ABCD')
+    const sel = (await waitActiveEditor())?.state.selection
+    expect(sel?.from).toBe(4)
+    expect(sel?.to).toBe(5)
+    wrapper.unmount()
+  })
+
   test('光标落行尾：激活后编辑器选区停在文档末尾', async () => {
     const pageId = 'page-undo-landing-caret-end'
     const [id] = await seed(pageId, ['v0'])
@@ -1453,31 +1518,31 @@ describe('G. 落点：闪烁 + 光标', () => {
 
 describe('H. 前提哨兵：快照属性数据源的覆盖完备性', () => {
   /**
-   * 这条**不是**功能断言，是**前提哨兵** —— 钉住 `useUndoHistory.propEnvelope` 的安全性前提。
+   * 这条**不是**功能断言，是**前提哨兵** —— 钉住 `useUndoHistory.fieldValueEnvelope` 的安全性前提。
    *
-   * 信封只读 `propertyStore.propertiesByBlock`（不用 DB 兜底，见其注释「为什么信封只读缓存」），
-   * 这份数据之所以够用，全靠「页面每个块只要渲染就会被挂载、挂载即**无条件**加载属性」
-   * （`useBlockPropertySync.onMounted` → `loadBlockProperties`，后者无条件写缓存）。
-   * 这里把该前提变成可执行断言：**页面块集合 ⊆ propertyStore 的键集合**。
+   * 信封只读 `fieldValueStore.fieldValuesByBlock`（不用 DB 兜底，见其注释「为什么信封只读缓存」），
+   * 这份数据之所以够用，全靠「页面每个块只要渲染就会被挂载、挂载即**无条件**加载字段值」
+   * （`useBlockFieldValueSync.onMounted` → `loadBlockFieldValues`，后者无条件写缓存）。
+   * 这里把该前提变成可执行断言：**页面块集合 ⊆ fieldValueStore 的键集合**。
    *
    * 会变红的情形（= 该去重新评估「恢复是否还完备」的信号）：
    * - 引入虚拟滚动 / 懒渲染 ⇒ 未渲染的块不挂载 ⇒ 不加载属性；
-   * - `useBlockPropertySync` 的加载被改成条件式（如只给特定 type 加载）；
+   * - `useBlockFieldValueSync` 的加载被改成条件式（如只给特定 type 加载）；
    * - 属性缓存被驱逐（`clearBlockCache` 目前生产零调用）。
    * 真红之后须知：撤销「删块」时那些块的信封属性缺失 ⇒ 该块属性**永久丢失**，
    * 此时才需要动 Rust（让 `undelete_blocks` 顺带复活属性行）。2026-09-15 grill-up 核查结论：
    * 当前不可达（无虚拟滚动、折叠用 display:none 不卸载、缓存零驱逐、删块入口只在 BlockList），
    * 故**未**改 T1 语义、也**未**动 ADR-0046 D10。
    */
-  test('页面每个块渲染后其属性条目都进 propertyStore（信封完备性的前提）', async () => {
+  test('页面每个块渲染后其字段值条目都进 fieldValueStore（信封完备性的前提）', async () => {
     const pageId = 'page-envelope-coverage'
     const ids = await seed(pageId, ['a', 'b', 'c'])
     const wrapper = await mountBlockList(pageId)
     await flushAsync()
 
-    const propertyStore = usePropertyStore()
+    const fieldValueStore = useFieldValueStore()
     const pageBlocks = useBlockStore().getBlocksByPage(pageId)
-    const missing = pageBlocks.filter((b) => !propertyStore.propertiesByBlock.has(b.id))
+    const missing = pageBlocks.filter((b) => !fieldValueStore.fieldValuesByBlock.has(b.id))
 
     // 夹具自检：三个块确实都进了本页（否则下面的「无缺失」会因空集合而假绿）
     expect(pageBlocks.map((b) => b.id)).toEqual(expect.arrayContaining(ids))

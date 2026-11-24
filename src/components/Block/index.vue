@@ -14,36 +14,61 @@
  *   拖拽结束 → onDragEnd → syncTreeToStore → store
  *   → 结构签名变化（#118 D2）→ BlockList watch → syncFromStore → tree 重建
  */
-import { ChevronDown, ChevronRight } from 'lucide-vue-next'
-import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, toRef, watch } from 'vue'
-import { useBlockRegistry } from '../../composables/useBlockRegistry'
-import { useBlockRelationshipCleanup } from '../../composables/useBlockRelationshipCleanup'
-import { useBlockStore } from '../../stores/blocks'
-import { useEditorStore } from '../../stores/editor'
-import { usePropertyStore } from '../../stores/property'
-import BlockDraggableList from './components/BlockDraggableList.vue'
-import { useBlockCollapse } from './composables/useBlockCollapse'
-import { useBlockEditorLifecycle } from './composables/useBlockEditorLifecycle'
-import { useBlockPropertySync } from './composables/useBlockPropertySync'
 import './handlers/bullet'
 import './handlers/code'
 import './handlers/embed'
 import './handlers/image'
-import PropertyDisplay from './PropertyDisplay.vue'
-import PropertyInline from './PropertyInline.vue'
+import './handlers/query'
+import './handlers/table'
 
 import type { EditorView } from '@codemirror/view'
 import type { Editor } from '@tiptap/core'
+import { ChevronDown, GripVertical, Heading1, Heading2, Heading3, List, ListOrdered, Type } from 'lucide-vue-next'
+import { computed, defineComponent, inject, nextTick, onBeforeUnmount, onMounted, ref, toRef, watch } from 'vue'
+
+import { useBlockEntryMenuExtra } from '../../composables/useBlockEntryMenuExtra'
+import { useBlockEntryMenuOwner } from '../../composables/useBlockEntryMenuOwner'
+import { useBlockRegistry } from '../../composables/useBlockRegistry'
+import { useBlockRelationshipCleanup } from '../../composables/useBlockRelationshipCleanup'
+import { paragraphPrefixOf,type ParagraphStyle, parseParagraphStyle } from '../../composables/useContentRenderer'
 import type { CrossBlockSelection } from '../../composables/useCrossBlockSelection'
 import { useNavigateToPage } from '../../composables/useNavigateToPage'
+import { recordSelection } from '../../composables/useUndoHistory'
+import { useBlockStore } from '../../stores/blocks'
+import { useEditorStore } from '../../stores/editor'
+import { useFieldValueStore } from '../../stores/fieldValue'
 import { usePageStore } from '../../stores/pages'
 import type { TreeNode } from '../../types/block'
 import type { BlockSetupContext, BlockTypeEditorExposed, BlockTypeHooks } from '../../types/block-type'
+import { type BlockAlign,blockAlignOf } from '../../utils/block-align'
 import {
-  decodeRelationshipContent,
+  CALLOUT_ENTRY_ICON,
+  CALLOUT_TONE_LABELS,
+  CALLOUT_TONES,
+  calloutFormatPatch,
+  type CalloutTone,
+  calloutToneOf,
+  DEFAULT_CALLOUT_TONE,
+} from '../../utils/callout'
+import { hasHiddenAncestor } from '../../utils/element-visibility'
+import { mapInlineMarkOffsets, readInlineMarks } from '../../utils/inline-marks'
+import {
+  decodeRelationshipContentWithMeta,
   setRelationshipSnapshot,
 } from '../../utils/relationship-content'
-import type { DragEndIntent } from './composables/useBlockDragDrop'
+import BasePopover from '../common/BasePopover.vue'
+import BlockFieldZone from './BlockFieldZone.vue'
+import BlockDraggableList from './components/BlockDraggableList.vue'
+import BlockMenuCommon from './components/BlockMenuCommon.vue'
+import BlockMenuTextStyle from './components/BlockMenuTextStyle.vue'
+import CalloutToneIcon from './components/CalloutToneIcon.vue'
+import TaskProgressBar from './components/TaskProgressBar.vue'
+import { useBlockCollapse } from './composables/useBlockCollapse'
+import { blockDragActive, type DragEndIntent } from './composables/useBlockDragDrop'
+import { useBlockEditorLifecycle } from './composables/useBlockEditorLifecycle'
+import { useBlockFieldRows } from './composables/useBlockFieldRows'
+import { useBlockFieldValueSync } from './composables/useBlockFieldValueSync'
+import { useChildTaskProgress } from './composables/useTaskProgress'
 
 defineOptions({
   name: 'Block'
@@ -57,7 +82,7 @@ const props = defineProps<{
 
 const editorStore = useEditorStore()
 const blockStore = useBlockStore()
-const propertyStore = usePropertyStore()
+const fieldValueStore = useFieldValueStore()
 const pageStore = usePageStore()
 const { getHandler } = useBlockRegistry()
 const relationshipCleanup = useBlockRelationshipCleanup()
@@ -65,13 +90,21 @@ const { navigateToPage } = useNavigateToPage()
 
 // 注入拖拽结束落库回调（由 BlockList / BlockModal 提供，syncTreeToStore 完整树 diff）
 const onDragEnd = inject<(intent: DragEndIntent | null) => void>('onDragEnd')
-const selection = inject<CrossBlockSelection>('crossBlockSelection')
+const selection = inject<CrossBlockSelection | null>('crossBlockSelection', null)
 // 是否处于 BlockModal 子树编辑器内（由 BlockModal provide）。弹窗内 dot 点击为 no-op，避免递归开弹窗。
 const inBlockModal = inject<boolean>('inBlockModal', false)
+// 所属 pane id（由 ViewHost provide 下发）。双 pane 同页靠它区分活动块；不在 pane 内为 undefined。
+const paneId = inject<string | undefined>('paneId', undefined)
 
 // ── 便捷访问 ──
 const blockId = computed(() => props.node.id)
 const block = computed(() => props.node.block)
+
+// ── 字段区行集合（折叠守卫的第二通道）──
+// 与 `BlockFieldZone variant="list"` 的渲染集合**同一单源**（useBlockFieldRows），
+// 故「chevron 说能折叠」与「折叠下去真的藏了行」不会漂移。tag 与本守卫无关。
+const { fields: blockFields } = useBlockFieldRows(blockId, computed(() => block.value.tags ?? []))
+const fieldRowCount = computed(() => blockFields.value.length)
 
 // ── 子级列表 v-model ──
 // 树节点由 BlockList 的 tree 持有（唯一渲染权威），Block 只是渲染层，写入路径
@@ -83,27 +116,14 @@ const childrenModel = computed<TreeNode[]>({
   set: children => { nodeRef.value.children = children },
 })
 
-// ── 属性读取 / 优先级 CSS 类（由 useBlockPropertySync 统一管理）──
+// ── 字段值读取 / 优先级 CSS 类（由 useBlockFieldValueSync 统一管理）──
 const {
-  getProperty: getBlockProperty,
-  getPropertiesMap: getBlockPropertiesMap,
-  setProperty,
+  getFieldValue: getBlockFieldValue,
+  getFieldValuesMap: getBlockFieldValuesMap,
+  setFieldValue,
   priorityClass,
   statusClass,
-} = useBlockPropertySync(blockId)
-
-// 是否有「行尾右侧 chips」属性（与 PropertyDisplay variant="chips" 的可见性判定一致：
-// bottom-of-block 内置属性 + 所有自定义属性，排除 hidden / deadline / scheduled）。
-// 用于给 .block-row 铺上与 chips 同色的极淡背景（视觉连通），仅非 hover 态。
-const hasRightProps = computed(() => {
-  const all = propertyStore.getBlockProperties(blockId.value)
-  return all.some(p => {
-    if (p.isHidden) return false
-    if (p.key === 'deadline' || p.key === 'scheduled') return false
-    const def = propertyStore.getPropertyDef(p.key)
-    return def?.displayPosition === 'bottom-of-block' || !def?.isBuiltIn
-  })
-})
+} = useBlockFieldValueSync(blockId)
 
 const hasSelectedAncestor = computed(() => {
   if (!selection) return false
@@ -123,39 +143,226 @@ const isSelected = computed(() => {
 })
 const handler = computed(() => getHandler(block.value.type))
 
-const editContent = computed(() => {
+/** 文本块判定：入口菜单顶部的「文本样式」行只对文本块出现 */
+const isTextBlock = computed(() => block.value.type === 'text')
+
+/**
+ * 本块的段落样式（普通文本 / H1–H3 / 无序 / 有序）。
+ *
+ * 判据只有一处：`parseParagraphStyle` —— 与 BulletRender 渲染、拆分续行同一份规则。
+ * 这些样式全部活在正文前缀里，`format` 里没有它们。
+ * 非文本块一律按 `text` 处理（菜单行不出现，字形落各类型自己的 `entryIcon`）。
+ */
+const paragraph = computed(() => {
+  if (!isTextBlock.value) return { style: 'text' as const, prefixLength: 0, title: '', listIndex: null }
+  // format 只作标题的双读兜底：模板插入的标题块正文里没有前缀，声明落在 format.type='heading'
+  return parseParagraphStyle(block.value.content ?? '', { format: block.value.format })
+})
+
+/**
+ * 本块的语义强调（`format.callout`）；非文本块一律 null。
+ *
+ * 与 `paragraph` 互斥：一个块要么是某种文本样式（正文前缀），要么是高亮（format）。
+ * 真源只有 `format` 一处，前缀只负责"把高亮挤掉"。
+ */
+const calloutTone = computed(() =>
+  isTextBlock.value ? calloutToneOf(block.value.format) : null,
+)
+
+/**
+ * 块内已有行内底色时，壳底要退让一档（`is-callout-quiet`）。
+ *
+ * 行内底色是 28% 的标记色，压在 8% 的语义底上会叠成深斑；在警示块里再叠一层
+ * 蓝/绿，读者分不清哪层是语义、哪层是手工标注。判定在宿主做、渲染态与编辑态同口径
+ * （两侧读同一份 `format.inlineMarks`），避免进编辑时视觉跳一下。
+ */
+const hasInlineBg = computed(() => readInlineMarks(block.value.format, (block.value.content ?? '').length).some(mark => !!mark.background))
+
+/** 段落样式 → 入口字形：胶囊是「这是什么块」的唯一出口，几级标题 / 是不是列表都该读得出来 */
+const STYLE_ENTRY_ICONS = {
+  h1: Heading1,
+  h2: Heading2,
+  h3: Heading3,
+  ul: List,
+  ol: ListOrdered,
+} as const
+
+/**
+ * 入口类型图标（所有块类型都有）：没注册 `entryIcon` 的类型按文本块处理，落 `Type` 字形。
+ * 高亮块例外：胶囊显示**统一的高亮标识**（`CALLOUT_ENTRY_ICON`，与菜单「高亮」格
+ * 同一个固定图标）—— 胶囊只回答「这是高亮块」，语义细节由块内图标承担。
+ * 点击开本块菜单，与右侧握把同在一个胶囊里，按下即拖拽（handled by Sortable handle）。
+ */
+const entryIcon = computed(() => {
+  if (calloutTone.value) return CALLOUT_ENTRY_ICON
+  const style = paragraph.value.style
+  if (style && style !== 'text') return STYLE_ENTRY_ICONS[style]
+  return handler.value?.entryIcon ?? Type
+})
+
+/**
+ * 字形尺寸：lucide 的 `Heading1/2/3`、`List` 字形在 24 网格里的实际占位比 `Type` 小一圈，
+ * 同尺寸摆进胶囊会显小 —— 这些字形单独抬 2px 补齐视觉重量（盒子同为 14 的握把不动）。
+ * 高亮标识取中间值 15（比 `Type` 醒目、比标题字收敛，与块内语义图标同尺寸）。
+ */
+const entryIconSize = computed(() => {
+  if (calloutTone.value) return 15
+  return paragraph.value.style && paragraph.value.style !== 'text' ? 16 : 14
+})
+/** 入口相对块顶的下偏移：让图标压在本类型首行（表头行等）上 */
+const entryTop = computed(() => handler.value?.entryTop)
+
+/**
+ * 入口菜单「文本样式」行：把本块在 普通文本 / H1 / H2 / H3 / 有序 / 无序 之间切换。
+ *
+ * 六种样式都是正文前缀（`paragraphPrefixOf` 单源），切换 = 整体换掉前缀，正文一个字不动。
+ *
+ * 两条路，按「本块此刻是否正在编辑」分：
+ *
+ * - **活动态**：改活的编辑器（与 `/h1` 斜杠命令同一手法）。只写 store 不行 ——
+ *   编辑器 300ms 后的下一次防抖保存会把内存里的旧正文写回去，刚加上的前缀随即被抹掉。
+ *   走编辑器事务则复用它自己的保存链路（`@save` → `handleSave`），撤销也只记一步。
+ * - **渲染态**：本块没有编辑器实例，直接写 store。行内格式按前缀长度差平移 ——
+ *   `updateBlockContent` 在正文变化又没给 marks 时会清空它们，切一次样式丢一片粗体
+ *   是不能接受的副作用。
+ *
+ * 重复点同一格是无操作：不产生事务，也就不占掉一步撤销。
+ * 切到有序列表的起始号向父调度器要（`orderedListIndexForNew`）：前面接着连续的有序列表
+ * 就顺延，否则从 `1. ` 起 —— 序号落在正文里，由 `stores/blocks.ts` 的推导统一维护。
+ */
+async function setParagraphStyle(style: ParagraphStyle) {
+  if (!isTextBlock.value) return
+  // 有序列表的起始号向父调度器要：接上前面的连续列表，否则从 1 起（其余样式与前缀序号无关）
+  const prefix = style === 'ol'
+    ? paragraphPrefixOf('ol', blockStore.orderedListIndexForNew(blockId.value))
+    : paragraphPrefixOf(style)
+
+  const editor = editorRef.value
+  if (editor) {
+    // 活动态以编辑器正文为准：编辑态是 decode 后的文本，与 store 里的编码正文长度不同
+    const live = editor.getText()
+    // allowEmptyTitle：内容还是 `# `（标题没打字）时也要认成 H1，否则会拼成 `## # `
+    const liveParagraph = parseParagraphStyle(live, { allowEmptyTitle: true, format: block.value.format })
+    if (liveParagraph.style === style) return
+    const next = prefix + liveParagraph.title
+    const delta = next.length - live.length
+
+    const instance = editor.getEditor()
+    const prevPos = instance.state.selection.from
+    // 光标随前缀一起平移，并压在文档合法区间内（末位之后不可插）
+    const cursor = Math.min(Math.max(1, prevPos + delta), next.length + 1)
+    const chain = instance.chain()
+    if (liveParagraph.prefixLength > 0 && !prefix) {
+      chain.deleteRange({ from: 1, to: 1 + liveParagraph.prefixLength })
+    } else if (prefix) {
+      // 一个事务里「换掉旧前缀」：分两步删+插会给撤销栈留半截中间态
+      chain.insertContentAt({ from: 1, to: 1 + liveParagraph.prefixLength }, prefix)
+    }
+    chain.setTextSelection(cursor).run()
+    clearLegacyHeadingFormat()
+    return
+  }
+
+  const current = block.value.content ?? ''
+  const currentParagraph = parseParagraphStyle(current, { allowEmptyTitle: true, format: block.value.format })
+  // 同样式直接返回：有序列表的前缀带序号（`3. `），只比 `next === current` 会把
+  // 「点自己那一格」判成变更、把序号重置回 1
+  if (currentParagraph.style === style) return
+  const next = prefix + currentParagraph.title
+  const delta = prefix.length - currentParagraph.prefixLength
+  const marks = readInlineMarks(block.value.format, current.length)
+  const shifted = delta === 0
+    ? marks
+    : marks.map((mark) => ({ ...mark, start: mark.start + delta, end: mark.end + delta }))
+  await blockStore.updateBlockContent(blockId.value, next, { inlineMarks: shifted })
+  clearLegacyHeadingFormat()
+}
+
+/**
+ * 模板遗留真源的收口：一旦用**正文前缀**把样式定下来，就清掉 `format` 里的标题声明。
+ *
+ * 两种声明并存时，`TocPanel` 与模板序列化读 `format.type`、渲染读前缀 —— 两处各读一套，
+ * 块在目录里是标题、在正文里是段落。清掉后只剩前缀这一条真源。
+ */
+function clearLegacyHeadingFormat() {
+  if (block.value.format?.type !== 'heading') return
+  void blockStore.updateBlockFormat(blockId.value, { type: undefined, level: undefined })
+}
+
+/** 菜单点击出口：模板里不直接 await（与 `run()` 同款，异步失败静默） */
+function onSelectTextStyle(style: ParagraphStyle | 'callout') {
+  if (style === 'callout') {
+    void setCalloutTone(calloutTone.value ? null : DEFAULT_CALLOUT_TONE)
+    return
+  }
+  void setCalloutTone(null).then(() => setParagraphStyle(style))
+}
+
+/**
+ * 设置 / 移除语义强调。
+ *
+ * 互斥的方向是**不对称**的：设高亮时先把正文前缀降为正文（标题不能同时是高亮），
+ * 移除高亮时不动前缀（此刻它已经是正文，要不要改回标题由用户另行决定）。
+ */
+async function setCalloutTone(tone: CalloutTone | null) {
+  if (!isTextBlock.value) return
+  if (tone) await setParagraphStyle('text')
+  await blockStore.updateBlockFormat(blockId.value, calloutFormatPatch(tone))
+}
+
+const calloutIconEl = ref<HTMLElement | null>(null)
+const calloutMenuOpen = ref(false)
+
+/**
+ * 点块内的语义图标：编辑态先退出编辑再开浮层。
+ *
+ * 不退出的话，浮层开着而编辑器仍有焦点 —— 选完语义回车继续打字，光标位置与
+ * 「刚改完样式」的预期不符；退出编辑也让这次改动落成一步可撤销的 store 变更。
+ */
+function onCalloutIconClick() {
+  if (isActive.value) editorStore.deactivateBlock()
+  calloutMenuOpen.value = true
+}
+
+function onPickCalloutTone(tone: CalloutTone) {
+  calloutMenuOpen.value = false
+  void setCalloutTone(tone)
+}
+
+const decodedContent = computed(() => {
   // 编辑态显示中文 label：存储 type → 显示 label（decode）
-  const { text, snapshot } = decodeRelationshipContent(block.value.content ?? '')
+  return decodeRelationshipContentWithMeta(block.value.content ?? '')
+})
+
+const editContent = computed(() => {
+  const { text, snapshot } = decodedContent.value
   setRelationshipSnapshot(blockId.value, snapshot)
   return text
 })
 
-/** 空 block：无内容且非标题（如 '# ' 开头） */
-const isEmptyBlock = computed(() => {
-  const c = block.value.content ?? ''
-  return !/^#{1,6}\s+/.test(c) && c.trim() === ''
+/** format.inlineMarks 存的是 content 坐标；编辑态正文是 decode 后的文本，需同步换算偏移 */
+const editInlineMarks = computed(() => {
+  const { text, spans } = decodedContent.value
+  const marks = readInlineMarks(block.value.format, (block.value.content ?? '').length)
+  return mapInlineMarkOffsets(marks, spans, 'toNew', text.length)
 })
 
-/** 同级兄弟节点（按 pos 排序） */
-const siblings = computed(() => {
-  return blockStore
-    .getBlocksByPage(props.pageId)
-    .filter(b => b.parentId === block.value.parentId)
-    .sort((a, b) => a.pos - b.pos)
+/**
+ * 块级文本对齐（`format.align`）：两态共用一份，挂 `.block-content` 上由子节点继承 ——
+ * 编辑态（TipTap）与渲染态（BulletRender）各自的文本容器都在这层里面。
+ *
+ * 只对文本块（bullet，含标题）生效：图片块用 `format.align` 表达 flex 那侧的对齐，
+ * 表格有成套逐格对齐 —— 给它们套 `text-align` 只会多一层无意义的继承。
+ */
+const contentAlignStyle = computed<{ textAlign: BlockAlign } | undefined>(() => {
+  if (block.value.type !== 'text') return undefined
+  return { textAlign: blockAlignOf(block.value.format) }
 })
 
-/** 是否为首行或尾行（同级） */
-const isEdgeInLevel = computed(() => {
-  if (siblings.value.length <= 1) return true
-  const first = siblings.value[0]?.id === blockId.value
-  const last = siblings.value[siblings.value.length - 1]?.id === blockId.value
-  return first || last
-})
-
-/** 空 block 且非首行/尾行：未激活且未 hover 时隐藏 bullet */
-const hideBulletForEmpty = computed(() => {
-  return isEmptyBlock.value && !isEdgeInLevel.value
-})
+/** 工具条里的对齐动作：写回块格式（与图片块同一个键，`updateBlockFormat` 走统一落库） */
+function onContentAlign(value: BlockAlign) {
+  void blockStore.updateBlockFormat(blockId.value, { align: value })
+}
 
 /** 页面是否仅有一个空 Block（唯一场景显示 placeholder） */
 const isSingleEmptyBlock = computed(() => {
@@ -166,29 +373,118 @@ const isSingleEmptyBlock = computed(() => {
 const editorRef = ref<BlockTypeEditorExposed | null>(null)
 const cursorPos = ref(0)
 
+// ── 入口菜单（所有块类型同一条路）────────────────────────────
+// 菜单归外壳：dot 与类型图标都在这里，锚点也在手边，不必让每个 handler 各自复制一份
+// popover。类型专属项（表格的表头开关、查询块的粘贴收尾）由 handler 注册到这里，
+// 通用段（`BlockMenuCommon`）所有类型共用一份。
+//
+// 开合由**悬停**驱动（不必先点一下）：指针停进入口胶囊开菜单，移开（且没走进菜单）
+// 才收起。点击是「立刻开 + 留住」—— 给习惯点的人留同一条路。
+const { get: getEntryMenuExtra } = useBlockEntryMenuExtra()
+const menuOpen = ref(false)
+const menuAnchor = ref<HTMLElement | null>(null)
+/** 入口胶囊 DOM（悬停命中面的几何基准，见 onRowPointerMove） */
+const entryIconEl = ref<HTMLElement | null>(null)
+/** 菜单所有权：同一时刻只允许一个块入口菜单展开（见 useBlockEntryMenuOwner） */
+const menuOwner = useBlockEntryMenuOwner()
+/** 本实例的令牌 —— 双 pane 同页时同一个块有两个实例，只能靠它区分 */
+const menuToken = Symbol('block-entry-menu')
+/**
+ * 悬停开菜单的延迟：贴着左栏扫过时，一串菜单跟着闪是纯噪音。
+ * 稍等一下才认为「你想看这块的菜单」。
+ */
+const ENTRY_MENU_OPEN_DELAY = 120
+/**
+ * 离开后的宽限：指针从胶囊走到菜单要跨过 4px 间隙，这段时间不能把菜单关掉。
+ * 菜单自己的 pointerenter 会取消这个定时器，所以真正的「走进菜单」永远不会被误关。
+ */
+const ENTRY_MENU_CLOSE_DELAY = 260
+
+let entryMenuOpenTimer: ReturnType<typeof setTimeout> | null = null
+let entryMenuCloseTimer: ReturnType<typeof setTimeout> | null = null
+
+function clearEntryMenuTimers() {
+  if (entryMenuOpenTimer !== null) {
+    clearTimeout(entryMenuOpenTimer)
+    entryMenuOpenTimer = null
+  }
+  if (entryMenuCloseTimer !== null) {
+    clearTimeout(entryMenuCloseTimer)
+    entryMenuCloseTimer = null
+  }
+}
+
+function closeEntryMenu() {
+  clearEntryMenuTimers()
+  menuOpen.value = false
+  if (menuOwner.value === menuToken) menuOwner.value = null
+}
+/** 该块的类型专属段；无则 null */
+const entryMenuExtra = computed(() => getEntryMenuExtra(blockId.value))
+/**
+ * 通用段要不要自带前置分隔线：前面**真有专属项**才要。
+ * 不能只看「有没有注册」—— query 块注册了 afterPaste 却没有菜单项，照 Boolean 判断
+ * 会让菜单顶部横着一条没头没尾的线。`render` 里读到的 ref 依赖在这里也照常追踪。
+ */
+const menuHasExtraItems = computed(
+  () => (entryMenuExtra.value?.render(() => {}) ?? []).length > 0,
+)
+
+/**
+ * 专属段容器。`render()` 在这里被调用，也就是跑在外壳的渲染 effect 里 ——
+ * handler 闭包里读到的 ref（表格的 `header` 等）依赖因此被正常追踪。
+ * 传入的 `close` 是外壳的关菜单：专属项点下去后要连菜单一起收起。
+ */
+const EntryMenuExtra = defineComponent({
+  name: 'BlockEntryMenuExtra',
+  setup() {
+    return () => entryMenuExtra.value?.render(closeEntryMenu) ?? []
+  },
+})
+
 // ── 常量配置 ──────────────────────────────────────────────
-const INDENT_WIDTH_PER_LEVEL = 24 // px
+const INDENT_WIDTH_PER_LEVEL = 14 // px
 
 // ── 缩进（由 depth prop 直接计算，O(1)） ──
 const indentWidth = computed(() => `${props.depth * INDENT_WIDTH_PER_LEVEL}px`)
 
 // ── 折叠状态（由 useBlockCollapse 统一管理） ──
+// fieldRowCount = 第二路折叠守卫（ADR-0045 折叠范围扩展：子树 + 字段带）
 const {
   collapsed,
+  canCollapse,
   isAnimating,
   toggleCollapse,
   updateChildrenHeight,
-} = useBlockCollapse(computed(() => props.node))
+} = useBlockCollapse(
+  computed(() => props.node),
+  fieldRowCount,
+  // 子节点容器 DOM（.block-children）：折叠/展开动画用它注入真实高度，消除末段卡顿
+  () => blockDraggableRef.value?.getContainerEl() ?? null,
+)
 
 // ── 子节点列表容器（拖拽接线由 BlockDraggableList 统一承载） ──
 // 拖拽配置 / @move 循环嵌套守卫 / @end 指示器清理与落库，均与根级列表同源，
 // 见 ./components/BlockDraggableList.vue。此处只负责本块子容器的类名（折叠动画）。
+// hasChildren 只问「有没有子块」——不含字段行（canCollapse 才含）。
+// 折叠态 chevron 永久显示只对子块生效：纯字段折叠没有子树可指认，
+// 常亮箭头会暗示「下面藏着一棵子树」。
+const hasChildren = computed(() => props.node.children.length > 0)
 const childrenContainerClass = computed(() => ({
   'block-children': true,
-  'has-children': !collapsed.value && props.node.children.length > 0,
+  'has-children': !collapsed.value && hasChildren.value,
   'is-collapsed': collapsed.value,
   'is-animating': isAnimating.value,
 }))
+
+// ── 子任务进度：子 block 含任务项（status 字段，Canceled/Archived 除外）时显示进度条 ──
+const { progress: childTaskProgress } = useChildTaskProgress(childrenModel)
+
+/**
+ * 进度条左侧对齐到上方任务图标右缘（grill 意见）：
+ * 行内偏移 = 缩进(depth × --block-indent-width) + bullet(20px) + 状态图标(24px)。
+ */
+const taskProgressLeft = computed(() => `calc(${props.depth} * var(--block-indent-width) + 44px)`)
 
 // ── 编辑器生命周期（由 useBlockEditorLifecycle 统一管理） ──
 // 原 ~300 行 save/split/merge/delete/indent/outdent/move/exit/click/mousedown
@@ -214,6 +510,7 @@ const {
   handleCursorChange,
   handleContentMousedown,
   handleContentClick,
+  syncBlockContent,
 } = useBlockEditorLifecycle({
   blockId,
   pageId: props.pageId,
@@ -225,6 +522,7 @@ const {
   pageStore,
   relationshipCleanup,
   selection: selection ?? undefined,
+  paneId: paneId ?? null,
 })
 
 // ── 类型特化钩子（由各 handler 的 setupBlock 提供）──
@@ -234,12 +532,12 @@ const setupCtx: BlockSetupContext = {
   blockId,
   block,
   pageId: props.pageId,
-  getProperty: getBlockProperty,
-  getPropertiesMap: getBlockPropertiesMap,
-  setProperty,
+  getFieldValue: getBlockFieldValue,
+  getFieldValuesMap: getBlockFieldValuesMap,
+  setFieldValue,
   blockStore,
   editorStore,
-  propertyStore,
+  fieldValueStore,
   pageStore,
   navigateToPage,
 }
@@ -279,6 +577,7 @@ onMounted(() => {
   // isActive 在挂载瞬间即为 true，watch(isActive) 不会因「变化」触发，需在此主动聚焦，
   // 否则新块停在只读渲染态 / 光标未落位（Issue 2：弹窗内 Enter 新建节点未激活）。
   if (isActive.value) {
+    registerContentFlusher()
     focusActiveEditor()
   }
 })
@@ -286,6 +585,9 @@ onMounted(() => {
 onBeforeUnmount(() => {
   typeHooks.value?.onBeforeUnmount?.()
   document.removeEventListener('delete-between-property', handleDeleteBetweenProperty, true)
+  // 悬停开菜单的两个定时器不能留着：卸载后再触发会去写已销毁实例的 ref
+  clearEntryMenuTimers()
+  if (menuOwner.value === menuToken) menuOwner.value = null
 
   const el = document.querySelector(`[data-block-id="${blockId.value}"]`)
   if (el) {
@@ -308,21 +610,30 @@ async function handleDeleteBetweenProperty(e: Event) {
     return
   }
   
-  const blockProps = propertyStore.getBlockProperties(blockId.value)
+  const blockFields = fieldValueStore.getBlockFieldValues(blockId.value)
 
-  // 查找 between 位置的属性（status/priority）
-  const betweenProps = blockProps.filter(prop => {
-    const def = propertyStore.getPropertyDef(prop.key)
+  // 查找 between 位置的字段值（status/priority）
+  const betweenFields = blockFields.filter(fv => {
+    const def = fieldValueStore.getFieldDef(fv.key)
     return def?.displayPosition === 'between-bullet-content'
   })
 
-  if (betweenProps.length > 0) {
+  if (betweenFields.length > 0) {
     // 阻止默认的 merge 行为
     customEvent.preventDefault()
     
-    // 删除属性
-    await propertyStore.deleteProperty(betweenProps[0].id, blockId.value)
+    // 删除字段值
+    await fieldValueStore.deleteFieldValue(betweenFields[0].id, blockId.value)
   }
+}
+
+/**
+ * 取编辑器实例的根 DOM：ProseMirror 的 Editor 走 `view.dom`，CodeMirror 的 EditorView
+ * 本身就是 `{ dom }`。用于判断编辑器是否被藏在 display:none 容器里（见 focusActiveEditor）。
+ */
+function editorDomOf(editor: unknown): HTMLElement | null {
+  const e = editor as { view?: { dom?: HTMLElement }; dom?: HTMLElement } | null
+  return e?.view?.dom ?? e?.dom ?? null
 }
 
 /**
@@ -337,7 +648,12 @@ async function focusActiveEditor() {
   await new Promise(resolve => requestAnimationFrame(resolve))
   if (!editorRef.value) return
   const editor = editorRef.value.getEditor()
-  if (editor) {
+  // 非活动 tab 里的同源块也会被判成 active —— `isActive` 的 pane 护栏只区分 pane，
+  // 不区分同一 pane 内的多个 tab 视图（非活动 tab 只是 display:none，组件照常挂载）。
+  // 让它登记的话，全局 activeEditor 就指向一份用户看不见的实例：斜杠面板用它的
+  // coordsAtPos 求光标（恒 (0,0)，面板跳到视口左上角），命令回读正文也读不到用户正在
+  // 写的那一份。看不见的编辑器不能成为活动编辑器。
+  if (editor && !hasHiddenAncestor(editorDomOf(editor))) {
     editorStore.setActiveEditor(editor)
   }
 
@@ -392,13 +708,18 @@ async function focusActiveEditor() {
     return
   }
 
-  // 优先级：点击坐标 > cursorPos > end
+  // 优先级：点击坐标 > 撤销恢复的选区 > cursorPos > end
   const clickCoords = editorStore.consumeClickCoords()
+  const pendingRange = editorStore.consumeSelectionRange()
   if (clickCoords) {
     editorRef.value?.focusAtCoords?.(clickCoords.x, clickCoords.y)
   } else {
     const pendingPos = editorStore.consumeCursorPos()
-    if (pendingPos !== null) {
+    if (pendingRange) {
+      // 撤销/重做恢复的选区优先于单点：范围（选中态）也是状态的一部分
+      if (editorRef.value.focusRange) editorRef.value.focusRange(pendingRange.from, pendingRange.to)
+      else editorRef.value.focus(pendingRange.to)
+    } else if (pendingPos !== null) {
       editorRef.value.focus(pendingPos)
     } else {
       editorRef.value.focus('end')
@@ -406,13 +727,47 @@ async function focusActiveEditor() {
   }
 }
 
+/**
+ * 把「编辑器里未落库的正文 → store」的出口挂到 editorStore：撤销/重做前由
+ * `runUndoOrRedo` 调用（打字进 store 走 300ms 防抖，不同步会撤错步，见该函数注释）。
+ * 用 flush: false 只写内存 —— 落库交给恢复时的单事务，不给撤销热路径加 save_block_tree。
+ */
+function registerContentFlusher() {
+  editorStore.registerContentFlusher(blockId.value, () => syncBlockContent(false))
+}
+
+/**
+ * 选区上报（撤销历史视图态）：把「现在光标/选区在哪」写进历史栈，供撤销/重做回放。
+ * `contentChanged` 由编辑器事务给出 —— 只有**纯移动/纯选中**才就地更新当前快照的选区；
+ * 与正文改动同事务时不动旧快照（改动后那一刻属于即将入栈的新快照）。
+ */
+function handleSelectionChange(payload: { from: number; to: number; contentChanged: boolean }) {
+  // 只认活动块的选区：非活动块的编辑器在挂载/失焦时也会走事务，若上报进来会把
+  // 历史栈顶的视图态改成「用户根本不在的那一块」—— 下次撤销就把光标送错块。
+  if (!isActive.value) return
+  recordSelection(
+    props.pageId,
+    { blockId: blockId.value, from: payload.from, to: payload.to },
+    { contentChanged: payload.contentChanged },
+  )
+}
+
 watch(
   isActive,
   (active) => {
     if (active) {
+      // 撤销/重做前要把编辑器里未落库的正文同步进 store（打字走 300ms 防抖），
+      // 出口挂在 store 上供 runUndoOrRedo 调用 —— 见 editorStore.registerContentFlusher。
+      registerContentFlusher()
       focusActiveEditor()
     } else {
-      editorStore.setActiveEditor(null)
+      // 仅当本块是「当前活动块的主人」时才清理：双 pane 同页时，另一个 pane 的同源块
+      // 因全局 activeBlockId 变化而被动取消激活，它从未持有焦点 / 正文同步出口，
+      // 不应把真正活动 pane 的 activeEditor 与 contentFlusher 清掉（否则焦点 / 撤销错位）。
+      if (editorStore.activeBlockPaneId === (paneId ?? null)) {
+        editorStore.setActiveEditor(null)
+        editorStore.registerContentFlusher(blockId.value, null)
+      }
     }
   },
   { immediate: false }
@@ -473,13 +828,17 @@ function onBlockMousedown(e: MouseEvent) {
   e.preventDefault()
 }
 
-/** 属性区 mousedown：作为块选区起点（ADR-0035 D6），只做块选区、不激活编辑器 */
-function onPropertyMousedown(e: MouseEvent) {
+/** 字段区 mousedown：作为块选区起点（ADR-0035 D6），只做块选区、不激活编辑器 */
+function onFieldValueMousedown(e: MouseEvent) {
   if (e.button !== 0) return
   // Ctrl/Cmd+Click 交给块级命中面 onBlockMousedown 统一接管（其命中面覆盖本区域）
   if (e.ctrlKey || e.metaKey) return
   selection?.startTracking(blockId.value, true)
 }
+
+// ── 字段区显隐 ─────────────────────────────────────────────
+// D21 决策 3/8 的 `format.fields_hidden`（hover「×」隐藏 + 「显示字段区」恢复）已废弃：
+// 字段带的显隐统一并入块折叠（ADR-0045 折叠范围扩展），隐藏只有一个来源。
 
 async function onLanguageChange(lang: string) {
   if (typeHooks.value?.onLanguageChange) {
@@ -489,11 +848,125 @@ async function onLanguageChange(lang: string) {
   }
 }
 
-/** bullet dot 点击：打开单块子树编辑弹窗；弹窗内（inBlockModal）为 no-op（ADR-0039） */
-function onBulletClick() {
-  if (inBlockModal) return
-  editorStore.openBlockModal(blockId.value)
+/** 开本块菜单：菜单本体归外壳，锚点就是入口胶囊 */
+function showEntryMenu(anchorEl: HTMLElement) {
+  clearEntryMenuTimers()
+  menuAnchor.value = anchorEl
+  menuOpen.value = true
+  menuOwner.value = menuToken
 }
+
+/** 悬停开：延迟一点，扫过左栏时不至于一串菜单跟着闪 */
+function scheduleEntryMenuOpen(anchorEl: HTMLElement) {
+  clearEntryMenuTimers()
+  entryMenuOpenTimer = setTimeout(() => {
+    entryMenuOpenTimer = null
+    // 拖拽期间不弹：被拖块本体会被摘成 display:none，菜单锚在它上面量不出矩形
+    if (inBlockModal || blockDragActive.value) return
+    showEntryMenu(anchorEl)
+  }, ENTRY_MENU_OPEN_DELAY)
+}
+
+function scheduleEntryMenuClose() {
+  clearEntryMenuTimers()
+  entryMenuCloseTimer = setTimeout(() => {
+    entryMenuCloseTimer = null
+    closeEntryMenu()
+  }, ENTRY_MENU_CLOSE_DELAY)
+}
+
+/**
+ * 指针进入入口胶囊：悬停开菜单（本块菜单唯一入口的手势）。
+ *
+ * 按住键时不开：跨块文本选区与拖拽都从块上起手，指针扫过入口格时弹出一叠菜单
+ * 只会挡住正在做的事。
+ */
+function onEntryPointerEnter(e: PointerEvent) {
+  if (inBlockModal) return
+  if (e.buttons > 0) return
+  scheduleEntryMenuOpen(e.currentTarget as HTMLElement)
+}
+
+function onEntryPointerLeave() {
+  // 还没开也没排着开 → 无事可做
+  if (!menuOpen.value && entryMenuOpenTimer === null) return
+  scheduleEntryMenuClose()
+}
+
+/**
+ * 行内指针移动：胶囊悬停的**兜底命中面**。
+ *
+ * 胶囊只有 hover 块时才 `pointer-events: auto`（隐藏时不能吃点击），指针直接落进
+ * 胶囊那一下浏览器做的还是旧命中测试（元素当时还不可命中），`pointerenter` 不会来 ——
+ * 真机实测「一下跳到胶囊上」菜单不弹。`.block-row` 永远可命中，所以在这里按几何
+ * 判一次；胶囊悬出行的左缘 24px 也走这条（事件从胶囊冒泡上来）。
+ *
+ * 离开胶囊（指针还在本行）同样从这里算，和 `pointerleave` 落到同一个宽限。
+ */
+function onRowPointerMove(e: PointerEvent) {
+  if (inBlockModal) return
+  const iconEl = entryIconEl.value
+  if (!iconEl) return
+  const rect = iconEl.getBoundingClientRect()
+  const overIcon =
+    e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom
+  if (!overIcon) {
+    onEntryPointerLeave()
+    return
+  }
+  if (e.buttons > 0) return
+  if (menuOpen.value || entryMenuOpenTimer !== null) return
+  scheduleEntryMenuOpen(iconEl)
+}
+
+function onRowPointerLeave() {
+  onEntryPointerLeave()
+}
+
+/** 指针进入菜单：取消「离开胶囊就收起」的宽限 */
+function onEntryMenuPointerEnter() {
+  if (!menuOpen.value) return
+  clearEntryMenuTimers()
+}
+
+function onEntryMenuPointerLeave() {
+  if (!menuOpen.value) return
+  scheduleEntryMenuClose()
+}
+
+/**
+ * 入口点击（唯一入口：类型字形 + 拖拽握把同在一个胶囊里，所有块类型同一条路）。
+ *
+ * 以前这里是「把元素交给 handler 的 openEntryMenu」，菜单因此分裂成 table/query 两套
+ * popover、其余类型根本没有；收敛到外壳后类型只负责交出专属项（见 useBlockEntryMenuExtra）。
+ *
+ * 悬停已经开着的，点击只把它留住、不切换收起：悬停菜单的关闭手势是「指针离开」
+ * （或点空白 / Esc）。把点击也做成 toggle，会让「hover 弹出来顺手点一下」直接关掉
+ * 刚看到的菜单 —— 手指比脑子慢半拍时全是误关。
+ *
+ * 弹窗内（`inBlockModal`）保持 no-op：子树编辑器的根块有「禁 outdent / Enter 只建子块」
+ * 等特例（ADR-0039 D6），菜单搬进去要另裁一套可用性规则，不在本次范围内。
+ */
+function onEntryClick(e: MouseEvent) {
+  if (inBlockModal) return
+  const anchorEl = e.currentTarget as HTMLElement
+  if (menuOpen.value && menuAnchor.value === anchorEl) {
+    // 悬停刚弹出来的那一份：点下去等于是「我要用」，别关
+    clearEntryMenuTimers()
+    return
+  }
+  showEntryMenu(anchorEl)
+}
+
+// 同一时刻只开一个：别的块开菜单时，本块这份立即收起
+watch(menuOwner, (owner) => {
+  if (owner !== menuToken && menuOpen.value) closeEntryMenu()
+})
+
+// 拖拽一起手就收：本体马上要被摘成 display:none，菜单会跟着锚点飘到视口左上角
+watch(blockDragActive, (active) => {
+  if (active && menuOpen.value) closeEntryMenu()
+})
 
 function onDragOver(e: DragEvent) {
   if (typeHooks.value?.onDragOver?.(e) === true) return
@@ -520,12 +993,20 @@ watch(isActive, (active) => {
 <template>
   <div
     class="block"
-    :class="[priorityClass, statusClass, { active: isActive, 'cb-selected': isSelected && !hasSelectedAncestor, 'has-right-props': hasRightProps }]"
+    :class="[priorityClass, statusClass, { active: isActive, 'cb-selected': isSelected && !hasSelectedAncestor, 'is-collapsed': collapsed, 'is-animating': isAnimating }]"
     :data-block-id="blockId"
-    :style="{ '--block-indent': indentWidth }"
+    :style="{ '--block-indent': indentWidth, '--indent-depth': depth, '--block-entry-top': entryTop }"
     @mousedown="onBlockMousedown"
   >
-    <div class="block-row">
+    <!--
+      行的指针追踪 = 入口胶囊悬停的兜底命中面：胶囊隐藏时 pointer-events:none，
+      「一指针直接落到胶囊上」那一下浏览器不会给胶囊派 pointerenter（见 onRowPointerMove）。
+    -->
+    <div
+      class="block-row"
+      @pointermove="onRowPointerMove"
+      @pointerleave="onRowPointerLeave"
+    >
       <!-- 缩进占位 -->
       <div
         class="block-indent"
@@ -534,57 +1015,95 @@ watch(isActive, (active) => {
 
       <!-- 内容区域（bullet + content）- 选中时边框只应用到此容器 -->
       <div class="block-inner">
-        <!-- Bullet：dot 常显，点击打开单块子树编辑弹窗（BlockModal）；
-             chevron 仅在有子块且 hover 时显现，点击负责折叠/展开（ADR-0039） -->
+        <!-- Bullet 区域（也是拖拽手柄 handle=".block-bullet"）：
+             所有类型同一个入口胶囊 —— 类型字形 + 拖拽握把，hover 块时显现，
+             点击开本块菜单，按下拖动即拖拽；bullet dot 已从外壳下线（ADR-0039 D9 修订）。
+             chevron 在有子块**或有字段行**时（canCollapse，ADR-0045 折叠范围扩展）且 hover 时显现，
+             点击负责折叠/展开（ADR-0039） -->
         <span
           class="block-bullet"
-          :class="{ collapsed, 'hide-empty-bullet': hideBulletForEmpty }"
+          :class="{ collapsed }"
         >
           <span
-            v-if="node.children.length > 0"
-            class="bullet-chevron"
-            title="折叠 / 展开"
-            @click.stop="toggleCollapse"
+            ref="entryIconEl"
+            class="block-entry-icon"
+            :class="{ 'is-menu-open': menuOpen }"
+            :title="handler?.entryLabel"
+            :aria-label="handler?.entryLabel ?? '块菜单'"
+            @pointerenter="onEntryPointerEnter"
+            @pointerleave="onEntryPointerLeave"
+            @click.stop="onEntryClick"
           >
-            <ChevronDown
-              v-if="!collapsed"
-              :size="18"
-              :stroke-width="2"
+            <component
+              :is="entryIcon"
+              :size="entryIconSize"
+              :stroke-width="1.8"
             />
-            <ChevronRight
-              v-else
-              :size="18"
+            <GripVertical
+              class="block-entry-grip"
+              :size="14"
               :stroke-width="2"
             />
           </span>
           <span
-            class="bullet-dot"
-            title="打开块详情"
-            @click.stop="onBulletClick"
-          />
+            v-if="canCollapse"
+            class="bullet-chevron"
+            :class="{ 'is-pinned': collapsed && hasChildren }"
+            title="折叠 / 展开"
+            @click.stop="toggleCollapse"
+          >
+            <!-- 单图标 + CSS 旋转：展开 0°（朝下），折叠 rotate(-90°)（朝右，视觉同 ChevronRight）。
+                 v-if 换图标只能瞬间跳变，旋转过渡才能与折叠动效同步（参数见 _block.scss） -->
+            <ChevronDown
+              :size="18"
+              :stroke-width="2"
+            />
+          </span>
         </span>
 
         <div class="block-body">
-          <!-- Between 属性显示 -->
-          <PropertyInline
+          <!-- Between 字段值显示 -->
+          <BlockFieldZone
             :block-id="blockId"
-            position="between-bullet-content"
+            variant="between"
           />
 
           <!-- 内容区 -->
           <div
             class="block-content"
+            :class="{
+              [`is-callout-${calloutTone}`]: calloutTone,
+              'is-callout-quiet': calloutTone && hasInlineBg,
+            }"
+            :style="contentAlignStyle"
             @mousedown="onContentMousedown"
           >
+            <!-- 语义图标：既是"这是哪种语义"的标签，也是切换入口。
+                 与正文同处一个 flex 行 —— 让位 20px，正文因此比普通块右移 28px（含间隙）。
+                 `mousedown.stop`：这是自交互元素，按下不该把块拉进编辑态。 -->
+            <button
+              v-if="calloutTone"
+              ref="calloutIconEl"
+              type="button"
+              class="callout-tone-btn"
+              :title="`${CALLOUT_TONE_LABELS[calloutTone]}（点击切换）`"
+              :aria-label="`高亮语义：${CALLOUT_TONE_LABELS[calloutTone]}，点击切换`"
+              @mousedown.stop
+              @click.stop="onCalloutIconClick"
+            >
+              <CalloutToneIcon :tone="calloutTone" />
+            </button>
             <component
               :is="handler.editorComponent"
               v-if="isActive && handler"
               ref="editorRef"
               :block-id="blockId"
               :content="editContent"
+              :inline-marks="editInlineMarks"
+              :block-format="block.format"
               :show-full-placeholder="isSingleEmptyBlock"
-              :properties="getBlockPropertiesMap()"
-              :language="getBlockProperty('language')"
+              :field-values="getBlockFieldValuesMap()"
+              :language="getBlockFieldValue('language')"
               @save="handleSave"
               @split="handleSplit"
               @merge="handleMerge"
@@ -598,6 +1117,8 @@ watch(isActive, (active) => {
               @backspace-empty="handleBackspaceEmpty"
               @exit-edit="handleExitEdit"
               @cursor-change="handleCursorChange"
+              @selection-change="handleSelectionChange"
+              @align="onContentAlign"
               @language-change="onLanguageChange"
             />
             <component
@@ -605,8 +1126,9 @@ watch(isActive, (active) => {
               v-else-if="handler"
               :block-id="blockId"
               :content="block.content"
-              :properties="getBlockPropertiesMap()"
-              :language="getBlockProperty('language')"
+              :block-format="block.format"
+              :field-values="getBlockFieldValuesMap()"
+              :language="getBlockFieldValue('language')"
               :show-placeholder="isSingleEmptyBlock"
               :readonly="true"
               @content-click="onContentClick"
@@ -621,36 +1143,47 @@ watch(isActive, (active) => {
             </div>
           </div>
 
-          <!-- Right 属性显示 -->
-          <PropertyInline
+          <!-- 内容行尾内联槽：priority 象限网格图标（ADR-0054 D3/D4 恢复）。
+               只读展示位 —— 与下方字段区（录入面）职责不同，不互斥。 -->
+          <BlockFieldZone
             :block-id="blockId"
-            position="right-of-content"
+            variant="right"
           />
         </div>
       </div>
-
-      <!-- 行内右侧属性列：常规 chips 作为行尾 flex 项，宽度自适应、换行撑高行，不被裁剪 -->
-      <div
-        class="block-row-properties"
-        @mousedown="onPropertyMousedown"
-      >
-        <PropertyDisplay
-          :block-id="blockId"
-          variant="chips"
-        />
-      </div>
     </div>
 
-    <!-- 属性带（content 下方）：书笔记来源行原位保留；无属性时为 #94 命中带 -->
+    <!-- 字段带（content 下方）：书笔记来源行 + 块字段区。
+         本块折叠时整带隐藏（`.block.is-collapsed > .block-properties`，见 _block.scss）——
+         字段带与子树同属「本块的可折叠细节」（ADR-0045 折叠范围扩展）。 -->
     <div
       class="block-properties"
-      @mousedown="onPropertyMousedown"
+      @mousedown="onFieldValueMousedown"
     >
-      <PropertyDisplay
+      <BlockFieldZone
         :block-id="blockId"
         variant="book-note"
       />
+      <!-- 块字段区（ADR-0050 D1「挂载即显示」）：只渲染该块已挂标签的有效字段。
+           是否渲染由 `fields.length` 决定——全被 hide_when 拦掉时不出空容器（与折叠守卫同源） -->
+      <BlockFieldZone
+        :block-id="blockId"
+        :tag-ids="block.tags ?? []"
+        variant="list"
+      />
     </div>
+
+    <!-- 子任务进度条：子 block 含任务项（status 字段）时显示在 block 下方；
+         Canceled/Archived 不参与，全部删除后随树重建自动消失。
+         随本块折叠一起隐藏（`.block.is-collapsed > .block-child-task-progress`，见 _block.scss）——
+         与字段带、子树同属「本块的可折叠细节」（ADR-0045 折叠范围扩展）。 -->
+    <TaskProgressBar
+      v-if="childTaskProgress"
+      :done="childTaskProgress.done"
+      :total="childTaskProgress.total"
+      class="block-child-task-progress"
+      :style="{ marginLeft: taskProgressLeft }"
+    />
 
     <!--
       子节点列表（BlockDraggableList：拖拽接线 + 折叠动画容器）
@@ -666,8 +1199,88 @@ watch(isActive, (active) => {
       :parent-id="node.id"
       :depth="depth + 1"
       :class="childrenContainerClass"
-      :style="{ '--indent-depth': depth }"
       @drag-end="intent => onDragEnd?.(intent)"
     />
+
+    <!--
+      块入口菜单（ADR-0039 D9）：所有块类型共用这一处。
+      - 类型专属项由 handler 注册（useBlockEntryMenuExtra），排在最上面；
+      - 通用段 `BlockMenuCommon` 单源定义项序与分组，有专属项时它自带前置分隔线；
+      - 浮层 Teleport 到 body，容器类 `.block-entry-menu` 在全局 _block.scss。
+      - `modal=false`：这是悬停菜单，不是模态弹层 —— 铺全屏 overlay 会把页面其余部分
+        的 hover/点击一起吃掉，指针一移开菜单就没有落脚点（连本块的图标都会消失）。
+      - 指针进出菜单要报给外壳：从胶囊走到菜单的这段路上不能把菜单关掉。
+      `mousedown.prevent`：菜单里按下不抢走编辑器的焦点/光标（打开菜单不改编辑态）。
+    -->
+    <BasePopover
+      :visible="menuOpen"
+      :anchor-el="menuAnchor"
+      placement="left-center"
+      :modal="false"
+      @close="closeEntryMenu"
+    >
+      <div
+        class="block-entry-menu"
+        @pointerenter="onEntryMenuPointerEnter"
+        @pointerleave="onEntryMenuPointerLeave"
+        @mousedown.prevent
+      >
+        <!-- 文本样式行（普通文本 / H1–H3 / 有序 / 无序）：只对文本块出现，排在菜单最上面
+             —— 「这是什么块」之后紧跟着就是「换成哪种文本」，顺序与用户的问题一致。
+             文本块没有类型专属项，所以下面这条分隔线由本处补上（通用段此时 no-divider-top）。 -->
+        <BlockMenuTextStyle
+          v-if="isTextBlock"
+          :style="paragraph.style"
+          :callout-tone="calloutTone"
+          @select="onSelectTextStyle"
+        />
+        <span
+          v-if="isTextBlock"
+          class="menu-sep"
+        />
+        <EntryMenuExtra v-if="menuHasExtraItems" />
+        <BlockMenuCommon
+          :block-id="blockId"
+          :no-divider-top="!menuHasExtraItems"
+          :after-paste="entryMenuExtra?.afterPaste"
+          @close="closeEntryMenu"
+        />
+      </div>
+    </BasePopover>
+
+    <!-- 语义切换浮层：挂在块内的语义图标上。
+         `modal=false` 与入口菜单同因由 —— 这不是模态弹层，铺全屏 overlay 会把页面交互吃掉。
+         `mousedown.prevent`：选语义不该顺带把焦点还给编辑器。 -->
+    <BasePopover
+      :visible="calloutMenuOpen"
+      :anchor-el="calloutIconEl"
+      placement="bottom"
+      :modal="false"
+      @close="calloutMenuOpen = false"
+    >
+      <div
+        class="callout-tone-row"
+        role="group"
+        aria-label="高亮语义"
+        @mousedown.prevent
+      >
+        <button
+          v-for="tone in CALLOUT_TONES"
+          :key="tone"
+          type="button"
+          class="callout-tone-item"
+          :class="[`is-tone-${tone}`, { 'is-active': tone === calloutTone }]"
+          :title="CALLOUT_TONE_LABELS[tone]"
+          :aria-label="CALLOUT_TONE_LABELS[tone]"
+          :aria-pressed="tone === calloutTone"
+          @click="onPickCalloutTone(tone)"
+        >
+          <CalloutToneIcon
+            :tone="tone"
+            :size="16"
+          />
+        </button>
+      </div>
+    </BasePopover>
   </div>
 </template>

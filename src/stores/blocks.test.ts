@@ -609,7 +609,7 @@ describe('loadBlock', () => {
       pos: 1000,
       content: 'From DB',
       format: '{}',
-      type: 'bullet',
+      type: 'text',
       created_at: 1000,
       updated_at: 2000
     }
@@ -689,6 +689,67 @@ describe('saveErrors / retrySave - 保存失败状态与重试', () => {
     expect(saveSpy).toHaveBeenCalled()
 
     saveSpy.mockRestore()
+  })
+
+  // ── 建签门（ADR-0050）：打字中间态不建 #f/#fo 垃圾标签，与 [[page]] 同一提交语义 ──
+
+  test('打字保存（commitTags: false）payload 带 create_missing_tags: false', async () => {
+    const store = useBlockStore()
+    const block = await store.createBlock({ pageId: 'page-gate-1', content: 'Base' })
+    const client = await initTestCore()
+    const spy = vi.spyOn(client, 'saveBlockTree')
+
+    await store.updateBlockContent(block.id, 'Base #f', { commitTags: false })
+    await store.flushSave(block.id)
+
+    expect(spy).toHaveBeenCalled()
+    const payload = spy.mock.calls.at(-1)![0][0] as { create_missing_tags?: boolean }
+    expect(payload.create_missing_tags).toBe(false)
+    spy.mockRestore()
+  })
+
+  test('commit 保存（默认）payload 带 create_missing_tags: true', async () => {
+    const store = useBlockStore()
+    const block = await store.createBlock({ pageId: 'page-gate-2', content: 'Base' })
+    const client = await initTestCore()
+    const spy = vi.spyOn(client, 'saveBlockTree')
+
+    await store.updateBlockContent(block.id, 'Base #foo')
+    await store.flushSave(block.id)
+
+    const payload = spy.mock.calls.at(-1)![0][0] as { create_missing_tags?: boolean }
+    expect(payload.create_missing_tags).toBe(true)
+    spy.mockRestore()
+  })
+
+  test('内容未变的 commit：上一轮跳过建签时恰好补一次 true 保存，之后不再补', async () => {
+    const store = useBlockStore()
+    const block = await store.createBlock({ pageId: 'page-gate-3', content: 'Base' })
+    const client = await initTestCore()
+    const spy = vi.spyOn(client, 'saveBlockTree')
+
+    // 打字：false 落库（建签被跳过）
+    await store.updateBlockContent(block.id, 'Base #tag', { commitTags: false })
+    await store.flushSave(block.id)
+    const callsAfterTyping = spy.mock.calls.length
+
+    // blur：内容未变 —— 因上一轮 false，必须补一次 true 保存
+    await store.updateBlockContent(block.id, 'Base #tag')
+    await store.flushSave(block.id)
+    expect(spy.mock.calls.length).toBe(callsAfterTyping + 1)
+    const payload = spy.mock.calls.at(-1)![0][0] as { content: string; create_missing_tags?: boolean }
+    expect(payload.content).toBe('Base #tag')
+    expect(payload.create_missing_tags).toBe(true)
+
+    // 下一轮「打字 + blur」周期同样恰好补一次（flushSave 无 pending 也补跑 _doSave
+    // 是既有行为，故以周期计数断言，而非断言零保存）
+    await store.updateBlockContent(block.id, 'Base #tag2', { commitTags: false })
+    await store.flushSave(block.id)
+    const callsAfterTyping2 = spy.mock.calls.length
+    await store.updateBlockContent(block.id, 'Base #tag2')
+    await store.flushSave(block.id)
+    expect(spy.mock.calls.length).toBe(callsAfterTyping2 + 1)
+    spy.mockRestore()
   })
 
   test('批量删除空数组无操作', async () => {
@@ -1173,6 +1234,7 @@ describe('planTextRangeDeletion - 删除计划形状（#100）', () => {
       middleBlockIds: [],
       mergedAwayBlockId: null,
       contentAfter: { [a.id]: 'hellorld' },
+      contentAfterMarks: { [a.id]: [] },
       vanishedFragments: [{ blockId: a.id, text: ' wo' }],
       merge: null,
       cursor: { id: a.id, cursorPos: 6 },
@@ -1198,7 +1260,12 @@ describe('planTextRangeDeletion - 删除计划形状（#100）', () => {
       { blockId: a.id, text: 'llo' },
       { blockId: b.id, text: 'wor' },
     ])
-    expect(plan!.merge).toEqual({ targetId: a.id, sourceId: b.id, mergedContent: 'held' })
+    expect(plan!.merge).toEqual({
+      targetId: a.id,
+      sourceId: b.id,
+      mergedContent: 'held',
+      inlineMarks: [],
+    })
     expect(plan!.cursor).toEqual({ id: a.id, cursorPos: 3 })
   })
 
@@ -1252,5 +1319,53 @@ describe('planTextRangeDeletion - 删除计划形状（#100）', () => {
     })
 
     expect(plan).toBeNull()
+  })
+})
+
+describe('行内格式随结构操作保持', () => {
+  test('中间回车拆分：marks 按切点分配给两个块', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-inline-1'
+
+    const block = await store.createBlock({
+      pageId,
+      content: 'hello world',
+      format: { inlineMarks: [{ start: 6, end: 11, bold: true }] },
+    })
+
+    // effectivePos 为编辑态光标位置（段落起点 1），6 → 正文偏移 5
+    const created = await store.insertBlockAtCursor(block.id, 6, false)
+
+    expect(store.blocks.find(b => b.id === block.id)?.content).toBe('hello')
+    expect((store.blocks.find(b => b.id === block.id)?.format as any)?.inlineMarks ?? []).toEqual([])
+    expect(created?.content).toBe(' world')
+    // 右半以切点后的空格开头，原 6..11 平移到 1..6
+    expect((created?.format as any)?.inlineMarks).toEqual([{ start: 1, end: 6, bold: true }])
+  })
+
+  test('Backspace 合并：前块 marks 不变，后块 marks 平移拼接', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-inline-2'
+
+    const first = await store.createBlock({
+      pageId,
+      content: 'hello',
+      format: { inlineMarks: [{ start: 0, end: 5, bold: true }] },
+    })
+    const second = await store.createBlock({
+      pageId,
+      content: ' world',
+      // ' world' 中的 world 起于 1
+      format: { inlineMarks: [{ start: 1, end: 6, italic: true }] },
+    })
+
+    await store.mergeWithPrevious(second.id)
+
+    const merged = store.blocks.find(b => b.id === first.id)
+    expect(merged?.content).toBe('hello world')
+    expect((merged?.format as any)?.inlineMarks).toEqual([
+      { start: 0, end: 5, bold: true },
+      { start: 6, end: 11, italic: true },
+    ])
   })
 })

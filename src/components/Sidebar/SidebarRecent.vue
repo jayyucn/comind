@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { useRouter, useRoute } from 'vue-router'
+import { ChevronDown,ChevronUp } from 'lucide-vue-next'
+import { ref } from 'vue'
+import { useRoute,useRouter } from 'vue-router'
+
 import { useRecent } from '../../composables/useRecent'
+import { useEditorStore } from '../../stores/editor'
 import { usePageStore } from '../../stores/pages'
-import { ChevronUp, ChevronDown } from 'lucide-vue-next'
 import PageItem from './PageItem.vue'
 import PageItemMenu from './PageItemMenu.vue'
-import { ref } from 'vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -31,8 +33,11 @@ function handleStartRename(pageId: string) {
 }
 
 function handleRename(pageId: string, newTitle: string) {
-  pageStore.renamePage(pageId, newTitle)
   renamingPageId.value = null
+  // 页名约束（建链准入）：被拒时把原因与替换建议说出来，不静默吞掉。
+  void pageStore.renamePage(pageId, newTitle).then((result) => {
+    if (result?.invalid) useEditorStore().showToast(result.invalid, 'error')
+  })
 }
 
 function handleCancelRename() {
@@ -96,6 +101,8 @@ function handleCancelRename() {
 <style scoped>
 .recent-section {
   padding: 0;
+  /* 置顶区块收缩时不得挤压「最近」列表 */
+  flex-shrink: 0;
 }
 
 .section-header {
@@ -116,7 +123,7 @@ function handleCancelRename() {
   font-weight: var(--font-semibold);
   color: var(--text-tertiary);
   line-height: var(--leading-snug);
-  transition: color 80ms ease;
+  transition: color var(--dur-fast) var(--ease-out);
 }
 
 .expand-icon {

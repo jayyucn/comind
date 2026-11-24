@@ -1,4 +1,4 @@
-import type { TreeNode, Block } from '../types/block'
+import type { Block, TreeNode } from '../types/block'
 
 /**
  * 从扁平 Block 数组构建树形结构
@@ -113,6 +113,7 @@ export function syncTreeToStore(
         if (parentId) affected?.gained.add(parentId)
         if (block.parentId) affected?.emptied.add(block.parentId)
         block.parentId = parentId
+        // 跨父搬移后序号重排由调用方按 affected 的父组调度（段首恒 1，无需清锚点）
         dirty = true
       }
       if (block.pos !== expectedPos) {

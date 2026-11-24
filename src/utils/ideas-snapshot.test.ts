@@ -42,27 +42,27 @@ describe('parseIdeasSnapshotContent（snake content_json → camel 渲染数据�
     blocks: [
       {
         id: 'b-top', page_id: 'p1', parent_id: null, pos: 1000,
-        content: '写周报', format: '{}', type: 'bullet',
+        content: '写周报', format: '{}', type: 'text',
         created_at: 1, updated_at: 2, version: 0, deleted_at: null,
       },
       {
         id: 'b-child', page_id: 'p1', parent_id: 'b-top', pos: 2000,
-        content: '- [ ] 子项', format: '{"align":"left"}', type: 'bullet',
+        content: '- [ ] 子项', format: '{"align":"left"}', type: 'text',
         created_at: 1, updated_at: 2, version: 0, deleted_at: null,
       },
     ],
     properties: {
       'b-top': [
         {
-          id: 'pr-1', block_id: 'b-top', key: 'status', value: 'Todo', type: 'string',
-          sort_order: 0, is_hidden: 0, is_deleted: 0, schema_version: 1,
+          id: 'pr-1', block_id: 'b-top', field_definition_id: 'fd-status',
+          key: 'status', value_json: 'Todo', value_type: 'string', seq: 0,
           created_at: 1, updated_at: 2, version: 0, deleted_at: null,
         },
       ],
     },
   })
 
-  it('映射为 camelCase Block[] + 属性 map', () => {
+  it('映射为 camelCase Block[] + 字段值 map（FieldValue 原形直通）', () => {
     const data = parseIdeasSnapshotContent(raw)
     expect(data).not.toBeNull()
     expect(data!.blocks).toHaveLength(2)
@@ -70,15 +70,15 @@ describe('parseIdeasSnapshotContent（snake content_json → camel 渲染数据�
     expect(top.id).toBe('b-top')
     expect(top.pageId).toBe('p1')
     expect(top.parentId).toBeNull()
-    expect(top.type).toBe('bullet')
+    expect(top.type).toBe('text')
     expect(data!.blocks[1].parentId).toBe('b-top')
     expect(data!.blocks[1].format).toEqual({ align: 'left' })
     const props = data!.properties['b-top']
     expect(props).toHaveLength(1)
     expect(props[0].key).toBe('status')
-    expect(props[0].value).toBe('Todo')
-    expect(props[0].blockId).toBe('b-top')
-    expect(props[0].isHidden).toBe(false)
+    expect(props[0].value_json).toBe('Todo')
+    expect(props[0].value_type).toBe('string')
+    expect(props[0].block_id).toBe('b-top')
   })
 
   it('非法 JSON / 缺 blocks → null', () => {

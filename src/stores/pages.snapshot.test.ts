@@ -55,12 +55,12 @@ describe('Ideas 页快照读取守卫（Seam ② store 级）', () => {
       pos: 1000,
       content: '写周报',
       format: '{}',
-      type: 'bullet',
+      type: 'text',
       created_at: Date.now(),
       updated_at: Date.now(),
     } satisfies BlockUpdate])
     const taskBlockId = saved.block.id
-    await client.setProperty(taskBlockId, 'status', 'Todo', 'string')
+    await client.setFieldValue(taskBlockId, 'status', 'Todo', 'string')
 
     // ── 守卫：仅历史页走快照（纯函数，与 Rust 物化判定镜像）──
     expect(isStaleIdeasPage({ type: 'ideas', title: yesterday }, today)).toBe(true)
@@ -73,9 +73,11 @@ describe('Ideas 页快照读取守卫（Seam ② store 级）', () => {
     const historySnapshot = await pageStore.getIdeasSnapshot(yesterdayPage.id)
     expect(historySnapshot).not.toBeNull()
     expect(historySnapshot!.blocks.length).toBeGreaterThanOrEqual(1)
+    // IdeasSnapshotData.properties 是 content_json 的存储格式契约（snake_case 直通库），
+    // 不随 useUndoHistory 的 HistoryEntry.fieldValues 改名而变
     const taskProps = historySnapshot!.properties[taskBlockId]
     expect(taskProps).toBeDefined()
-    expect(taskProps.some(p => p.key === 'status' && p.value === 'Todo')).toBe(true)
+    expect(taskProps.some(p => p.key === 'status' && p.value_json === 'Todo')).toBe(true)
 
     // ── 今日页：读取为 null（页面渲染仍走活数据）──
     expect(await pageStore.getIdeasSnapshot(todayPage.id)).toBeNull()

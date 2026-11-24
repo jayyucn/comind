@@ -18,9 +18,9 @@ const hoisted = vi.hoisted(() => {
   const client = {
     saveBlockTree: vi.fn(() => Promise.resolve()),
     executeBatch: vi.fn(() => Promise.resolve()),
-    getProperties: vi.fn(() => Promise.resolve([])),
+    getFieldValues: vi.fn(() => Promise.resolve([])),
     getOutlinks: vi.fn(() => Promise.resolve([])),
-    setProperty: vi.fn(() => Promise.resolve({})),
+    setFieldValue: vi.fn(() => Promise.resolve({})),
   }
   return { ensureTodo, client }
 })
@@ -29,8 +29,8 @@ vi.mock('../wasm/client', () => ({
   initCoreClient: vi.fn(() => Promise.resolve(hoisted.client)),
 }))
 
-vi.mock('../stores/property', () => ({
-  usePropertyStore: vi.fn(() => ({
+vi.mock('../stores/fieldValue', () => ({
+  useFieldValueStore: vi.fn(() => ({
     ensureTodo: hoisted.ensureTodo,
   })),
 }))
@@ -50,7 +50,7 @@ async function seed(content: string): Promise<string> {
     pageId: 'p1',
     content,
     pos: 1,
-    type: 'bullet',
+    type: 'text',
   })
   return block.id
 }

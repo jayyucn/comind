@@ -178,7 +178,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick, true))
   width: 0;
   opacity: 0;
   overflow: hidden;
-  transition: width 200ms ease, opacity 200ms ease;
+  transition: width var(--dur-base) var(--ease-in-out), opacity var(--dur-base) var(--ease-out);
 }
 
 .search.open .search-field {
@@ -230,7 +230,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick, true))
   background: transparent;
   color: var(--text-tertiary);
   cursor: pointer;
-  transition: background 80ms ease, color 80ms ease, border-color 120ms ease;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
 }
 
 .hdr-btn:hover {

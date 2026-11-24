@@ -313,7 +313,7 @@ onBeforeUnmount(() => {
   color: var(--text-secondary);
   font: 500 var(--text-xs, 0.75rem)/1 var(--font-sans, sans-serif);
   cursor: pointer;
-  transition: all 120ms ease;
+  transition: background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out), opacity var(--dur-fast) var(--ease-out);
 
   &:hover:not(:disabled) {
     border-color: var(--accent);

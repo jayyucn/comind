@@ -38,7 +38,7 @@ describe('useTemplateRegistry', () => {
       name: '我的会议',
       category: 'custom',
       sourcePageId: 'p1',
-      blocks: [{ type: 'bullet', content: 'my variant' }],
+      blocks: [{ type: 'text', content: 'my variant' }],
       createdAt: 0,
       updatedAt: 0,
     }]
@@ -75,7 +75,7 @@ describe('useTemplateRegistry', () => {
       name: '我的会议（覆盖内置）',
       category: 'custom',
       sourcePageId: 'p',
-      blocks: [{ type: 'bullet', content: 'override' }],
+      blocks: [{ type: 'text', content: 'override' }],
       createdAt: 0, updatedAt: 0,
     }]
     const registry = useTemplateRegistry()

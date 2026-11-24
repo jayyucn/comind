@@ -1,12 +1,13 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
+
+import { usePinned } from '../composables/usePinned'
 import type { Page } from '../types/page'
+import { type IdeasSnapshotData,parseIdeasSnapshotContent } from '../utils/ideas-snapshot'
+import { validatePageName } from '../utils/page-name'
+import type { CoreClient } from '../wasm/client'
 import { initCoreClient } from '../wasm/client'
 import { useBlockStore } from './blocks'
-import { useFavorites } from '../composables/useFavorites'
-import { parseIdeasSnapshotContent, type IdeasSnapshotData } from '../utils/ideas-snapshot'
-
-import type { CoreClient } from '../wasm/client'
 
 let coreClientPromise: Promise<CoreClient> | null = null
 
@@ -150,6 +151,17 @@ export const usePageStore = defineStore('pages', () => {
     currentPageId.value = pageId
   }
 
+  /**
+   * 内存层刷新某页的 updatedAt（不落库）。
+   * block 落库时 Rust 已 bump 了 Page.updated_at，但前端的 pages 数组不会因此响应式更新；
+   * 最近列表按 updatedAt 排序，需要这里显式补一次，才能实时把刚编辑的页上移到最近顶部。
+   */
+  function touchPage(pageId: string) {
+    const idx = pages.value.findIndex(p => p.id === pageId)
+    if (idx === -1) return
+    pages.value[idx] = { ...pages.value[idx], updatedAt: Date.now() }
+  }
+
   // ── Ideas 页快照读取（ADR-0042 T5 快照读取守卫）──
   // 快照不可变 → 会话内缓存安全；null 也缓存（该页尚无快照，本次会话不再重试）。
   const ideasSnapshots = ref<Record<string, IdeasSnapshotData | null>>({})
@@ -186,10 +198,13 @@ export const usePageStore = defineStore('pages', () => {
   }
 
   async function createPage(title: string, type: 'normal' | 'ideas' = 'normal'): Promise<Page> {
-    const trimmedTitle = title.trim()
-    if (!trimmedTitle) {
-      throw new Error('Page title cannot be empty')
+    // 页名约束（link-spec「页名约束（建链准入）」）：trim 后非空、不含 [ ] | 与换行。
+    // 与「转为页面引用」按钮的判据同源——同一份规则不允许两个入口两种答案。
+    const check = validatePageName(title)
+    if (!check.ok) {
+      throw new Error(check.suggestion ? `${check.message}；可改为「${check.suggestion}」` : check.message)
     }
+    const trimmedTitle = check.name
 
     // 幂等：并发时可能已被另一方创建，直接复用
     const existingPage = getPageByTitle(trimmedTitle)
@@ -241,12 +256,18 @@ export const usePageStore = defineStore('pages', () => {
   }
 
   /** 重命名页面，返回重复信息（如有） */
-  async function renamePage(pageId: string, newTitle: string): Promise<{ duplicated?: Page }> {
+  async function renamePage(pageId: string, newTitle: string): Promise<{ duplicated?: Page; invalid?: string }> {
     if (!newTitle.trim()) return {}
     const page = getPage(pageId)
     if (!page) return {}
     if (page.type === 'ideas') return {}
-    const trimmedTitle = newTitle.trim()
+    // 同一条页名约束（建链准入）：改出来的名字若不能写进 [[ ]]，反链与跳转立刻失效，
+    // 所以拒绝并给出替换建议，而不是静默保存一个「看起来能用」的页名。
+    const check = validatePageName(newTitle)
+    if (!check.ok) {
+      return { invalid: check.suggestion ? `${check.message}；可改为「${check.suggestion}」` : check.message }
+    }
+    const trimmedTitle = check.name
     if (page.title === trimmedTitle) return {}
 
     const duplicate = getPageByTitle(trimmedTitle)
@@ -340,8 +361,8 @@ export const usePageStore = defineStore('pages', () => {
     if (currentPageId.value === pageId) {
       currentPageId.value = ''
     }
-    const { removeFavorite } = useFavorites()
-    removeFavorite(pageId)
+    const { removePin } = usePinned()
+    removePin(pageId)
     if (removePageFromHistoryFn) {
       removePageFromHistoryFn(pageId)
     }
@@ -371,12 +392,12 @@ export const usePageStore = defineStore('pages', () => {
     if (currentPageId.value === pageId) {
       currentPageId.value = ''
     }
-    const { removeFavorite } = useFavorites()
-    removeFavorite(pageId)
+    const { removePin } = usePinned()
+    removePin(pageId)
     if (removePageFromHistoryFn) {
       removePageFromHistoryFn(pageId)
     }
   }
 
-  return { pages, currentPageId, loading, trashPages, loadAllPages, ensurePagesLoaded, ensureTodayIdeasPage, getIdeasSnapshot, loadIdeasSnapshotMonths, loadIdeasSnapshotsByMonth, ideasSnapshots, ideasMonths, ideasHistoryPages, setCurrentPage, openPage, createPage, getPage, getPageByTitle, getOrCreatePageByTitle, renamePage, mergePage, deletePage, loadTrashPages, softDeletePage, restorePage, permanentDeletePage, onRemovePageFromHistory }
+  return { pages, currentPageId, loading, trashPages, loadAllPages, ensurePagesLoaded, ensureTodayIdeasPage, getIdeasSnapshot, loadIdeasSnapshotMonths, loadIdeasSnapshotsByMonth, ideasSnapshots, ideasMonths, ideasHistoryPages, setCurrentPage, touchPage, openPage, createPage, getPage, getPageByTitle, getOrCreatePageByTitle, renamePage, mergePage, deletePage, loadTrashPages, softDeletePage, restorePage, permanentDeletePage, onRemovePageFromHistory }
 })

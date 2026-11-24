@@ -1,3 +1,5 @@
+import type { FieldValue } from '../types/field-value'
+
 export interface Block {
   id: string
   page_id: string
@@ -6,6 +8,8 @@ export interface Block {
   content: string
   format: string
   type: string
+  /** ADR-0049 D6：反规范化 tag id 数组（旧二进制不返回该字段，故 optional）。 */
+  tags?: string[]
   created_at: number
   updated_at: number
 }
@@ -25,20 +29,6 @@ export interface Page {
   created_at: number
   updated_at: number
   deleted_at?: number | null
-}
-
-export interface Property {
-  id: string
-  block_id: string
-  key: string
-  value: string
-  type: string
-  sort_order: number
-  is_hidden: number
-  is_deleted: number
-  schema_version: number
-  created_at: number
-  updated_at: number
 }
 
 export interface Link {
@@ -96,7 +86,6 @@ export interface SearchResult {
 
 export interface BlockSaveResult {
   block: Block
-  snapshot: string
   /** Structured render instructions for block.content.
    *  Built during save to close the edit→render-transition gap.
    *  Absent on old binaries (serde default). */
@@ -113,6 +102,8 @@ export interface BlockUpdate {
   type: string
   created_at?: number
   updated_at?: number
+  /** 是否允许 Rust 侧按 content 自动建/复活标签。缺省 true；编辑器防抖打字保存传 false（堵 #f/#fo 垃圾标签）。 */
+  create_missing_tags?: boolean
 }
 
 export interface PageUpdate {
@@ -126,10 +117,18 @@ export interface PageUpdate {
 }
 
 export interface BatchOperation {
+  // 'tag' / 'field_definition' / 'field_value'：ADR-0049 D6 的 Tag 统一字段模型
   entity: 'block' | 'page' | 'link' | 'property' | 'relationship_type' | 'template'
+    | 'tag' | 'field_definition' | 'field_value'
   // 'set' 仅用于 property（Rust execute_batch 的 ("property", "set") 分支）；
-  // 'undelete' 仅用于 block（撤销恢复：精确复活软删块，见 useUndoRestore）
-  action: 'create' | 'update' | 'delete' | 'get' | 'set' | 'sync_by_block' | 'undelete'
+  // 'undelete' 仅用于 block（撤销恢复：精确复活软删块，见 useUndoRestore）；
+  // 'set_tags' 仅用于 block（grill 决策 #8：未来批量打标的写入口）；
+  // 'tree' 仅用于 tag（标签树读接口：原始行 + 解析字段 + 后代闭包，ADR-0050 D10）；
+  // 'set_parent' 仅用于 tag（单父槽位，成环由 Rust 拒绝）；
+  // 'get_deleted_presets' / 'restore_presets' 仅用于 field_definition（ADR-0049 三态：预设删后可恢复）；
+  // 'get_by_field' 仅用于 field_value（按定义反查值行，ADR-0057「使用于」块列表）
+  action: 'create' | 'update' | 'delete' | 'get' | 'set' | 'sync_by_block' | 'undelete' | 'set_tags'
+    | 'tree' | 'set_parent' | 'get_deleted_presets' | 'restore_presets' | 'get_by_field'
   params: Record<string, unknown>
 }
 
@@ -163,18 +162,6 @@ export interface ImportResult {
 export interface SyncConfig {
   sync_enabled: boolean
   sync_interval_secs: number
-}
-
-export interface BlockVersion {
-  id: string
-  block_id: string
-  snapshot: string
-  hash: string
-  version: number
-  source: string
-  message: string | null
-  restored_from_version_id: string | null
-  created_at: number
 }
 
 export interface Notification {
@@ -225,6 +212,7 @@ export interface BlockCard {
   content_preview: string
   properties: Record<string, unknown>   // HashMap<String, Value> → Record
   date_refs: DateRefLite[]
+  tags?: string[]                        // content 派生 tag id 缓存（ADR-0049/0050，旧 payload 可能缺省）
   updated_at: number
   created_at: number
 }
@@ -305,8 +293,8 @@ export interface BlockRenderData {
   block: Block
   children: string[]
   render_segments: RenderSegment[]
-  /** Block properties resolved from Property table by Rust (zero extra IPC). */
-  properties: Property[]
+  /** Block 字段值，由 Rust 一并解析（零额外 IPC）。 */
+  properties: FieldValue[]
 }
 
 export type RenderSegment =
@@ -315,12 +303,27 @@ export type RenderSegment =
   | { type: 'typed_link'; start: number; end: number; target_page_title: string; display_text: string; relationship_type: string; rel_label: string; rel_color: string }
   | { type: 'external_link'; start: number; end: number; url: string }
   | { type: 'date_ref'; start: number; end: number; kind: string; iso: string; recurrence: string; lead_minutes: number; is_overdue: boolean }
+  // ADR-0049 grill 决策 #4：inline `#foo` 结构化渲染（点击无行为；is_system 驱动系统样式）
+  // color = 调色板 token 名（如 `--tag-color-3`，ADR-0050 D11），空串 = 无色。
+  | { type: 'tag'; start: number; end: number; title: string; tag_id: string; is_system: boolean; color: string }
 
 /** Input to the content renderer: block content + pre-computed render segments */
 export interface RenderInput {
   content: string
   segments: RenderSegment[]
   blockId: string
+  /**
+   * 渲染态标签色动态解析（ADR-0050 D11）：色真相在 tags store，渲染时实时取，
+   * 标签改色即响应（与编辑态 InlineTagExtension 的 resolve 闭包同构，渲染器不碰 Pinia）。
+   * - 命中 → 返回当前色（空串 = 无色）
+   * - undefined → 暂无法解析（如标签树未就绪）→ 回退段内快照色 `seg.color`
+   * 省缺此字段 = 沿用快照色（行为与动态解析引入前一致）。
+   */
+  resolveTagColor?: (tagId: string, title: string) => string | undefined
+  /** 行内格式区间（相对 content）；缺省 = 无格式 */
+  inlineMarks?: import('../utils/inline-marks').InlineMarkRange[]
+  /** 渲染坐标系与 content 坐标系的偏移（标题去 `# ` 前缀时传负值） */
+  markOffset?: number
 }
 
 /** 4.3: Link draft parsed from block content by Rust ContentParseService */

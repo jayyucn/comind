@@ -1,4 +1,4 @@
-use crate::types::Block;
+use crate::types::{normalize_block_type, Block};
 #[cfg(any(target_arch = "wasm32", test))]
 use std::collections::HashMap;
 #[cfg(not(target_arch = "wasm32"))]
@@ -15,7 +15,7 @@ use crate::storage::executor::Executor;
 /// 注意：列序与 `row_to_block_native` 的位置索引必须一一对应。
 pub const BLOCK_COLS: &[&str] = &[
     "id", "page_id", "parent_id", "pos", "content", "format", "type",
-    "created_at", "updated_at", "version", "deleted_at",
+    "created_at", "updated_at", "version", "deleted_at", "tags",
 ];
 
 pub fn block_select_cols() -> String {
@@ -40,16 +40,20 @@ pub fn row_to_block_native(row: &rusqlite::Row) -> Result<Block, rusqlite::Error
         pos: row.get(3)?,
         content: row.get(4)?,
         format: row.get(5)?,
-        r#type: row.get(6)?,
+        r#type: normalize_block_type(Some(&row.get::<_, String>(6)?)),
         created_at: row.get(7)?,
         updated_at: row.get(8)?,
         version: row.get(9)?,
         deleted_at: row.get(10)?,
+        tags: row.get::<_, String>(11).ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default(),
     })
 }
 
 /// sql.js 路径：按 COLS 列名查表（顺序无关，列名唯一权威），与原生同源于 `BLOCK_COLS`。
-/// 保留原 sqljs 的语义：parent_id 空串→None，format 缺省 "{}"，type 缺省 "bullet"。
+/// 保留原 sqljs 的语义：parent_id 空串→None，format 缺省 "{}"；type 缺省/历史 `bullet`
+/// 统一归一见 `normalize_block_type`（ADR-0063 D1）。
 #[cfg(any(target_arch = "wasm32", test))]
 pub fn row_to_block_js(row: &HashMap<String, String>) -> Block {
     Block {
@@ -62,11 +66,12 @@ pub fn row_to_block_js(row: &HashMap<String, String>) -> Block {
         pos: row.get("pos").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
         content: row.get("content").cloned().unwrap_or_default(),
         format: row.get("format").cloned().unwrap_or_else(|| "{}".to_string()),
-        r#type: row.get("type").cloned().unwrap_or_else(|| "bullet".to_string()),
+        r#type: normalize_block_type(row.get("type").map(|s| s.as_str())),
         created_at: row.get("created_at").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
         updated_at: row.get("updated_at").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
         version: row.get("version").map(|s| s.parse::<i64>().unwrap_or(0)).unwrap_or(0),
         deleted_at: row.get("deleted_at").map(|s| s.parse::<i64>().ok()).unwrap_or(None),
+        tags: row.get("tags").and_then(|s| serde_json::from_str(s).ok()).unwrap_or_default(),
     }
 }
 
@@ -75,14 +80,6 @@ pub fn row_to_block_js(row: &HashMap<String, String>) -> Block {
 #[cfg(not(target_arch = "wasm32"))]
 fn bx(e: rusqlite::Error) -> Box<dyn Error> {
     Box::new(e)
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-pub fn block_params(b: &Block) -> Vec<&dyn ToSql> {
-    vec![
-        &b.id, &b.page_id, &b.parent_id, &b.pos, &b.content, &b.format,
-        &b.r#type, &b.created_at, &b.updated_at, &b.version, &b.deleted_at,
-    ]
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -95,6 +92,18 @@ pub fn block_get_all<E: Executor>(exec: &E) -> Result<Vec<Block>, Box<dyn Error>
 #[cfg(not(target_arch = "wasm32"))]
 pub fn block_get_by_id<E: Executor>(exec: &E, id: &str) -> Result<Block, Box<dyn Error>> {
     let sql = format!("SELECT {} FROM Block WHERE id = ?1 AND deleted_at IS NULL", block_select_cols());
+    let params: Vec<&dyn ToSql> = vec![&id];
+    let rows = exec.query_map(&sql, &params, |row| row_to_block_native(row)).map_err(bx)?;
+    rows.into_iter().next().ok_or_else(|| {
+        Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "Block not found")) as Box<dyn Error>
+    })
+}
+
+/// 含软删的单块查询：不过滤 `deleted_at`，用于「剪切后粘贴」的搬移判定。
+/// 返回的 `Block.deleted_at` 由调用方判断（`Some` = 仍处于软删状态）。
+#[cfg(not(target_arch = "wasm32"))]
+pub fn block_get_by_id_including_deleted<E: Executor>(exec: &E, id: &str) -> Result<Block, Box<dyn Error>> {
+    let sql = format!("SELECT {} FROM Block WHERE id = ?1", block_select_cols());
     let params: Vec<&dyn ToSql> = vec![&id];
     let rows = exec.query_map(&sql, &params, |row| row_to_block_native(row)).map_err(bx)?;
     rows.into_iter().next().ok_or_else(|| {
@@ -164,18 +173,40 @@ pub fn block_undelete_by_id<E: Executor>(exec: &E, id: &str) -> Result<Block, Bo
     block_get_by_id(exec, id)
 }
 
+/// 仅刷新 `updated_at`（**不 bump version**）——字段值写入等派生变更的 Block 行
+/// 时间戳收口。矩阵视图 Done 的 24h 可见窗口 / updatedAt 排序 / BlockCard 投影都读
+/// `Block.updated_at`，而字段值只动 FieldValue 行、不经 BlockService::update 的
+/// 内容派生链路，故在此显式刷新。
+///
+/// 刻意不 bump version：派生刷新不应参与 sync LWW 的版本竞争，否则低版本的字段
+/// touch 会行级覆盖掉高版本的内容编辑（整行覆盖丢 content）。同步传播仍走
+/// FieldValue 行自身（行内 version/updated_at 独立），Block 行无版本变化即无 sync 条目。
+#[cfg(not(target_arch = "wasm32"))]
+pub fn block_touch_updated_at<E: Executor>(exec: &E, id: &str) -> Result<Block, Box<dyn Error>> {
+    let now = chrono::Utc::now().timestamp_millis();
+    let params: Vec<&dyn ToSql> = vec![&now, &id];
+    exec.execute("UPDATE Block SET updated_at = ?1 WHERE id = ?2", &params)?;
+    block_get_by_id(exec, id)
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 pub fn block_insert<E: Executor>(exec: &E, b: &Block) -> Result<(), Box<dyn Error>> {
-    let params = block_params(b);
+    let tags_json = serde_json::to_string(&b.tags).unwrap_or_else(|_| "[]".to_string());
+    let params: Vec<&dyn ToSql> = vec![
+        &b.id, &b.page_id, &b.parent_id, &b.pos, &b.content, &b.format,
+        &b.r#type, &b.created_at, &b.updated_at, &b.version, &b.deleted_at, &tags_json,
+    ];
     exec.execute(&block_insert_sql(), &params)?;
     Ok(())
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn block_update<E: Executor>(exec: &E, b: &Block) -> Result<(), Box<dyn Error>> {
-    let sql = "UPDATE Block SET page_id = ?2, parent_id = ?3, pos = ?4, content = ?5, format = ?6, type = ?7, updated_at = ?8, version = version + 1 WHERE id = ?1";
+    let tags_json = serde_json::to_string(&b.tags).unwrap_or_else(|_| "[]".to_string());
+    let sql = "UPDATE Block SET page_id = ?2, parent_id = ?3, pos = ?4, content = ?5, format = ?6, type = ?7, tags = ?8, updated_at = ?9, version = version + 1 WHERE id = ?1";
     let params: Vec<&dyn ToSql> = vec![
-        &b.id, &b.page_id, &b.parent_id, &b.pos, &b.content, &b.format, &b.r#type, &b.updated_at,
+        &b.id, &b.page_id, &b.parent_id, &b.pos, &b.content, &b.format, &b.r#type,
+        &tags_json, &b.updated_at,
     ];
     exec.execute(sql, &params)?;
     Ok(())
@@ -237,6 +268,8 @@ mod tests {
         assert_eq!(b.pos, 1000);
         assert_eq!(b.version, 3);
         assert_eq!(b.deleted_at, None);
+        // ADR-0063 D1：历史值 `bullet` 读出时归一为 `text`
+        assert_eq!(b.r#type, "text");
     }
 
     #[test]
@@ -249,6 +282,7 @@ mod tests {
         assert_eq!(b.parent_id, Some("p2".to_string()));
         // 缺省列依旧给出合理默认值
         assert_eq!(b.format, "{}");
-        assert_eq!(b.r#type, "bullet");
+        // ADR-0063 D1：type 列缺失时缺省为规范名 `text`
+        assert_eq!(b.r#type, "text");
     }
 }

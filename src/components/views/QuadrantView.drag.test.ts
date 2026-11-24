@@ -115,6 +115,43 @@ describe('QuadrantView 拖拽（Pointer Events）', () => {
   })
 })
 
+describe('QuadrantView Done 落格窗口（近 24 小时，2026-10-13 口径修订）', () => {
+  const HOUR = 60 * 60 * 1000
+  function doneItem(blockId: string, updatedAt: number) {
+    return {
+      block_id: blockId,
+      parent_id: '',
+      content_preview: `任务${blockId}`,
+      properties: { status: 'Done', priority: 'Urgent' },
+      date_refs: [],
+      updated_at: updatedAt,
+    }
+  }
+
+  it('24 小时内完成的 Done 落格，超过 24 小时的不落格', () => {
+    const w = mountView({
+      items: [doneItem('fresh', Date.now() - 23 * HOUR), doneItem('stale', Date.now() - 25 * HOUR)],
+      idKey: 'block_id',
+    })
+    expect(w.text()).toContain('任务fresh')
+    expect(w.text()).not.toContain('任务stale')
+    w.unmount()
+  })
+
+  it('Todo/Doing 不受窗口限制（无 updated_at 也落格）', () => {
+    const w = mountView({
+      items: [
+        { block_id: 't1', parent_id: '', content_preview: '待办T', properties: { status: 'Todo', priority: 'High' }, date_refs: [] },
+        { block_id: 't2', parent_id: '', content_preview: '进行中D', properties: { status: 'Doing', priority: 'Low' }, date_refs: [] },
+      ],
+      idKey: 'block_id',
+    })
+    expect(w.text()).toContain('待办T')
+    expect(w.text()).toContain('进行中D')
+    w.unmount()
+  })
+})
+
 describe('QuadrantView 子任务显示（最多 3 层）', () => {
   // 任务树：A(顶层,Medium) ─ B(子,无 priority) ─ C(孙,无 priority) ─ D(曾孙)
   // E(顶层,Urgent) 独立；A 的兄弟 B 有 priority 时应嵌套而非重复落格
@@ -124,7 +161,7 @@ describe('QuadrantView 子任务显示（最多 3 层）', () => {
       { block_id: 'b', parent_id: 'a', content_preview: '子任务B', properties: { status: 'Todo' }, date_refs: [] },
       { block_id: 'c', parent_id: 'b', content_preview: '孙任务C', properties: { status: 'Todo' }, date_refs: [] },
       { block_id: 'd', parent_id: 'c', content_preview: '曾孙任务D', properties: { status: 'Todo' }, date_refs: [] },
-      // E 为 Done：落格资格要求「Done 须昨日后更新」（qualifies），补 updated_at 使其可见
+      // E 为 Done：落格资格要求「Done 限近 24h 更新」（qualifies），补 updated_at 使其可见
       { block_id: 'e', parent_id: '', content_preview: '任务E', properties: { status: 'Done', priority: 'Urgent' }, date_refs: [], updated_at: Date.now() },
     ]
   }
@@ -177,6 +214,155 @@ describe('QuadrantView 子任务显示（最多 3 层）', () => {
     await fire(cardE, 'pointerup', { button: 0, clientX: 0, clientY: 0 })
     await fire(cardE, 'click')
     expect(w.emitted('openBlock')![0]).toEqual(['e'])
+    w.unmount()
+  })
+})
+
+describe('QuadrantView 新增任务插入动效', () => {
+  function oneItem() {
+    return [
+      { block_id: 'b1', content_preview: '任务A', properties: { status: 'Todo', priority: 'Medium' }, date_refs: [] },
+    ]
+  }
+
+  it('本视图上抛新增后，回流的卡片带 enter 入场类', async () => {
+    const w = mountView({ items: oneItem(), idKey: 'block_id' })
+    const medium = sectionWithPriority(w, 'Medium')
+    ;(medium.querySelector('.q-add-head') as HTMLElement).click()
+    await nextTick()
+    const input = w.find('.q-add-input')
+    await input.setValue('新任务')
+    await input.trigger('keydown.enter')
+    expect(w.emitted('addItem')![0]).toEqual(['Medium', '新任务'])
+
+    // 消费方建块后刷新回流新卡片
+    await w.setProps({
+      items: [
+        ...oneItem(),
+        { block_id: 'b2', content_preview: '新任务', properties: { status: 'Todo', priority: 'Medium' }, date_refs: [] },
+      ],
+    })
+    expect(cardWithText(w, '新任务').classList.contains('enter')).toBe(true)
+    w.unmount()
+  })
+
+  it('非本视图新增（如切换查询）出现的卡片不动画', async () => {
+    const w = mountView({ items: oneItem(), idKey: 'block_id' })
+    await w.setProps({
+      items: [
+        ...oneItem(),
+        { block_id: 'b9', content_preview: '外部任务', properties: { status: 'Todo', priority: 'Low' }, date_refs: [] },
+      ],
+    })
+    expect(cardWithText(w, '外部任务').classList.contains('enter')).toBe(false)
+    w.unmount()
+  })
+})
+
+describe('QuadrantView 状态图标交互', () => {
+  it('点击卡片状态图标循环切换并 emit cellChange(status)，不打开弹窗', async () => {
+    const w = mountView({ items: makeItems(), idKey: 'block_id' })
+    await fire(cardWithText(w, '任务A').querySelector('.q-status-btn') as HTMLElement, 'click')
+    expect(w.emitted('cellChange')![0]).toEqual(['b1', 'status', 'Doing'])
+    expect(w.emitted('openBlock')).toBeUndefined()
+    w.unmount()
+  })
+
+  it('Done 环回首个状态 Todo', async () => {
+    const w = mountView({
+      items: [
+        { block_id: 'd1', content_preview: '已完成任务', properties: { status: 'Done', priority: 'Urgent' }, date_refs: [], updated_at: Date.now() },
+      ],
+      idKey: 'block_id',
+    })
+    await fire(cardWithText(w, '已完成任务').querySelector('.q-status-btn') as HTMLElement, 'click')
+    expect(w.emitted('cellChange')![0]).toEqual(['d1', 'status', 'Todo'])
+    w.unmount()
+  })
+
+  it('点击子任务状态图标切换状态，不打开子任务弹窗', async () => {
+    const w = mountView({
+      items: [
+        { block_id: 'a', parent_id: '', content_preview: '父任务', properties: { status: 'Todo', priority: 'Medium' }, date_refs: [] },
+        { block_id: 'b', parent_id: 'a', content_preview: '子任务', properties: { status: 'Todo' }, date_refs: [] },
+      ],
+      idKey: 'block_id',
+    })
+    const sub = cardWithText(w, '父任务').querySelector('.q-subtask') as HTMLElement
+    await fire(sub.querySelector('.q-status-btn') as HTMLElement, 'click')
+    expect(w.emitted('cellChange')![0]).toEqual(['b', 'status', 'Doing'])
+    expect(w.emitted('openBlock')).toBeUndefined()
+    w.unmount()
+  })
+})
+
+describe('QuadrantView 状态变更冻结排序（2026-10-13 诉求）', () => {
+  const HOUR = 60 * 60 * 1000
+  // 同象限（Medium）三卡，status 各异 → 规范序（status asc）：Doing(任务A) < Todo(任务B) < Done(任务C)
+  function threeInMedium(now: number) {
+    return [
+      { block_id: 'b1', content_preview: '任务A', parent_id: '', properties: { status: 'Doing', priority: 'Medium' }, date_refs: [], updated_at: now - 5 * HOUR },
+      { block_id: 'b2', content_preview: '任务B', parent_id: '', properties: { status: 'Todo', priority: 'Medium' }, date_refs: [], updated_at: now - 4 * HOUR },
+      { block_id: 'b3', content_preview: '任务C', parent_id: '', properties: { status: 'Done', priority: 'Medium' }, date_refs: [], updated_at: now - 1 * HOUR },
+    ]
+  }
+  function orderIn(w: ReturnType<typeof mount>, priority: string): string[] {
+    const section = w.findAll('.q-cell').find((s) => s.attributes('data-priority') === priority)!
+    return section.findAll('.q-card').map((c) => c.text())
+  }
+  it('同象限内改状态不立即重排（卡片原地不动）', async () => {
+    const now = Date.now()
+    const w = mountView({ items: threeInMedium(now), idKey: 'block_id' })
+    // 挂载快照 = 规范序：任务A(Doing) → 任务B(Todo) → 任务C(Done)
+    expect(orderIn(w, 'Medium')).toEqual(['任务A', '任务B', '任务C'])
+    // 模拟父级回流：任务B 由 Todo 环到 Doing（updated_at 刷新为 now）
+    await w.setProps({
+      items: threeInMedium(now).map((it) =>
+        it.block_id === 'b2' ? { ...it, properties: { ...it.properties, status: 'Doing' }, updated_at: now } : it,
+      ),
+    })
+    // 冻结：任务B 不应跳到顶部，仍跟随快照原序
+    expect(orderIn(w, 'Medium')).toEqual(['任务A', '任务B', '任务C'])
+    w.unmount()
+  })
+
+  it('切走再切回（重挂）后按规范序重排', async () => {
+    const now = Date.now()
+    const original = threeInMedium(now)
+    const changed = original.map((it) =>
+      it.block_id === 'b2' ? { ...it, properties: { ...it.properties, status: 'Doing' }, updated_at: now } : it,
+    )
+    // 进入矩阵（原始数据）：快照 = 规范序 [任务A, 任务B, 任务C]
+    const w = mountView({ items: original, idKey: 'block_id' })
+    expect(orderIn(w, 'Medium')).toEqual(['任务A', '任务B', '任务C'])
+    // 改状态回流：停留期间冻结，不重排
+    await w.setProps({ items: changed })
+    expect(orderIn(w, 'Medium')).toEqual(['任务A', '任务B', '任务C'])
+    w.unmount()
+    // 切回矩阵（已改数据）：重新挂载按最新规范序快照（Doing 内 updatedAt desc → 任务B 最新在最前）
+    const w2 = mountView({ items: changed, idKey: 'block_id' })
+    expect(orderIn(w2, 'Medium')).toEqual(['任务B', '任务A', '任务C'])
+    w2.unmount()
+  })
+
+  it('进出矩阵仍实时（不随冻结而延迟）', async () => {
+    const now = Date.now()
+    // 任务C 初始为 >24h 的旧 Done → 不落格
+    const base = threeInMedium(now).map((it) =>
+      it.block_id === 'b3' ? { ...it, updated_at: now - 25 * HOUR } : it,
+    )
+    const w = mountView({ items: base, idKey: 'block_id' })
+    expect(orderIn(w, 'Medium')).toEqual(['任务A', '任务B']) // 任务C 不在
+    // 回流：任务C updated_at 拉回 24h 内 → 立即出现（不冻进出）
+    await w.setProps({
+      items: base.map((it) => (it.block_id === 'b3' ? { ...it, updated_at: now } : it)),
+    })
+    expect(orderIn(w, 'Medium')).toEqual(['任务A', '任务B', '任务C'])
+    // 再回流：任务C 推出 24h 外 → 立即消失
+    await w.setProps({
+      items: base.map((it) => (it.block_id === 'b3' ? { ...it, updated_at: now - 25 * HOUR } : it)),
+    })
+    expect(orderIn(w, 'Medium')).toEqual(['任务A', '任务B'])
     w.unmount()
   })
 })

@@ -149,7 +149,43 @@ describe('BasePopover 锚点避让（ADR-0038）', () => {
     await w.vm.$nextTick()
     // 1000+4+300=1304 > 1024-8 → 翻到左侧：900-300-4=596
     expect(panel.style.left).toBe('596px')
-    expect(panel.style.top).toBe('100px')
+    expect(panel.style.top).toBe('100px') // 侧向不带 -center 时仍与锚点顶边对齐
+    w.unmount()
+    anchor.remove()
+  })
+
+  it('左侧居中放置（left-center）：纵向与锚点居中', async () => {
+    const anchor = fakeAnchor({ left: 400, top: 300, right: 500, bottom: 340 })
+    const w = mount(BasePopover, {
+      props: { visible: true, anchorEl: anchor, placement: 'left-center' },
+      slots: { default: '<div style="width:300px;height:200px">p</div>' },
+      attachTo: document.body,
+    })
+    const panel = panelEl()!
+    fakeSize(panel, 300, 200)
+    await w.vm.$nextTick()
+    await w.vm.$nextTick()
+    // 400-300-4=96；top = 300 + 40/2 − 200/2 = 220
+    expect(panel.style.left).toBe('96px')
+    expect(panel.style.top).toBe('220px')
+    w.unmount()
+    anchor.remove()
+  })
+
+  it('左侧居中放置空间不足时落到下方（不翻到右侧）', async () => {
+    const anchor = fakeAnchor({ left: 100, top: 300, right: 200, bottom: 340 })
+    const w = mount(BasePopover, {
+      props: { visible: true, anchorEl: anchor, placement: 'left-center' },
+      slots: { default: '<div style="width:300px;height:200px">p</div>' },
+      attachTo: document.body,
+    })
+    const panel = panelEl()!
+    fakeSize(panel, 300, 200)
+    await w.vm.$nextTick()
+    await w.vm.$nextTick()
+    // 左侧只剩 100(<300+4+8) → 落到下方：left 对齐锚点左缘 100，top = 340+4
+    expect(panel.style.left).toBe('100px')
+    expect(panel.style.top).toBe('344px')
     w.unmount()
     anchor.remove()
   })
@@ -176,6 +212,44 @@ describe('BasePopover 锚点避让（ADR-0038）', () => {
     expect(panel.style.left).toBe('100px')
     w.unmount()
     anchor.remove()
+  })
+
+  it('矩形锚点（光标点）：按矩形定位，布局变化时由 getter 实时重算', async () => {
+    let caretLeft = 240
+    const caretRect = () => new DOMRect(caretLeft, 300, 0, 0)
+    const w = mount(BasePopover, {
+      props: { visible: true, anchorEl: caretRect, placement: 'bottom' },
+      slots: { default: '<div style="width:200px;height:100px">p</div>' },
+      attachTo: document.body,
+    })
+    const panel = panelEl()!
+    fakeSize(panel, 200, 100)
+    await w.vm.$nextTick()
+    await w.vm.$nextTick()
+    expect(panel.style.left).toBe('240px')
+    expect(panel.style.top).toBe('304px') // 300 + ANCHOR_GAP(4)
+
+    // 光标横向移动后重测必须读到新矩形；若锚点是整行段落，left 会永远停在行首
+    caretLeft = 420
+    window.dispatchEvent(new Event('resize'))
+    await w.vm.$nextTick()
+    expect(panel.style.left).toBe('420px')
+    w.unmount()
+  })
+
+  it('矩形锚点在非模态模式下不误判为外部元素', async () => {
+    const caretRect = () => new DOMRect(150, 200, 0, 0)
+    const w = mount(BasePopover, {
+      props: { visible: true, modal: false, anchorEl: caretRect, placement: 'bottom' },
+      slots: { default: '<div>p</div>' },
+      attachTo: document.body,
+    })
+    await w.vm.$nextTick()
+    await w.vm.$nextTick()
+    document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    await w.vm.$nextTick()
+    expect(w.emitted('close')).toHaveLength(1)
+    w.unmount()
   })
 
   it('anchorEl 解析为 null 时不内联定位（交回 CSS）', async () => {
@@ -218,5 +292,86 @@ describe('BasePopover 并发实例隔离（模块级共享状态校验）', () =
     addSpy.mockRestore()
     a.unmount()
     b.unmount()
+  })
+})
+
+describe('BasePopover 非模态（modal=false）', () => {
+  afterEach(() => {
+    document.body.querySelectorAll('[data-testid="base-popover"]').forEach((n) => n.remove())
+  })
+
+  it('不铺 overlay；点面板内不关闭，点面板外关闭', async () => {
+    const w = mount(BasePopover, {
+      props: { visible: true, modal: false, position: { x: 10, y: 10 } },
+      slots: { default: '<button type="button">内</button>' },
+      attachTo: document.body,
+    })
+    // watch(immediate) → nextTick 链里才挂 document mousedown
+    await w.vm.$nextTick()
+    await w.vm.$nextTick()
+
+    expect(document.body.querySelector('[data-testid="base-popover-overlay"]')).toBeNull()
+    const panel = document.body.querySelector('[data-testid="base-popover"]') as HTMLElement
+    expect(panel).not.toBeNull()
+
+    panel.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    await w.vm.$nextTick()
+    expect(w.emitted('close')).toBeUndefined()
+
+    document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    await w.vm.$nextTick()
+    expect(w.emitted('close')).toHaveLength(1)
+
+    w.unmount()
+  })
+
+  it('移除：卸载后 document 上不再有 mousedown 监听', async () => {
+    const w = mount(BasePopover, {
+      props: { visible: true, modal: false, position: { x: 10, y: 10 } },
+      attachTo: document.body,
+    })
+    await w.vm.$nextTick()
+    await w.vm.$nextTick()
+    const removeSpy = vi.spyOn(document, 'removeEventListener')
+    w.unmount()
+    const removed = removeSpy.mock.calls.filter(c => c[0] === 'mousedown').length
+    expect(removed).toBeGreaterThanOrEqual(1)
+    removeSpy.mockRestore()
+  })
+})
+
+describe('BasePopover 非模态（modal=false）', () => {
+  afterEach(() => {
+    document.body.querySelectorAll('[data-testid="base-popover"]').forEach((n) => n.remove())
+    document.body.querySelectorAll('.test-submenu').forEach((n) => n.remove())
+  })
+
+  it('豁免选择器内的元素算作「面板内部」：点它不关闭', async () => {
+    const submenu = document.createElement('div')
+    submenu.className = 'test-submenu'
+    document.body.appendChild(submenu)
+
+    const w = mount(BasePopover, {
+      props: {
+        visible: true,
+        modal: false,
+        position: { x: 10, y: 10 },
+        ignoreOutsideSelector: '.test-submenu',
+      },
+      attachTo: document.body,
+    })
+    await w.vm.$nextTick()
+    await w.vm.$nextTick()
+
+    submenu.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    await w.vm.$nextTick()
+    expect(w.emitted('close')).toBeUndefined()
+
+    // 豁免只对选择器内的元素成立，外部仍然关闭
+    document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    await w.vm.$nextTick()
+    expect(w.emitted('close')).toHaveLength(1)
+
+    w.unmount()
   })
 })

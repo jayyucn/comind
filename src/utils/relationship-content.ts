@@ -24,6 +24,7 @@
  *   编辑态显示原文 type 更诚实，也避免反向污染 content。
  */
 import { useRelationshipTypes } from '../composables/useRelationshipTypes'
+import type { OffsetSpan } from './inline-marks'
 
 /**
  * 编辑会话快照缓存：blockId → (解码后内部文本 → 原始 type 内部文本)
@@ -123,12 +124,21 @@ export function parseRelationshipSegment(inner: string): RelationshipSegmentPart
  *   - snapshot 为 Map<解码后内部文本, 原始内部文本>（位置无关）
  * 未知/已删除 type 原样保留，不记快照。
  */
-export function decodeRelationshipContent(
-  content: string,
-): { text: string; snapshot: Map<string, string> } {
+export interface RelationshipTextMeta {
+  text: string
+  snapshot: Map<string, string>
+  /** 原文本（存储态）→ 新文本（编辑态）的替换区间，用于映射行内格式偏移 */
+  spans: OffsetSpan[]
+}
+
+/**
+ * decode 的带元信息版本：额外返回替换区间，供 block.format.inlineMarks 做偏移换算。
+ */
+export function decodeRelationshipContentWithMeta(content: string): RelationshipTextMeta {
   const snapshot = new Map<string, string>()
+  const spans: OffsetSpan[] = []
   if (!content.includes('((')) {
-    return { text: content, snapshot }
+    return { text: content, snapshot, spans }
   }
 
   const { byType } = buildMaps()
@@ -143,12 +153,14 @@ export function decodeRelationshipContent(
     const start = match.index
 
     result += content.slice(lastIndex, start)
+    const newFrom = result.length
 
     const parts = parseRelationshipSegment(inner)
     const rec = byType.get(parts.type)
     // 未知或已删除 → 原样保留
     if (!rec || rec.deleted) {
       result += full
+      spans.push({ from: start, to: start + full.length, newFrom, newTo: result.length })
       lastIndex = start + full.length
       continue
     }
@@ -159,6 +171,7 @@ export function decodeRelationshipContent(
       if (!invRec || invRec.deleted) {
         // 反向未知/已删除 → 整体原样保留（避免半转换破坏语义）
         result += full
+        spans.push({ from: start, to: start + full.length, newFrom, newTo: result.length })
         lastIndex = start + full.length
         continue
       }
@@ -174,10 +187,18 @@ export function decodeRelationshipContent(
     }
     snapshot.set(decoded, inner)
     result += `((${decoded}))`
+    spans.push({ from: start, to: start + full.length, newFrom, newTo: result.length })
     lastIndex = start + full.length
   }
   result += content.slice(lastIndex)
-  return { text: result, snapshot }
+  return { text: result, snapshot, spans }
+}
+
+export function decodeRelationshipContent(
+  content: string,
+): { text: string; snapshot: Map<string, string> } {
+  const { text, snapshot } = decodeRelationshipContentWithMeta(content)
+  return { text, snapshot }
 }
 
 /**
@@ -193,8 +214,20 @@ export function encodeRelationshipContent(
   content: string,
   snapshot?: Map<string, string>,
 ): string {
+  return encodeRelationshipContentWithMeta(content, snapshot).text
+}
+
+/**
+ * encode 的带元信息版本：额外返回替换区间（编辑态 → 存储态），
+ * 供保存时把行内格式偏移写回 content 坐标系。
+ */
+export function encodeRelationshipContentWithMeta(
+  content: string,
+  snapshot?: Map<string, string>,
+): { text: string; spans: OffsetSpan[] } {
+  const spans: OffsetSpan[] = []
   if (!content.includes('((')) {
-    return content
+    return { text: content, spans }
   }
 
   const { byLabel } = buildMaps()
@@ -209,10 +242,12 @@ export function encodeRelationshipContent(
     const start = match.index
 
     result += content.slice(lastIndex, start)
+    const newFrom = result.length
 
     // 1) 快照还原（改名后未编辑的 label → 原始 type）
     if (snapshot && snapshot.has(inner)) {
       result += `((${snapshot.get(inner)}))`
+      spans.push({ from: start, to: start + full.length, newFrom, newTo: result.length })
       lastIndex = start + full.length
       continue
     }
@@ -238,14 +273,16 @@ export function encodeRelationshipContent(
       } else {
         result += `((${type}))`
       }
+      spans.push({ from: start, to: start + full.length, newFrom, newTo: result.length })
       lastIndex = start + full.length
       continue
     }
 
     // 3) 都查不到 → 原样保留（渲染端回退显示原文）
     result += full
+    spans.push({ from: start, to: start + full.length, newFrom, newTo: result.length })
     lastIndex = start + full.length
   }
   result += content.slice(lastIndex)
-  return result
+  return { text: result, spans }
 }

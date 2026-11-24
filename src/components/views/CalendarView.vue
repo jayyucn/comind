@@ -29,7 +29,7 @@ const dateField = computed<FieldDescriptor | undefined>(
 )
 /** 卡片标题字段：content（或首个 text 字段）。 */
 const titleField = computed<FieldDescriptor | undefined>(
-  () => props.fields.find((f) => f.key === 'content') ?? props.fields.find((f) => f.type === 'text'),
+  () => props.fields.find((f) => f.key === 'content') ?? props.fields.find((f) => f.type === 'string'),
 )
 
 const currentMonth = ref(new Date().getMonth())

@@ -5,13 +5,14 @@
 //! - 整批回滚：任一 op 失败 → 事务内全部不落库（ADR-0046 约束3）
 //! - entity 名 snake_case：`relationship_type` 正常分派（原 WASM `relationshipType`
 //!   静默失败的潜伏 bug 回归钉）
-//! - property set upsert 复活软删行（#108 验收#1/#5）
+//! - field value set upsert 复活软删行（#108 验收#1/#5）
 //! - template 增量契约：create 收 `{id,name,category,content}`、update 收
 //!   `{id,name}`（原 Tauri 全量反序列化必失败 → 桌面端静默回滚的回归钉）
 use crate::{
-    services::{batch::apply_batch, BlockService, PageService, PropertyService, TemplateService},
+    services::{batch::apply_batch, BlockService, FieldValueService, PageService, TemplateService},
     storage::sqlite::SQLiteAdapter,
     storage::TransactionalStorageAdapter,
+    types::SyncTable,
 };
 use serde_json::json;
 use std::error::Error;
@@ -27,7 +28,7 @@ fn block_create_op(id: &str, page_id: &str) -> serde_json::Value {
             "pos": 100,
             "content": "hello world",
             "format": "{}",
-            "type": "bullet"
+            "type": "text"
         }
     })
 }
@@ -43,7 +44,7 @@ fn block_update_op(id: &str, page_id: &str, content: &str) -> serde_json::Value 
             "pos": 100,
             "content": content,
             "format": "{}",
-            "type": "bullet"
+            "type": "text"
         }
     })
 }
@@ -79,9 +80,9 @@ fn test_block_update_via_batch() -> Result<(), Box<dyn Error>> {
         None,
         "old",
         "{}",
-        "bullet",
+        "text",
         Some("blk1"),
-    )?;
+     true)?;
 
     apply_batch(
         &mut adapter,
@@ -93,7 +94,7 @@ fn test_block_update_via_batch() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
-fn test_block_delete_cascades_property() -> Result<(), Box<dyn Error>> {
+fn test_block_delete_cascades_field_value() -> Result<(), Box<dyn Error>> {
     let mut adapter = SQLiteAdapter::open_in_memory()?;
     let page = PageService::create(&mut adapter, "", "Page", None, None, None, None, None)?;
     BlockService::create(
@@ -102,10 +103,10 @@ fn test_block_delete_cascades_property() -> Result<(), Box<dyn Error>> {
         None,
         "task",
         "{}",
-        "bullet",
+        "text",
         Some("blk1"),
-    )?;
-    PropertyService::create(&mut adapter, "blk1", "status", "todo", "string", 0, 0, 1)?;
+     true)?;
+    FieldValueService::create(&mut adapter, "blk1", "status", "todo", "string", 0)?;
 
     apply_batch(
         &mut adapter,
@@ -113,8 +114,8 @@ fn test_block_delete_cascades_property() -> Result<(), Box<dyn Error>> {
     )?;
 
     assert!(BlockService::get_by_id(&mut adapter, "blk1").is_err());
-    // S8 级联：属性一并清理（裁定钉：WASM 旧路径缺 dateRef/通知清理，统一走 BlockService::delete）
-    let props = PropertyService::get_by_block_id(&mut adapter, "blk1")?;
+    // S8 级联：字段值一并清理（裁定钉：WASM 旧路径缺 dateRef/通知清理，统一走 BlockService::delete）
+    let props = FieldValueService::get_by_block_id(&mut adapter, "blk1")?;
     assert!(props.is_empty());
     Ok(())
 }
@@ -129,9 +130,9 @@ fn test_block_undelete_revive_then_noop() -> Result<(), Box<dyn Error>> {
         None,
         "x",
         "{}",
-        "bullet",
+        "text",
         Some("blk1"),
-    )?;
+     true)?;
     BlockService::delete(&mut adapter, "blk1")?;
 
     let op = json!({"entity": "block", "action": "undelete", "params": {"id": "blk1"}});
@@ -146,7 +147,7 @@ fn test_block_undelete_revive_then_noop() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
-fn test_property_set_upsert_revives_soft_deleted() -> Result<(), Box<dyn Error>> {
+fn test_field_value_set_upsert_revives_soft_deleted() -> Result<(), Box<dyn Error>> {
     let mut adapter = SQLiteAdapter::open_in_memory()?;
     let page = PageService::create(&mut adapter, "", "Page", None, None, None, None, None)?;
     BlockService::create(
@@ -155,11 +156,11 @@ fn test_property_set_upsert_revives_soft_deleted() -> Result<(), Box<dyn Error>>
         None,
         "x",
         "{}",
-        "bullet",
+        "text",
         Some("blk1"),
-    )?;
-    let prop = PropertyService::create(&mut adapter, "blk1", "status", "todo", "string", 0, 0, 1)?;
-    PropertyService::delete(&mut adapter, &prop.id)?; // 软删
+     true)?;
+    let prop = FieldValueService::create(&mut adapter, "blk1", "status", "todo", "string", 0)?;
+    FieldValueService::delete(&mut adapter, &prop.id)?; // 软删
 
     // 同 id 同 key upsert → 复活（UNIQUE(block_id,key) 冲突即 UPDATE，#108 验收#1/#5）
     apply_batch(
@@ -177,9 +178,9 @@ fn test_property_set_upsert_revives_soft_deleted() -> Result<(), Box<dyn Error>>
         })],
     )?;
 
-    let revived = PropertyService::get_by_block_id_and_key(&mut adapter, "blk1", "status")?;
+    let revived = FieldValueService::get_by_block_id_and_key(&mut adapter, "blk1", "status")?;
     assert!(revived.is_some());
-    assert_eq!(revived.unwrap().value, "done");
+    assert_eq!(revived.unwrap().value_json, "done");
     Ok(())
 }
 
@@ -327,5 +328,371 @@ fn test_batch_rolls_back_on_op_failure() -> Result<(), Box<dyn Error>> {
 
     let blocks = BlockService::get_by_page_id(&mut adapter, &page.id)?;
     assert!(blocks.is_empty(), "rollback must undo the earlier create");
+    Ok(())
+}
+
+// ── ADR-0049 D6/D8/D9：tag / field_definition / field_value ops ───────────
+// 钉子：batch 是唯一分派源，所以**继承物化（D8）与级联软删（D9）必须在 batch
+// 路径上同样生效** —— 若哪天有人把这两个 op 改成直连 repo，下面第 2/3 个用例会红。
+
+/// FieldValue 有 `block_id → Block(id) → Page(id)` 外键约束，故需真实宿主链。
+fn fixture_page_and_block(
+    adapter: &mut SQLiteAdapter,
+) -> Result<(String, String), Box<dyn std::error::Error>> {
+    let page = PageService::create(adapter, "", "TagPage", None, None, None, None, None)?;
+    let page_id = page.id.clone();
+    let effects = apply_batch(adapter, &[block_create_op("blk-fv", &page_id)])?;
+    let block_id = effects[0]
+        .value
+        .get("id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("blk-fv")
+        .to_string();
+    Ok((page_id, block_id))
+}
+
+#[test]
+fn test_tag_batch_crud_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
+    let mut adapter = SQLiteAdapter::open_in_memory()?;
+
+    let created = apply_batch(
+        &mut adapter,
+        &[json!({
+            "entity": "tag",
+            "action": "create",
+            "params": { "title": "MyTag", "field_ids": ["f1"] }
+        })],
+    )?;
+    let tag_id = created[0].value["id"].as_str().expect("tag id").to_string();
+    assert_eq!(created[0].value["title"], "MyTag");
+    assert!(
+        created[0]
+            .sync
+            .iter()
+            .any(|(t, id)| matches!(t, SyncTable::Tag) && id == &tag_id),
+        "tag create 必须登记 SyncTable::Tag"
+    );
+
+    let listed = apply_batch(
+        &mut adapter,
+        &[json!({ "entity": "tag", "action": "get", "params": {} })],
+    )?;
+    assert!(
+        listed[0]
+            .value
+            .as_array()
+            .expect("array")
+            .iter()
+            .any(|t| t["id"] == tag_id),
+        "create 的 tag 应出现在 get 列表里"
+    );
+
+    // update 只给 title → field_ids 缺省视为「不改动」
+    let updated = apply_batch(
+        &mut adapter,
+        &[json!({
+            "entity": "tag", "action": "update",
+            "params": { "id": tag_id, "title": "Renamed" }
+        })],
+    )?;
+    assert_eq!(updated[0].value["title"], "Renamed");
+    assert_eq!(
+        updated[0].value["field_ids"][0], "f1",
+        "未显式给出的字段必须保持不变"
+    );
+    assert_eq!(
+        created[0].value["description"], "",
+        "create 不带身份字段 → 落空串（ADR-0050 D11）"
+    );
+    assert_eq!(created[0].value["color"], "");
+
+    // 身份字段（ADR-0050 D11）经 batch JSON 的三种语义：给值 = 写、不给 = 保持、空串 = 清空
+    let identity = apply_batch(
+        &mut adapter,
+        &[json!({
+            "entity": "tag", "action": "update",
+            "params": { "id": tag_id, "description": "改后的描述", "color": "--tag-color-3" }
+        })],
+    )?;
+    assert_eq!(identity[0].value["description"], "改后的描述");
+    assert_eq!(identity[0].value["color"], "--tag-color-3");
+
+    // 只给 description → color 保持不变（缺失 ≠ 清空）
+    let partial = apply_batch(
+        &mut adapter,
+        &[json!({
+            "entity": "tag", "action": "update",
+            "params": { "id": tag_id, "description": "再改" }
+        })],
+    )?;
+    assert_eq!(partial[0].value["description"], "再改");
+    assert_eq!(partial[0].value["color"], "--tag-color-3");
+
+    // 空串 = 清空（`clearable_str_param` 与 `optional_str_param` 的分界点）
+    let cleared = apply_batch(
+        &mut adapter,
+        &[json!({
+            "entity": "tag", "action": "update",
+            "params": { "id": tag_id, "description": "", "color": "" }
+        })],
+    )?;
+    assert_eq!(cleared[0].value["description"], "");
+    assert_eq!(cleared[0].value["color"], "");
+
+    let del = apply_batch(
+        &mut adapter,
+        &[json!({ "entity": "tag", "action": "delete", "params": { "id": tag_id } })],
+    )?;
+    assert_eq!(del[0].value["success"], true);
+    Ok(())
+}
+
+#[test]
+fn test_tag_batch_parent_tree_and_cycle_guard() -> Result<(), Box<dyn std::error::Error>> {
+    let mut adapter = SQLiteAdapter::open_in_memory()?;
+
+    let parent = apply_batch(
+        &mut adapter,
+        &[json!({
+            "entity": "tag", "action": "create",
+            "params": { "title": "Parent", "field_ids": ["f1"] }
+        })],
+    )?;
+    let parent_id = parent[0].value["id"].as_str().unwrap().to_string();
+
+    let child = apply_batch(
+        &mut adapter,
+        &[json!({
+            "entity": "tag", "action": "create",
+            "params": { "title": "Child", "field_ids": ["f2"], "parent_id": parent_id }
+        })],
+    )?;
+    let child_id = child[0].value["id"].as_str().unwrap().to_string();
+    assert_eq!(
+        child[0].value["field_ids"],
+        json!(["f2"]),
+        "继承不物化：field_ids 只含自身字段（ADR-0050 D10）"
+    );
+    assert_eq!(child[0].value["parent_id"], json!(parent_id));
+
+    // tree 读接口：解析单源在 Rust —— 有效字段（自身 > 直接父）+ 后代闭包
+    let tree = apply_batch(
+        &mut adapter,
+        &[json!({ "entity": "tag", "action": "tree", "params": {} })],
+    )?;
+    let entries = tree[0].value.as_array().unwrap();
+    let child_entry = entries
+        .iter()
+        .find(|e| e["id"] == json!(child_id))
+        .expect("child 必须在 tree 中");
+    assert_eq!(child_entry["effective_field_ids"], json!(["f2", "f1"]));
+    assert_eq!(child_entry["descendant_ids"], json!([]));
+
+    let parent_entry = entries
+        .iter()
+        .find(|e| e["id"] == json!(parent_id))
+        .expect("parent 必须在 tree 中");
+    assert_eq!(parent_entry["effective_field_ids"], json!(["f1"]));
+    assert_eq!(
+        parent_entry["descendant_ids"],
+        json!([child_id]),
+        "后代闭包不含自身、只含后代"
+    );
+
+    // 成环：把父挂到自己的后代下 → 整批拒绝（事务回滚）
+    let cycle = apply_batch(
+        &mut adapter,
+        &[json!({
+            "entity": "tag", "action": "set_parent",
+            "params": { "id": parent_id, "parent_id": child_id }
+        })],
+    );
+    assert!(cycle.is_err(), "环卫兵必须在 batch 路径上生效");
+
+    // 清空父（缺失 parent_id → 顶级）
+    let cleared = apply_batch(
+        &mut adapter,
+        &[json!({ "entity": "tag", "action": "set_parent", "params": { "id": child_id } })],
+    )?;
+    assert!(cleared[0].value["parent_id"].is_null());
+
+    Ok(())
+}
+
+#[test]
+fn test_field_definition_delete_cascades_field_values() -> Result<(), Box<dyn std::error::Error>> {
+    let mut adapter = SQLiteAdapter::open_in_memory()?;
+    let (_page_id, block_id) = fixture_page_and_block(&mut adapter)?;
+
+    let fd = apply_batch(
+        &mut adapter,
+        &[json!({
+            "entity": "field_definition", "action": "create",
+            "params": { "key": "k1", "title": "K1", "type": "text", "closed_values": null }
+        })],
+    )?;
+    let fd_id = fd[0].value["id"].as_str().unwrap().to_string();
+
+    for seq in 0..2 {
+        apply_batch(
+            &mut adapter,
+            &[json!({
+                "entity": "field_value", "action": "create",
+                "params": {
+                    "block_id": block_id,
+                    "field_definition_id": fd_id,
+                    "value_json": format!("\"v{}\"", seq),
+                    "value_type": "text",
+                    "seq": seq
+                }
+            })],
+        )?;
+    }
+    let listed = apply_batch(
+        &mut adapter,
+        &[json!({ "entity": "field_value", "action": "get", "params": { "block_id": block_id } })],
+    )?;
+    assert_eq!(listed[0].value.as_array().unwrap().len(), 2);
+
+    // 改一个值，顺带验 update op
+    let first_id = listed[0].value[0]["id"].as_str().unwrap().to_string();
+    let updated = apply_batch(
+        &mut adapter,
+        &[json!({
+            "entity": "field_value", "action": "update",
+            "params": { "id": first_id, "value_json": "\"edited\"" }
+        })],
+    )?;
+    assert_eq!(updated[0].value["value_json"], "\"edited\"");
+
+    // 级联软删 —— effect 值回报受影响条目数
+    let del = apply_batch(
+        &mut adapter,
+        &[json!({ "entity": "field_definition", "action": "delete", "params": { "id": fd_id } })],
+    )?;
+    assert_eq!(del[0].value["success"], true);
+    assert_eq!(
+        del[0].value["affected_values"], 2,
+        "级联软删必须回报受影响的值行数（ADR D9「删前告知」）"
+    );
+
+    let after = apply_batch(
+        &mut adapter,
+        &[json!({ "entity": "field_value", "action": "get", "params": { "block_id": block_id } })],
+    )?;
+    assert_eq!(
+        after[0].value.as_array().unwrap().len(),
+        0,
+        "引用它的值应被同批软删"
+    );
+    Ok(())
+}
+
+#[test]
+fn test_field_definition_delete_rejects_system_seed_row() -> Result<(), Box<dyn std::error::Error>> {
+    let mut adapter = SQLiteAdapter::open_in_memory()?;
+
+    let listed = apply_batch(
+        &mut adapter,
+        &[json!({ "entity": "field_definition", "action": "get", "params": {} })],
+    )?;
+    let status = listed[0]
+        .value
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["key"] == "status")
+        .expect("系统 12 字段应已 seed")
+        .clone();
+    let status_id = status["id"].as_str().unwrap().to_string();
+
+    let res = apply_batch(
+        &mut adapter,
+        &[json!({
+            "entity": "field_definition", "action": "delete",
+            "params": { "id": status_id }
+        })],
+    );
+    assert!(res.is_err(), "系统 seed 行不可删（ADR D3）");
+    Ok(())
+}
+
+#[test]
+fn test_set_tags_auto_fills_field_defaults_for_new_tags() -> Result<(), Box<dyn std::error::Error>> {
+    use crate::services::{FieldDefinitionService, TagService};
+    use crate::storage::repository::{FieldValueRepository, StorageAdapter};
+    use crate::types::field_definition::FieldDefinitionCreateOptions;
+    use crate::types::tag::TagCreateOptions;
+
+    let mut adapter = SQLiteAdapter::open_in_memory()?;
+    let page = PageService::create(&mut adapter, "", "Page", None, None, None, None, None)?;
+    BlockService::create(
+        &mut adapter, &page.id, None, "task", "{}", "text", Some("blk1"), true,
+    )?;
+
+    // 建一个带默认值的数值字段定义（default_value 落库为 JSON 文本「8」）
+    let fd = FieldDefinitionService::create(
+        &mut adapter,
+        FieldDefinitionCreateOptions {
+            key: "f-estimate".to_string(),
+            title: "工时".to_string(),
+            r#type: "number".to_string(),
+            closed_values: None,
+            default_value: Some("8".to_string()),
+            is_system: false,
+            min: None,
+            max: None,
+            step: None,
+        },
+    )?;
+
+    // 建拥有该字段的标签（自身字段，无父 → 有效字段 = [fd.id]）
+    let tag = TagService::create(
+        &mut adapter,
+        TagCreateOptions {
+            title: "项目".to_string(),
+            field_ids: vec![fd.id.clone()],
+            parent_id: None,
+        },
+    )?;
+
+    // 打标：set_tags 应自动填入默认值，且只对新获得的 tag 生效（ADR-0050 D13）
+    let effects = apply_batch(
+        &mut adapter,
+        &[json!({
+            "entity": "block",
+            "action": "set_tags",
+            "params": { "id": "blk1", "tags": [tag.id] }
+        })],
+    )?;
+
+    // ① block 上出现一条 FieldValue：值 = 默认值（JSON 文本）、类型 = 字段 type
+    let values = FieldValueRepository::get_by_block_id(adapter.field_values(), "blk1")?;
+    assert_eq!(values.len(), 1, "打标应自动填一条默认 FieldValue");
+    assert_eq!(values[0].field_definition_id, fd.id);
+    assert_eq!(values[0].value_json, "8");
+    assert_eq!(values[0].value_type, "number");
+
+    // ② sync 向量含新建的 FieldValue 行（供 Tauri/WASM 同步通知）
+    assert!(
+        effects[0]
+            .sync
+            .iter()
+            .any(|(t, id)| *t == SyncTable::FieldValue && *id == values[0].id),
+        "set_tags 必须把新建的 FieldValue 登记进 sync"
+    );
+
+    // ③ 幂等：重打相同 tag（已含）不再产生新 FieldValue，不冲掉既有值
+    apply_batch(
+        &mut adapter,
+        &[json!({
+            "entity": "block",
+            "action": "set_tags",
+            "params": { "id": "blk1", "tags": [tag.id] }
+        })],
+    )?;
+    let values2 = FieldValueRepository::get_by_block_id(adapter.field_values(), "blk1")?;
+    assert_eq!(values2.len(), 1, "重打相同 tag 不应重复填默认");
+
     Ok(())
 }

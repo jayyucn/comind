@@ -3,17 +3,18 @@
  *
  * 把 Block 的可筛字段接入无头引擎的 {@link Registry}（entityType = 'block'）：
  * - 内置字段：status / priority（select）/ project / area（text）/ dateRefKind（multiSelect）/ dateRefDate（date）
- * - 用户自定义 property：从 blockCardStore.cards 派生非内置 property 键，运行时注册/注销，
+ * - 用户自定义字段：从 blockCardStore.cards 派生非内置字段键，运行时注册/注销，
  *   注册表 subscribe 暴露响应式订阅，FilterBuilder 自动跟随字段变化
  *
  * 与旧系统（useBlockQuery / BlockQuery / TaskFilterBar）完全解耦并存，本模块不依赖 Vue 组件。
  */
 import { computed, watch } from 'vue'
-import { createRegistry, type Registry, type FieldDescriptor, type FieldType, type Option } from '../core/query'
+import { createRegistry, type FieldDescriptor, type FieldType, type Option, type Registry } from '../core/query'
 import type { BoardConfig, CalendarConfig, GalleryConfig, LayoutConfig, QuadrantConfig, TableConfig, ViewKind } from '../core/view'
-import type { BlockCard } from '../wasm/types'
-import { BUILT_IN_PROPERTIES, type PropertyDefinition, type PropertyType } from '../types/property'
 import { useBlockCardStore } from '../stores/blockCard'
+import { type FieldType as DomainFieldType, type FieldDefinition } from '../types/field-definition'
+import { SYSTEM_TAGS, isSystemField } from '../types/tag'
+import type { BlockCard } from '../wasm/types'
 
 /** 引擎命名空间：所有 Block 字段注册于此。 */
 export const BLOCK_ENTITY = 'block'
@@ -68,25 +69,49 @@ export function blockDefaultConfig(kind: ViewKind): LayoutConfig {
   }
 }
 
-/** 内置字段 key 集合，用于区分「内置」与「自定义」字段。 */
+/** 引擎字段 key（非字段定义字段，查询引擎内建原语）。 */
+const ENGINE_FIELD_KEYS = [
+  'dateRefKind', 'dateRefDate', 'content', 'page', 'done', 'deadline', 'schedule', 'updatedAt', 'created_at',
+] as const
+
+/** 内置字段 key 集合：系统 Tag 字段 + 引擎字段，用于区分「内置」与「自定义」字段（ADR-0049 D4）。 */
 const BUILTIN_KEYS = new Set<string>([
-  'status', 'priority', 'project', 'area', 'dateRefKind', 'dateRefDate',
-  'content', 'page', 'done', 'deadline', 'schedule', 'updatedAt', 'created_at',
+  ...SYSTEM_TAGS.flatMap((s) => s.fields.map((f) => f.key)),
+  ...ENGINE_FIELD_KEYS,
 ])
 
-/** dateRef.kind 的合法取值（与 property.ts normalizeKind 对齐）。 */
+/** dateRef.kind 的合法取值（与 fieldValue store 的 normalizeKind 对齐）。 */
 const DATE_REF_KINDS: Option[] = [
   { id: 'schedule', label: '计划' },
   { id: 'deadline', label: '截止' },
   { id: 'ref', label: '参考' },
 ]
 
-/** 优先级选项配色（上提为字段元数据，使通用表格无需写死 P0–P3 颜色；ADR-0007）。 */
+/**
+ * 优先级选项配色（上提为字段元数据，使通用表格无需写死 P0–P3 颜色；ADR-0007）。
+ *
+ * **取值与 `--priority-*-fg`（`_components.scss`）严格一致**：前者供 TableView /
+ * BoardView 的圆点与徽章着色，后者供块行象限网格图标着色，两处不同色会造成
+ * 同一字段在编辑器与视图里读作不同档。
+ *
+ * 色相沿用既有等级配色：Urgent 红（重要且紧急）· High 橙（不重要但紧急）· Medium 蓝
+ * （重要不紧急）· Low 灰（都不重要）。**按档位固定，不随象限轴向变动** ——
+ * 颜色是档位标识，轴向只决定图标点亮哪一格。
+ */
 const PRIORITY_COLORS: Record<string, string> = {
   Low: '#9CA3AF',
   Medium: '#3B82F6',
   High: '#F59E0B',
   Urgent: '#DC2626',
+}
+
+/**
+ * 状态选项配色（与 PRIORITY_COLORS 同款：配色上提为字段元数据，通用表格零业务代码）。
+ * 只给「进行中」一个主题强调色——它是唯一的活动态；待办/已完成/已取消留空，
+ * 由渲染侧回落为中性值胶囊（--surface-subtle 底 + tertiary 字）。
+ */
+const STATUS_COLORS: Record<string, string> = {
+  Doing: 'var(--accent)',
 }
 
 function asCard(item: unknown): BlockCard {
@@ -102,16 +127,21 @@ function toLocalDatetime(ts: number): string {
 
 /** 注册 Block 全部内置字段描述符到注册表。 */
 export function registerBlockBuiltinFields(registry: Registry): void {
-  const statusDef = BUILT_IN_PROPERTIES.find((p) => p.key === 'status')
-  const priorityDef = BUILT_IN_PROPERTIES.find((p) => p.key === 'priority')
+  const systemFields = SYSTEM_TAGS.flatMap((s) => s.fields)
+  const statusDef = systemFields.find((f) => f.key === 'status')
+  const priorityDef = systemFields.find((f) => f.key === 'priority')
 
   registry.register(BLOCK_ENTITY, {
     key: 'status',
     label: '状态',
     type: 'select',
-    options: (statusDef?.closedValues ?? []).map((c) => ({ id: String(c.value), label: c.label })),
+    options: (statusDef?.closedValues ?? []).map((c) => ({
+      id: String(c.value),
+      label: c.label,
+      color: STATUS_COLORS[String(c.value)],
+    })),
     // 显式排序顺序：Doing 优先（进行中的任务最相关），终止态（Done/Canceled）沉底
-    sortOrder: ['Doing', 'Todo', 'Done', 'Canceled'],
+    sortOrder: ['Doing', 'Todo', 'Done', 'Canceled', 'Archived'],
     get: (item) => asCard(item).properties?.['status'],
   })
 
@@ -124,24 +154,23 @@ export function registerBlockBuiltinFields(registry: Registry): void {
       label: c.label,
       color: PRIORITY_COLORS[String(c.value)],
     })),
-    // 显式排序顺序：asc = 急→低（最重要在前，与 status 的「asc 给最相关」同构）
+    // 显式排序顺序（ADR-0054 D1）：先按「重要」分档，重要者同级内再按「紧急」排。
+    // Urgent(重要且紧急) > High(不重要但紧急) > Medium(重要不紧急) > Low(都不重要)
+    //⇒ 图标横轴 = 重要、纵轴 = 紧急，High 与 Medium 因此落在左上 / 右下。
     sortOrder: ['Urgent', 'High', 'Medium', 'Low'],
     get: (item) => asCard(item).properties?.['priority'],
   })
 
-  registry.register(BLOCK_ENTITY, {
-    key: 'project',
-    label: '项目',
-    type: 'text',
-    get: (item) => asCard(item).properties?.['project'],
-  })
-
-  registry.register(BLOCK_ENTITY, {
-    key: 'area',
-    label: '领域',
-    type: 'text',
-    get: (item) => asCard(item).properties?.['area'],
-  })
+  // 其余系统字段（project/area + 书笔记八件套）统一注册为 string（ADR-0049 D4 全量统一）
+  for (const field of systemFields) {
+    if (field.key === 'status' || field.key === 'priority') continue
+    registry.register(BLOCK_ENTITY, {
+      key: field.key,
+      label: field.title,
+      type: 'string',
+      get: (item) => asCard(item).properties?.[field.key],
+    })
+  }
 
   // 一个 block 可有多个 date_ref，kind 取所有出现过的 kind 集合（multiSelect 语义）
   registry.register(BLOCK_ENTITY, {
@@ -199,7 +228,7 @@ export function registerBlockBuiltinFields(registry: Registry): void {
   registry.register(BLOCK_ENTITY, {
     key: 'content',
     label: '内容',
-    type: 'text',
+    type: 'string',
     get: (item) => asCard(item).content_preview,
   })
 
@@ -207,7 +236,7 @@ export function registerBlockBuiltinFields(registry: Registry): void {
   registry.register(BLOCK_ENTITY, {
     key: 'page',
     label: '页面',
-    type: 'text',
+    type: 'string',
     get: (item) => asCard(item).page_id,
   })
 
@@ -245,19 +274,47 @@ export function registerBlockBuiltinFields(registry: Registry): void {
   })
 }
 
-/** PropertyDefinition.type → 引擎 FieldType 映射。 */
-const TYPE_MAP: Record<PropertyType, FieldType> = {
-  string: 'text',
+/**
+ * 字段类型 → 引擎 FieldType（issue #140 F1 词汇收口后两套枚举合一）：
+ * 大部分成员恒等映射；仅 array（标签数组）/ page（页面引用）保留语义桥——
+ * 前者按 multiSelect（多选操作符 + 选项化排序分组），后者按 string（文本操作符）。
+ */
+const TYPE_MAP: Record<DomainFieldType, FieldType> = {
+  string: 'string',
   number: 'number',
   boolean: 'boolean',
   date: 'date',
+  datetime: 'datetime',
+  select: 'select',
+  multiSelect: 'multiSelect',
   array: 'multiSelect',
-  page: 'text',
+  page: 'string',
+  // T8/T9/T5 新类型恒等映射：daterange 的 before/after 区间语义在引擎侧实现；
+  // file / relation 的值是对象，isEmpty/isNotEmpty 天然可用（contains 对对象恒假，无害）
+  daterange: 'daterange',
+  file: 'file',
+  relation: 'relation',
+  // T11/T12 远期类型恒等映射（issue #140 F1 词汇收口：新增类型即 FieldType 成员）
+  formula: 'formula',
+  json: 'json',
+  color: 'color',
+  autonumber: 'autonumber',
+  geo: 'geo',
 }
 
-/** 把 PropertyDefinition 转为引擎字段描述符（自定义 property 用）。 */
-export function buildBlockFieldDescriptor(def: PropertyDefinition): FieldDescriptor {
-  const fieldType = TYPE_MAP[def.type] ?? 'text'
+/**
+ * 字段类型 → 引擎 FieldType（未知/新增类型保守回落 string）。
+ *
+ * 消费点：编译期常量形 `FieldDefinition`（`buildBlockFieldDescriptor`）与落库形
+ * `PersistedFieldDefinition`（tag 聚合页按 tag 字段模板建列）共用同一映射，避免双源漂移。
+ */
+export function fieldTypeOf(type: string): FieldType {
+  return TYPE_MAP[type as DomainFieldType] ?? 'string'
+}
+
+/** 把 FieldDefinition 转为引擎字段描述符（自定义字段用）。 */
+export function buildBlockFieldDescriptor(def: FieldDefinition): FieldDescriptor {
+  const fieldType = fieldTypeOf(def.type)
   const descriptor: FieldDescriptor = {
     key: def.key,
     label: def.title,
@@ -270,18 +327,18 @@ export function buildBlockFieldDescriptor(def: PropertyDefinition): FieldDescrip
   return descriptor
 }
 
-/** 自定义 property 值 → 引擎类型推断（保守：数字/布尔/其余归 string，由 TYPE_MAP 映射到 text）。 */
-function inferPropertyType(value: unknown): PropertyType {
+/** 自定义字段值 → 引擎类型推断（保守：数字/布尔/其余归 string）。 */
+function inferFieldType(value: unknown): DomainFieldType {
   if (typeof value === 'number') return 'number'
   if (typeof value === 'boolean') return 'boolean'
   return 'string'
 }
 
 /**
- * 按 diff 同步自定义 property 字段：defs 中新增的注册、消失的注销。
+ * 按 diff 同步自定义字段：defs 中新增的注册、消失的注销。
  * 只动非内置字段，内置字段不受影响。
  */
-export function syncBlockCustomProperties(registry: Registry, defs: PropertyDefinition[]): void {
+export function syncBlockCustomFields(registry: Registry, defs: FieldDefinition[]): void {
   const desired = new Map(defs.map((d) => [d.key, d]))
 
   // 注销已消失的自定义字段
@@ -313,20 +370,20 @@ export function getBlockRegistry(): Registry {
 /**
  * 组合根注册 composable：
  * - 返回单例注册表与 entityType
- * - 从 blockCardStore.cards 派生非内置 property 定义，运行时注册/注销，
+ * - 从 blockCardStore.cards 派生非内置字段定义，运行时注册/注销，
  *   FilterBuilder 经 registry.subscribe 自动跟随字段变化
  */
 export function useBlockQueryRegistry() {
   const registry = getBlockRegistry()
   const blockCardStore = useBlockCardStore()
 
-  const customDefs = computed<PropertyDefinition[]>(() => {
-    const keys = new Map<string, PropertyType>()
+  const customDefs = computed<FieldDefinition[]>(() => {
+    const keys = new Map<string, DomainFieldType>()
     for (const card of blockCardStore.cards) {
       const props = (card.properties ?? {}) as Record<string, unknown>
       for (const [k, v] of Object.entries(props)) {
-        if (BUILT_IN_PROPERTIES.some((b) => b.key === k)) continue
-        if (!keys.has(k)) keys.set(k, inferPropertyType(v))
+        if (isSystemField(k)) continue
+        if (!keys.has(k)) keys.set(k, inferFieldType(v))
       }
     }
     return [...keys.entries()].map(([key, type]) => ({ key, title: key, type }))
@@ -334,7 +391,7 @@ export function useBlockQueryRegistry() {
 
   watch(
     customDefs,
-    (defs) => syncBlockCustomProperties(registry, defs),
+    (defs) => syncBlockCustomFields(registry, defs),
     { immediate: true, deep: true },
   )
 

@@ -818,8 +818,8 @@ export const registeredPanels: RightSidebarPanel[] = [
 | 中优先级 | `Minus` | priority-medium |
 | 高优先级 | `ArrowUp` | priority-high |
 | 紧急 | `AlertTriangle` | priority-urgent |
-| 收藏 | `Star` | icon-star |
-| 收藏(填充) | `Star` + CSS fill | icon-star-filled |
+| 置顶 | `Pin` | icon-pin |
+| 取消置顶 | `PinOff` | icon-pin-off |
 | 删除 | `Trash` / `Trash2` | icon-trash |
 | 设置 | `Settings` | icon-settings |
 | 菜单 | `Menu` | icon-menu |

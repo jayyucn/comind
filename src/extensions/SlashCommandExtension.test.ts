@@ -1,4 +1,9 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, afterEach } from 'vitest'
+import { Editor } from '@tiptap/core'
+import Document from '@tiptap/extension-document'
+import Paragraph from '@tiptap/extension-paragraph'
+import Text from '@tiptap/extension-text'
+import { SlashCommandExtension, type SlashCommandTriggerEvent } from './SlashCommandExtension'
 
 describe('SlashCommandExtension utilities', () => {
   describe('isInURL detection logic', () => {
@@ -190,5 +195,86 @@ describe('SlashCommandExtension utilities', () => {
     it('triggers after text with trailing newline', () => {
       expect(shouldTriggerSlashCommand('text\n')).toBe(true)
     })
+  })
+})
+
+describe('SlashCommandExtension — 光标落在 / 右侧触发面板（selection 移动检测）', () => {
+  const editors: Editor[] = []
+  const elements: HTMLElement[] = []
+
+  afterEach(() => {
+    while (editors.length) editors.pop()!.destroy()
+    while (elements.length) elements.pop()!.remove()
+  })
+
+  /** 创建带 SlashCommandExtension 的真实编辑器，并在 view.dom 上收集触发事件。 */
+  function createEditor(content: string) {
+    const element = document.createElement('div')
+    document.body.appendChild(element)
+    const dispatched: SlashCommandTriggerEvent[] = []
+    const editor = new Editor({
+      element,
+      extensions: [Document, Paragraph, Text, SlashCommandExtension],
+      content
+    })
+    editor.view.dom.addEventListener('slash-command-trigger', (e) => {
+      dispatched.push((e as CustomEvent<SlashCommandTriggerEvent>).detail)
+    })
+    editors.push(editor)
+    elements.push(element)
+    return { editor, dispatched }
+  }
+
+  it('光标移动到已有 / 右侧时派发触发事件（position 指向斜杠）', () => {
+    // '<p>a/</p>'：文本占 [1,3)，'/' 占 [2,3)，斜杠右侧光标 = 3
+    const { editor, dispatched } = createEditor('<p>a/</p>')
+
+    editor.commands.setTextSelection(1) // 光标在 'a' 之前，不触发
+    expect(dispatched).toHaveLength(0)
+
+    editor.commands.setTextSelection(3) // 光标移到 '/' 右侧 → 触发
+    expect(dispatched).toHaveLength(1)
+    expect(dispatched[0].position).toBe(2)
+    expect(dispatched[0].range).toEqual({ from: 2, to: 3 })
+  })
+
+  it('光标从 / 右侧移开后不再触发', () => {
+    // '<p>/ab</p>'：'/' 占 [1,2)，右侧光标 = 2；文本末尾光标 = 4
+    const { editor, dispatched } = createEditor('<p>/ab</p>')
+
+    editor.commands.setTextSelection(2) // '/' 右侧 → 触发一次
+    expect(dispatched).toHaveLength(1)
+
+    editor.commands.setTextSelection(4) // 移到 'b' 之后，不触发
+    expect(dispatched).toHaveLength(1)
+  })
+
+  it('插入 / 字符（粘贴等未走 handleTextInput 的路径）也触发', () => {
+    const { editor, dispatched } = createEditor('<p></p>')
+
+    editor.commands.setTextSelection(1)
+    editor.commands.insertContent('/')
+
+    expect(dispatched).toHaveLength(1)
+    expect(dispatched[0].position).toBe(1)
+    expect(dispatched[0].range).toEqual({ from: 1, to: 2 })
+  })
+
+  it('URL 末尾的 / 不触发', () => {
+    // '<p>https://example.com/</p>'：20 个字符占 [1,21)，末尾光标 = 21
+    const { editor, dispatched } = createEditor('<p>https://example.com/</p>')
+
+    editor.commands.setTextSelection(1)
+    editor.commands.setTextSelection(21)
+
+    expect(dispatched).toHaveLength(0)
+  })
+
+  it('非空选区（拖选）不触发', () => {
+    const { editor, dispatched } = createEditor('<p>a/</p>')
+
+    editor.commands.setTextSelection({ from: 1, to: 3 })
+
+    expect(dispatched).toHaveLength(0)
   })
 })

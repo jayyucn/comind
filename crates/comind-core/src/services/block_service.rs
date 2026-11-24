@@ -1,7 +1,7 @@
 use crate::{
     types::{Block, BlockTree},
     storage::{repository, StorageAdapter},
-    services::{DateRefService, ContentParseService, PropertyService},
+    services::{DateRefService, ContentParseService, FieldValueService, TagService},
 };
 use rand::Rng;
 use std::collections::HashMap;
@@ -37,6 +37,14 @@ impl BlockService {
         repository::BlockRepository::get_children_including_deleted(storage.blocks(), parent_id)
     }
 
+    /// 含软删的单块查询（返回的 `deleted_at` 由调用方判读）：搬移判定专用。
+    pub fn get_by_id_including_deleted(
+        storage: &mut dyn StorageAdapter,
+        id: &str,
+    ) -> Result<Block, Box<dyn Error>> {
+        repository::BlockRepository::get_by_id_including_deleted(storage.blocks(), id)
+    }
+
     /// 撤销软删除（ADR-0046 D10）：清 deleted_at 并回写已复活块。仅管块本身，
     /// 派生数据（属性/dateRef/通知）复活由各自原语负责，T1 不覆盖。
     pub fn undelete(
@@ -46,6 +54,9 @@ impl BlockService {
         repository::BlockRepository::undelete(storage.blocks(), id)
     }
 
+    /// `create_missing_tags`：是否按 content 自动建/复活标签。新建块默认是提交动作
+    /// （粘贴/功能区分块）→ true；唯一例外是 `save_blocks` 以 false 落库打字中的新块。
+    /// 同一开关也门控 `[[page]]` 目标页的创建（见 `ContentParseService::sync_links_for_block`）。
     pub fn create(
         storage: &mut dyn StorageAdapter,
         page_id: &str,
@@ -54,6 +65,7 @@ impl BlockService {
         format: &str,
         r#type: &str,
         id: Option<&str>,
+        create_missing_tags: bool,
     ) -> Result<Block, Box<dyn Error>> {
         let now = chrono::Utc::now().timestamp_millis();
         let pos = if let Some(pid) = parent_id {
@@ -74,16 +86,53 @@ impl BlockService {
             updated_at: now,
             version: 0,
             deleted_at: None,
+            // 新建块同样派生 tags。新建 = 提交动作（粘贴/功能区分块），
+            // 但 save_blocks 打字落库的新块会显式传 false。
+            tags: TagService::resolve_tag_ids_for_content_with_format(
+                storage,
+                content,
+                Some(format),
+                create_missing_tags,
+            )?,
         };
 
         let block = repository::BlockRepository::create(storage.blocks(), &block)?;
-        DateRefService::sync_date_refs_for_block(storage, &block.id, &block.content)?;
-        // S3: synchronise derived links & properties from content
-        if let Err(e) = ContentParseService::sync_links_for_block(storage, &block.id, &block.content) {
+        DateRefService::sync_date_refs_for_block_with_format(
+            storage,
+            &block.id,
+            &block.content,
+            Some(block.format.as_str()),
+        )?;
+        // S3: synchronise derived links & field values from content
+        // 建页门控与建签门控同源：`create_missing_tags == true` 即提交时点，
+        // 此时 `[[X]]` 的目标页缺失就地建页，反链与图谱才不会有断边。
+        if let Err(e) = ContentParseService::sync_links_for_block(
+            storage,
+            &block.id,
+            &block.content,
+            Some(block.format.as_str()),
+            create_missing_tags,
+        ) {
             eprintln!("[BlockService::create] sync_links_for_block failed for block {}: {}", block.id, e);
         }
-        if let Err(e) = ContentParseService::sync_properties_for_block(storage, &block.id, &block.content) {
-            eprintln!("[BlockService::create] sync_properties_for_block failed for block {}: {}", block.id, e);
+        if let Err(e) = ContentParseService::sync_field_values_for_block(
+            storage,
+            &block.id,
+            &block.content,
+            Some(block.format.as_str()),
+        ) {
+            eprintln!("[BlockService::create] sync_field_values_for_block failed for block {}: {}", block.id, e);
+        }
+        // content 联动：新建块同样按内容派生 tags，并为其新获得的标签自动填默认值
+        // （与 update 路径一致，ADR-0050 D13）。否则「创建即带 #tag」的块漏填默认，
+        // 表现与「先建空块再打 #tag」不一致（bug 2 核心侧）。
+        if let Err(e) =
+            TagService::apply_field_defaults_for_new_tags(storage, &block.id, &block.tags)
+        {
+            eprintln!(
+                "[BlockService::create] apply_field_defaults failed for block {}: {}",
+                block.id, e
+            );
         }
         Ok(block)
     }
@@ -96,6 +145,7 @@ impl BlockService {
         r#type: Option<&str>,
         parent_id: Option<&str>,
         pos: Option<i64>,
+        create_missing_tags: bool,
     ) -> Result<Block, Box<dyn Error>> {
         let mut block = repository::BlockRepository::get_by_id(storage.blocks(), id)?;
         let old_content = block.content.clone();
@@ -117,8 +167,40 @@ impl BlockService {
         }
         block.updated_at = chrono::Utc::now().timestamp_millis();
 
+        // content 联动（grill 决策 #1）：`#foo` 是打标的唯一入口 —— 每次内容编辑
+        // 重算派生集写入 Block.tags（恒链接既有行；软删复活/自动建仅限提交时点，
+        // 见 TagService —— 打字中间态不建 `#f`、`#fo` 垃圾标签）。
+        // 摘标 = 从 content 删字；FieldValue 保留不动（grill 决策 #7）。
+        let old_tags = block.tags.clone();
+        block.tags = TagService::resolve_tag_ids_for_content_with_format(
+            storage,
+            &block.content,
+            Some(block.format.as_str()),
+            create_missing_tags,
+        )?;
+        // 仅对新获得 tag 打默认（ADR-0050 D13），差集保证不冲掉手写值。
+        let new_tag_ids: Vec<String> = block
+            .tags
+            .iter()
+            .filter(|t| !old_tags.contains(t))
+            .cloned()
+            .collect();
+
         let block = repository::BlockRepository::update(storage.blocks(), &block)?;
-        DateRefService::sync_date_refs_for_block(storage, &block.id, &block.content)?;
+        if let Err(e) =
+            TagService::apply_field_defaults_for_new_tags(storage, &block.id, &new_tag_ids)
+        {
+            eprintln!(
+                "[BlockService::update] apply_field_defaults failed for block {}: {}",
+                block.id, e
+            );
+        }
+        DateRefService::sync_date_refs_for_block_with_format(
+            storage,
+            &block.id,
+            &block.content,
+            Some(block.format.as_str()),
+        )?;
         // 方案 A：非 recurring 通知随 block 改时间原地改期（仅当 iso 真的变化）
         if content.is_some() {
             DateRefService::reschedule_notifications_on_change(
@@ -128,14 +210,56 @@ impl BlockService {
                 &block.content,
             )?;
         }
-        // S3: synchronise derived links & properties from content
-        if let Err(e) = ContentParseService::sync_links_for_block(storage, &block.id, &block.content) {
+        // S3: synchronise derived links & field values from content
+        if let Err(e) = ContentParseService::sync_links_for_block(
+            storage,
+            &block.id,
+            &block.content,
+            Some(block.format.as_str()),
+            create_missing_tags,
+        ) {
             eprintln!("[BlockService::update] sync_links_for_block failed for block {}: {}", block.id, e);
         }
-        if let Err(e) = ContentParseService::sync_properties_for_block(storage, &block.id, &block.content) {
-            eprintln!("[BlockService::update] sync_properties_for_block failed for block {}: {}", block.id, e);
+        if let Err(e) = ContentParseService::sync_field_values_for_block(
+            storage,
+            &block.id,
+            &block.content,
+            Some(block.format.as_str()),
+        ) {
+            eprintln!("[BlockService::update] sync_field_values_for_block failed for block {}: {}", block.id, e);
         }
         Ok(block)
+    }
+
+    /// ADR-0049 D6：仅更新 `Block.tags`（反规范化 tag id 数组）。
+    /// 供 `block/set_tags` batch op 使用；常规内容编辑路径的 tags 派生在
+    /// [`Self::update`] 内经 `TagService::resolve_tag_ids_for_content` 完成。
+    /// 刻意不走 [`Self::update`]：只改 tags 时不触发 date_refs / 通知改期 /
+    /// links / properties 等内容派生同步。
+    pub fn update_tags(
+        storage: &mut dyn StorageAdapter,
+        id: &str,
+        tags: Vec<String>,
+    ) -> Result<Block, Box<dyn Error>> {
+        let mut block = repository::BlockRepository::get_by_id(storage.blocks(), id)?;
+        block.tags = tags;
+        block.updated_at = chrono::Utc::now().timestamp_millis();
+        repository::BlockRepository::update(storage.blocks(), &block)
+    }
+
+    /// 仅刷新 `Block.updated_at`（**不 bump version**）——字段值写入等派生变更的
+    /// 时间戳收口。矩阵视图 Done 的 24h 可见窗口 / updatedAt 排序 / BlockCard 投影
+    /// 均读 `Block.updated_at`，而字段值只动 FieldValue 行、不经 [`Self::update`] 的
+    /// 内容派生链路，故由字段写入口显式刷新。
+    ///
+    /// 刻意不 bump version：派生刷新不参与 sync LWW 版本竞争（否则低版本的字段
+    /// touch 会行级覆盖掉高版本的内容编辑，丢 content）；FieldValue 行自身的
+    /// version/updated_at 独立同步，不受影响。
+    pub fn touch(
+        storage: &mut dyn StorageAdapter,
+        id: &str,
+    ) -> Result<Block, Box<dyn Error>> {
+        repository::BlockRepository::touch_updated_at(storage.blocks(), id)
     }
 
     pub fn delete(
@@ -145,12 +269,12 @@ impl BlockService {
         DateRefService::sync_date_refs_for_block(storage, id, "")?;
         // 整块删除：连同该 block 的所有通知一起硬删除，避免 block 没了但通知残留（孤儿通知、点击跳转 404）。
         storage.notifications().delete_by_block_id(id)?;
-        // Clean up derived links; properties are explicitly deleted below (NOT via
-        // sync_properties_for_block, which now only upserts content-derived props).
-        if let Err(e) = ContentParseService::sync_links_for_block(storage, id, "") {
+        // Clean up derived links; field values are explicitly deleted below (NOT via
+        // sync_field_values_for_block, which now only upserts content-derived values).
+        if let Err(e) = ContentParseService::sync_links_for_block(storage, id, "", None, false) {
             eprintln!("[BlockService::delete] sync_links_for_block failed for block {}: {}", id, e);
         }
-        PropertyService::delete_by_block_id(storage, id)?;
+        FieldValueService::delete_by_block_id(storage, id)?;
         repository::BlockRepository::delete(storage.blocks(), id)
     }
 

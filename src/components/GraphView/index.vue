@@ -667,7 +667,7 @@ onBeforeUnmount(() => {
     font-size: var(--text-xs);
     color: var(--text-tertiary);
     font-family: inherit;
-    transition: background 80ms ease, color 80ms ease;
+    transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
 
     &:hover {
       background: var(--bg-hover);
@@ -700,7 +700,7 @@ onBeforeUnmount(() => {
     color: var(--text-secondary);
     font-family: inherit;
     white-space: nowrap;
-    transition: background 80ms ease;
+    transition: background var(--dur-fast) var(--ease-out);
 
     &:hover {
       background: var(--bg-hover);
@@ -775,7 +775,8 @@ onBeforeUnmount(() => {
   font-size: var(--text-xs);
   color: var(--text-secondary);
   font-family: inherit;
-  transition: background 80ms ease, color 80ms ease, border-color 80ms ease;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
 }
 
 .depth-btn:hover {

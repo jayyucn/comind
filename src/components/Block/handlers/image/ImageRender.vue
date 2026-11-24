@@ -15,6 +15,7 @@
  */
 import { AlignCenter, AlignLeft, AlignRight, Check, Copy, Crop, Fullscreen, Images, SquarePen, Trash, X } from 'lucide-vue-next'
 import { computed, inject, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+
 import type { CrossBlockSelection } from '../../../../composables/useCrossBlockSelection'
 import { useBlockStore } from '../../../../stores/blocks'
 import { useEditorStore } from '../../../../stores/editor'
@@ -28,20 +29,20 @@ const props = withDefaults(
     content: string
     showPlaceholder?: boolean
     showFullPlaceholder?: boolean
-    properties?: Record<string, unknown>
+    fieldValues?: Record<string, unknown>
     language?: string
   }>(),
   {
     showPlaceholder: false,
     showFullPlaceholder: false,
-    properties: () => ({}),
+    fieldValues: () => ({}),
     language: undefined,
   },
 )
 
 const blockStore = useBlockStore()
 const editorStore = useEditorStore()
-const selection = inject<CrossBlockSelection>('crossBlockSelection')
+const selection = inject<CrossBlockSelection | null>('crossBlockSelection', null)
 
 const IMAGE_REGEX = /!\[([^\]]*)\]\(([^)]+)\)/
 function parseImage(content: string): { alt: string; url: string } | null {
@@ -188,8 +189,8 @@ async function replaceImage() {
 }
 
 async function deleteImage() {
-  // 删除图片：将 block 转为 bullet 类型的空 block，并把光标插入其中
-  await blockStore.updateBlockType(props.blockId, 'bullet')
+  // 删除图片：将 block 转为 text 类型的空 block，并把光标插入其中
+  await blockStore.updateBlockType(props.blockId, 'text')
   await blockStore.updateBlockContent(props.blockId, '')
   editorStore.deactivateBlock()
   editorStore.activateBlock(props.blockId, 1)
@@ -735,7 +736,7 @@ defineExpose({
   color: var(--text-primary);
   font-size: 14px;
   cursor: pointer;
-  transition: background 0.12s ease;
+  transition: background var(--dur-fast) var(--ease-out);
 }
 .tb-btn:hover {
   background: var(--bg-hover);

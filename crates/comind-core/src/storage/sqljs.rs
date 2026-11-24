@@ -15,10 +15,11 @@ use crate::storage::entity::block::{block_select_cols, row_to_block_js};
 use crate::storage::entity::page::{page_select_cols, row_to_page_js};
 #[cfg(target_arch = "wasm32")]
 use crate::storage::entity::link::{link_select_cols, row_to_link_js};
-use crate::storage::entity::property::{property_select_cols, row_to_property_js};
 use crate::storage::entity::relationship_type::{relationship_type_select_cols, row_to_relationship_type_js};
+use crate::storage::entity::tag::{tag_select_cols, row_to_tag_js};
+use crate::storage::entity::field_definition::{field_definition_select_cols, row_to_field_definition_js};
+use crate::storage::entity::field_value::{field_value_select_cols, row_to_field_value_js};
 use crate::storage::entity::template::{template_select_cols, row_to_template_js};
-use crate::storage::entity::block_version::{block_version_select_cols, row_to_block_version_js};
 use crate::storage::entity::notification::{notification_select_cols, row_to_notification_js};
 use crate::storage::entity::saved_filter::{saved_filter_select_cols, row_to_saved_filter_js};
 use crate::storage::entity::screen_view::{screen_view_select_cols, row_to_screen_view_js};
@@ -156,7 +157,7 @@ impl SqlJsAdapter {
         
         Self::migrate_add_page_title_unique(db)?;
         
-        Self::exec(db, "CREATE TABLE IF NOT EXISTS Block (id TEXT PRIMARY KEY, page_id TEXT NOT NULL, parent_id TEXT, pos INTEGER NOT NULL DEFAULT 1000, content TEXT NOT NULL DEFAULT '', format TEXT NOT NULL DEFAULT '{}', type TEXT NOT NULL DEFAULT 'bullet', version INTEGER NOT NULL DEFAULT 0, deleted_at INTEGER, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);")?;
+        Self::exec(db, "CREATE TABLE IF NOT EXISTS Block (id TEXT PRIMARY KEY, page_id TEXT NOT NULL, parent_id TEXT, pos INTEGER NOT NULL DEFAULT 1000, content TEXT NOT NULL DEFAULT '', format TEXT NOT NULL DEFAULT '{}', type TEXT NOT NULL DEFAULT 'text', tags TEXT NOT NULL DEFAULT '[]', version INTEGER NOT NULL DEFAULT 0, deleted_at INTEGER, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);")?;
         
         Self::exec(db, "CREATE TABLE IF NOT EXISTS Link (id TEXT PRIMARY KEY, source_block_id TEXT NOT NULL, target_page_id TEXT NOT NULL, display_text TEXT NOT NULL, relationship_type TEXT, updated_at INTEGER NOT NULL, version INTEGER NOT NULL DEFAULT 0, deleted_at INTEGER, created_at INTEGER NOT NULL);")?;
         
@@ -166,15 +167,11 @@ impl SqlJsAdapter {
         Self::exec(db, "CREATE INDEX IF NOT EXISTS idx_date_ref_block ON DateRef(block_id);")?;
         Self::exec(db, "CREATE INDEX IF NOT EXISTS idx_date_ref_event_ts ON DateRef(event_ts);")?;
         
-        Self::exec(db, "CREATE TABLE IF NOT EXISTS Property (id TEXT PRIMARY KEY, block_id TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL, type TEXT NOT NULL, sort_order INTEGER NOT NULL DEFAULT 0, is_hidden INTEGER NOT NULL DEFAULT 0, is_deleted INTEGER NOT NULL DEFAULT 0, schema_version INTEGER NOT NULL DEFAULT 1, version INTEGER NOT NULL DEFAULT 0, deleted_at INTEGER, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, UNIQUE(block_id, key));")?;
-        
         Self::exec(db, "CREATE TABLE IF NOT EXISTS RelationshipType (id TEXT PRIMARY KEY, type TEXT NOT NULL, inverse TEXT, label TEXT NOT NULL, inverse_label TEXT NOT NULL, color TEXT NOT NULL, `order` INTEGER NOT NULL DEFAULT 0, strength TEXT NOT NULL DEFAULT 'medium', deleted INTEGER NOT NULL DEFAULT 0, builtin INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);")?;
         
         Self::exec(db, "CREATE TABLE IF NOT EXISTS UserTemplate (id TEXT PRIMARY KEY, name TEXT NOT NULL, category TEXT NOT NULL, content TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);")?;
         
-        Self::exec(db, "CREATE TABLE IF NOT EXISTS BlockVersion (id TEXT PRIMARY KEY, block_id TEXT NOT NULL, version INTEGER NOT NULL, snapshot TEXT NOT NULL, hash TEXT NOT NULL, message TEXT, source TEXT NOT NULL, restored_from_version_id TEXT, created_at INTEGER NOT NULL);")?;
-
-        Self::exec(db, "CREATE TABLE IF NOT EXISTS Notification (id TEXT PRIMARY KEY, block_id TEXT NOT NULL, page_id TEXT NOT NULL, kind TEXT NOT NULL, event_iso TEXT NOT NULL, fired_at INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'unread', snooze_until INTEGER, payload TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);")?;
+        Self::exec(db, "CREATE TABLE IF NOT EXISTS Notification (id TEXT PRIMARY KEY, block_id TEXT NOT NULL, page_id TEXT NOT NULL, kind TEXT NOT NULL, event_iso TEXT NOT NULL, fired_at INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'unread', snooze_until INTEGER, payload TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, version INTEGER NOT NULL DEFAULT 0, deleted_at INTEGER);")?;
         Self::exec(db, "CREATE INDEX IF NOT EXISTS idx_notifications_status ON Notification(status);")?;
         Self::exec(db, "CREATE INDEX IF NOT EXISTS idx_notifications_fired_at ON Notification(fired_at);")?;
         Self::exec(db, "CREATE INDEX IF NOT EXISTS idx_notifications_block_id ON Notification(block_id);")?;
@@ -188,9 +185,6 @@ impl SqlJsAdapter {
         Self::exec(db, "CREATE INDEX IF NOT EXISTS idx_block_pos ON Block(pos);")?;
         Self::exec(db, "CREATE INDEX IF NOT EXISTS idx_link_target ON Link(target_page_id);")?;
         Self::exec(db, "CREATE INDEX IF NOT EXISTS idx_link_source ON Link(source_block_id);")?;
-        Self::exec(db, "CREATE INDEX IF NOT EXISTS idx_property_blockId ON Property(block_id);")?;
-        Self::exec(db, "CREATE INDEX IF NOT EXISTS idx_property_key ON Property(key);")?;
-
         Self::exec(db, "CREATE TABLE IF NOT EXISTS SavedFilter (id TEXT PRIMARY KEY, name TEXT NOT NULL, query_json TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);")?;
 
         Self::exec(db, "CREATE TABLE IF NOT EXISTS screen_view (id TEXT PRIMARY KEY, entity TEXT NOT NULL DEFAULT 'block', parent_id TEXT, name TEXT NOT NULL, query_json TEXT NOT NULL, view_type TEXT NOT NULL DEFAULT 'table', group_by TEXT NOT NULL DEFAULT '', is_default INTEGER NOT NULL DEFAULT 0, sort_order INTEGER NOT NULL DEFAULT 0, config TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);")?;
@@ -204,13 +198,320 @@ impl SqlJsAdapter {
         // 与 sqlite.rs init_schema 逐列一致。
         Self::exec(db, "CREATE TABLE IF NOT EXISTS page_snapshots (page_id TEXT PRIMARY KEY, date TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 1, content_json TEXT NOT NULL, created_at INTEGER NOT NULL);")?;
 
+        // ADR-0049 D6：Tag 统一字段模型 —— 三张新表（与 sqlite.rs init_schema 逐列一致）。
+        Self::exec(db, "CREATE TABLE IF NOT EXISTS Tag (id TEXT PRIMARY KEY, title TEXT NOT NULL UNIQUE, field_ids TEXT NOT NULL DEFAULT '[]', extends TEXT NOT NULL DEFAULT '[]', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, version INTEGER NOT NULL DEFAULT 0, deleted_at INTEGER, is_system INTEGER NOT NULL DEFAULT 0, parent_id TEXT, description TEXT NOT NULL DEFAULT '', color TEXT NOT NULL DEFAULT '', is_preset INTEGER NOT NULL DEFAULT 0);")?;
+        Self::exec(db, "CREATE INDEX IF NOT EXISTS idx_tag_title ON Tag(title);")?;
+        Self::exec(db, "CREATE TABLE IF NOT EXISTS FieldDefinition (id TEXT PRIMARY KEY, key TEXT NOT NULL UNIQUE, title TEXT NOT NULL, type TEXT NOT NULL, closed_values TEXT, is_system INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, version INTEGER NOT NULL DEFAULT 0, deleted_at INTEGER, default_value TEXT, hide_when TEXT NOT NULL DEFAULT 'never', is_preset INTEGER NOT NULL DEFAULT 0, display_form_override TEXT NOT NULL DEFAULT 'auto', min REAL, max REAL, step REAL, spec TEXT, description TEXT);")?;
+        Self::exec(db, "CREATE INDEX IF NOT EXISTS idx_fielddef_key ON FieldDefinition(key);")?;
+        Self::exec(db, "CREATE TABLE IF NOT EXISTS FieldValue (id TEXT PRIMARY KEY, block_id TEXT NOT NULL, field_definition_id TEXT NOT NULL, value_json TEXT NOT NULL, value_type TEXT NOT NULL, seq INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, version INTEGER NOT NULL DEFAULT 0, deleted_at INTEGER);")?;
+        Self::exec(db, "CREATE INDEX IF NOT EXISTS idx_fieldvalue_block_id ON FieldValue(block_id);")?;
+        Self::exec(db, "CREATE INDEX IF NOT EXISTS idx_fieldvalue_fielddef ON FieldValue(field_definition_id);")?;
+
         Self::migrate_date_ref_event_ts(db)?;
         Self::migrate_add_version_and_deleted_at(db)?;
         Self::migrate_rename_task_view_to_screen_view(db)?;
         Self::migrate_add_screen_view_config(db)?;
         Self::migrate_add_screen_view_entity(db)?;
         Self::migrate_add_screen_view_parent_id(db)?;
+        Self::seed_system_field_definitions(db)?;
+        Self::migrate_add_block_tags_column(db)?;
+        Self::migrate_add_tag_is_system(db)?;
+        Self::migrate_add_tag_parent_id(db)?;
+        Self::migrate_add_tag_identity(db)?;
+        Self::seed_system_tags(db)?;
+        Self::migrate_add_field_definition_default_value(db)?;
+        Self::migrate_add_field_definition_hide_when(db)?;
+        Self::migrate_add_field_definition_display_form_override(db)?;
+        Self::migrate_add_tag_is_preset(db)?;
+        Self::migrate_add_field_definition_is_preset(db)?;
+        Self::migrate_add_field_definition_constraints(db)?;
+        Self::migrate_add_field_definition_spec(db)?;
+        Self::migrate_add_field_definition_description(db)?;
+        Self::migrate_strip_string_value_quotes(db)?;
 
+        Ok(())
+    }
+
+    /// ADR-0049 D3/D6：seed 系统 12 字段进 FieldDefinition 表（固定 id，seed 行不可删）。
+    /// 与 sqlite `seed_system_field_definitions` 逐行对称；幂等：按 `key` 存在性跳过。
+    /// INSERT 携带 default_value / hide_when（修复此前漏列导致 wasm 侧系统字段首插缺这两列）。
+    /// 已存在的 is_system 行回填 default_value / hide_when（配置拥有权安全；预设字段跳过，避免覆盖用户编辑）。
+    fn seed_system_field_definitions(db: &Object) -> Result<(), Box<dyn std::error::Error>> {
+        for fd in system_field_definitions() {
+            let existing = Self::query(db, "SELECT id FROM FieldDefinition WHERE key = ?1", &[&fd.key])?;
+            if !existing.is_empty() {
+                if fd.is_system {
+                    Self::run_with_params(
+                        db,
+                        "UPDATE FieldDefinition SET default_value = ?, hide_when = ?, description = ? WHERE key = ?",
+                        &[
+                            &fd.default_value.as_deref().unwrap_or(""),
+                            &fd.hide_when,
+                            &fd.description.as_deref().unwrap_or(""),
+                            &fd.key,
+                        ],
+                    )?;
+                }
+                continue;
+            }
+            let closed_values_json = serde_json::to_string(&fd.closed_values).unwrap_or_else(|_| "null".to_string());
+            let is_system: &str = if fd.is_system { "1" } else { "0" };
+            let is_preset: &str = if fd.is_preset { "1" } else { "0" };
+            Self::run_with_params(
+                db,
+                "INSERT INTO FieldDefinition (id, key, title, type, closed_values, is_system, is_preset, created_at, updated_at, version, default_value, hide_when, description) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                &[
+                    &fd.id,
+                    &fd.key,
+                    &fd.title,
+                    &fd.r#type,
+                    &closed_values_json,
+                    is_system,
+                    is_preset,
+                    &fd.created_at.to_string(),
+                    &fd.updated_at.to_string(),
+                    &fd.version.to_string(),
+                    &fd.default_value.as_deref().unwrap_or(""),
+                    &fd.hide_when,
+                    &fd.description.as_deref().unwrap_or(""),
+                ],
+            )?;
+        }
+        Ok(())
+    }
+
+    /// 幂等：老库 Block 表可能无 tags 列（CREATE TABLE IF NOT EXISTS 对已存在表是 no-op）。
+    fn migrate_add_block_tags_column(db: &Object) -> Result<(), Box<dyn std::error::Error>> {
+        let has_column = |table: &str, col: &str| -> bool {
+            let rows = Self::query(db, &format!("PRAGMA table_info('{}');", table), &[]).unwrap_or_default();
+            rows.iter().any(|r| r.values().any(|v| v == col))
+        };
+        if !has_column("Block", "tags") {
+            Self::exec(db, "ALTER TABLE Block ADD COLUMN tags TEXT NOT NULL DEFAULT '[]';")?;
+        }
+        Ok(())
+    }
+
+    /// grill 决策 #5：系统 tag 落库。幂等：老库 Tag 表补 is_system 列。
+    fn migrate_add_tag_is_system(db: &Object) -> Result<(), Box<dyn std::error::Error>> {
+        let has_column = |table: &str, col: &str| -> bool {
+            let rows = Self::query(db, &format!("PRAGMA table_info('{}');", table), &[]).unwrap_or_default();
+            rows.iter().any(|r| r.values().any(|v| v == col))
+        };
+        if !has_column("Tag", "is_system") {
+            Self::exec(db, "ALTER TABLE Tag ADD COLUMN is_system INTEGER NOT NULL DEFAULT 0;")?;
+        }
+        Ok(())
+    }
+
+    /// 幂等：老库 Tag 表补 parent_id 列（单父槽位，NULL = 顶级；ADR-0050 D10）。
+    /// 与 sqlite `migrate_add_tag_parent_id` 逐行对称。
+    fn migrate_add_tag_parent_id(db: &Object) -> Result<(), Box<dyn std::error::Error>> {
+        let has_column = |table: &str, col: &str| -> bool {
+            let rows = Self::query(db, &format!("PRAGMA table_info('{}');", table), &[]).unwrap_or_default();
+            rows.iter().any(|r| r.values().any(|v| v == col))
+        };
+        if !has_column("Tag", "parent_id") {
+            Self::exec(db, "ALTER TABLE Tag ADD COLUMN parent_id TEXT;")?;
+        }
+        Ok(())
+    }
+
+    /// 幂等：老库 Tag 表补 description / color 列（标签身份三要素，ADR-0050 D11）。
+    /// 与 sqlite `migrate_add_tag_identity` 逐行对称。
+    fn migrate_add_tag_identity(db: &Object) -> Result<(), Box<dyn std::error::Error>> {
+        let has_column = |table: &str, col: &str| -> bool {
+            let rows = Self::query(db, &format!("PRAGMA table_info('{}');", table), &[]).unwrap_or_default();
+            rows.iter().any(|r| r.values().any(|v| v == col))
+        };
+        for col in ["description", "color"] {
+            if !has_column("Tag", col) {
+                Self::exec(
+                    db,
+                    &format!("ALTER TABLE Tag ADD COLUMN {} TEXT NOT NULL DEFAULT '';", col),
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    /// 幂等：老库 FieldDefinition 表补 default_value 列（JSON 文本；NULL = 无默认，ADR-0050 D13）。
+    /// 与 sqlite `migrate_add_field_definition_default_value` 逐行对称。
+    fn migrate_add_field_definition_default_value(db: &Object) -> Result<(), Box<dyn std::error::Error>> {
+        let has_column = |table: &str, col: &str| -> bool {
+            let rows = Self::query(db, &format!("PRAGMA table_info('{}');", table), &[]).unwrap_or_default();
+            rows.iter().any(|r| r.values().any(|v| v == col))
+        };
+        if !has_column("FieldDefinition", "default_value") {
+            Self::exec(db, "ALTER TABLE FieldDefinition ADD COLUMN default_value TEXT;")?;
+        }
+        Ok(())
+    }
+
+    /// 幂等：老库 FieldDefinition 表补 hide_when 列（TEXT；'never' = 不隐藏，ADR-0050 D18）。
+    /// 与 sqlite `migrate_add_field_definition_hide_when` 逐行对称。
+    fn migrate_add_field_definition_hide_when(db: &Object) -> Result<(), Box<dyn std::error::Error>> {
+        let has_column = |table: &str, col: &str| -> bool {
+            let rows = Self::query(db, &format!("PRAGMA table_info('{}');", table), &[]).unwrap_or_default();
+            rows.iter().any(|r| r.values().any(|v| v == col))
+        };
+        if !has_column("FieldDefinition", "hide_when") {
+            Self::exec(
+                db,
+                "ALTER TABLE FieldDefinition ADD COLUMN hide_when TEXT NOT NULL DEFAULT 'never';",
+            )?;
+        }
+        Ok(())
+    }
+
+    /// 幂等：老库 FieldDefinition 表补 display_form_override 列（TEXT；'auto' = 跟随类型默认映射，ADR-0050 D21）。
+    /// 与 sqlite `migrate_add_field_definition_display_form_override` 逐行对称。
+    fn migrate_add_field_definition_display_form_override(
+        db: &Object,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let has_column = |table: &str, col: &str| -> bool {
+            let rows = Self::query(db, &format!("PRAGMA table_info('{}');", table), &[]).unwrap_or_default();
+            rows.iter().any(|r| r.values().any(|v| v == col))
+        };
+        if !has_column("FieldDefinition", "display_form_override") {
+            Self::exec(
+                db,
+                "ALTER TABLE FieldDefinition ADD COLUMN display_form_override TEXT NOT NULL DEFAULT 'auto';",
+            )?;
+        }
+        Ok(())
+    }
+
+    /// 幂等：老库 Tag 表补 is_preset 列（系统标签三态模型，2026-09-30）。
+    /// 与 sqlite `migrate_add_tag_is_preset` 逐行对称。
+    fn migrate_add_tag_is_preset(db: &Object) -> Result<(), Box<dyn std::error::Error>> {
+        let has_column = |table: &str, col: &str| -> bool {
+            let rows = Self::query(db, &format!("PRAGMA table_info('{}');", table), &[]).unwrap_or_default();
+            rows.iter().any(|r| r.values().any(|v| v == col))
+        };
+        if !has_column("Tag", "is_preset") {
+            Self::exec(db, "ALTER TABLE Tag ADD COLUMN is_preset INTEGER NOT NULL DEFAULT 0;")?;
+        }
+        Ok(())
+    }
+
+    /// 幂等：老库 FieldDefinition 表补 is_preset 列（系统标签三态模型，2026-09-30）。
+    /// 与 sqlite `migrate_add_field_definition_is_preset` 逐行对称。
+    fn migrate_add_field_definition_is_preset(db: &Object) -> Result<(), Box<dyn std::error::Error>> {
+        let has_column = |table: &str, col: &str| -> bool {
+            let rows = Self::query(db, &format!("PRAGMA table_info('{}');", table), &[]).unwrap_or_default();
+            rows.iter().any(|r| r.values().any(|v| v == col))
+        };
+        if !has_column("FieldDefinition", "is_preset") {
+            Self::exec(db, "ALTER TABLE FieldDefinition ADD COLUMN is_preset INTEGER NOT NULL DEFAULT 0;")?;
+        }
+        Ok(())
+    }
+
+    /// ADR-0055 D5：数值字段约束（min / max / step）。幂等：老库 FieldDefinition 表补三列
+    /// （REAL，NULL = 无约束）。与 sqlite `migrate_add_field_definition_constraints` 逐行对称。
+    fn migrate_add_field_definition_constraints(db: &Object) -> Result<(), Box<dyn std::error::Error>> {
+        let has_column = |table: &str, col: &str| -> bool {
+            let rows = Self::query(db, &format!("PRAGMA table_info('{}');", table), &[]).unwrap_or_default();
+            rows.iter().any(|r| r.values().any(|v| v == col))
+        };
+        for col in ["min", "max", "step"] {
+            if !has_column("FieldDefinition", col) {
+                Self::exec(db, &format!("ALTER TABLE FieldDefinition ADD COLUMN {} REAL;", col))?;
+            }
+        }
+        Ok(())
+    }
+
+    /// 字段类型特化标记（issue T6/T7/T10）。幂等：老库 FieldDefinition 表补 spec 列
+    /// （TEXT，NULL = 无特化）。与 sqlite `migrate_add_field_definition_spec` 逐行对称。
+    fn migrate_add_field_definition_spec(db: &Object) -> Result<(), Box<dyn std::error::Error>> {
+        let has_column = |table: &str, col: &str| -> bool {
+            let rows = Self::query(db, &format!("PRAGMA table_info('{}');", table), &[]).unwrap_or_default();
+            rows.iter().any(|r| r.values().any(|v| v == col))
+        };
+        if !has_column("FieldDefinition", "spec") {
+            Self::exec(db, "ALTER TABLE FieldDefinition ADD COLUMN spec TEXT;")?;
+        }
+        Ok(())
+    }
+
+    /// 字段描述（ADR-0057 D3）。幂等：老库 FieldDefinition 表补 description 列
+    /// （TEXT，NULL/空串 = 未填写）。与 sqlite `migrate_add_field_definition_description` 逐行对称。
+    fn migrate_add_field_definition_description(db: &Object) -> Result<(), Box<dyn std::error::Error>> {
+        let has_column = |table: &str, col: &str| -> bool {
+            let rows = Self::query(db, &format!("PRAGMA table_info('{}');", table), &[]).unwrap_or_default();
+            rows.iter().any(|r| r.values().any(|v| v == col))
+        };
+        if !has_column("FieldDefinition", "description") {
+            Self::exec(db, "ALTER TABLE FieldDefinition ADD COLUMN description TEXT;")?;
+        }
+        Ok(())
+    }
+
+    /// 与 sqlite `migrate_strip_string_value_quotes` 逐行对称：一次性修复默认值填充
+    /// 引号 bug（string/page 型 value_json 被原样写入 default_value 的 JSON 文本）。
+    /// 只修「value_json == 该字段 default_value 且能解析为 JSON 字符串」的行，幂等。
+    fn migrate_strip_string_value_quotes(db: &Object) -> Result<(), Box<dyn std::error::Error>> {
+        let rows = Self::query(
+            db,
+            "SELECT fv.id, fv.value_json FROM FieldValue fv \
+             JOIN FieldDefinition fd ON fd.id = fv.field_definition_id \
+             WHERE fv.value_type IN ('string', 'page') \
+               AND fd.default_value IS NOT NULL AND fd.default_value != '' \
+               AND fv.value_json = fd.default_value",
+            &[],
+        )?;
+        for row in rows {
+            let id = match row.get("id") {
+                Some(v) => v.clone(),
+                None => continue,
+            };
+            let raw = match row.get("value_json") {
+                Some(v) => v.clone(),
+                None => continue,
+            };
+            // 解析失败（非 JSON 字符串形态，如裸文本/对象）保持原样。
+            if let Ok(unquoted) = serde_json::from_str::<String>(&raw) {
+                Self::run_with_params(
+                    db,
+                    "UPDATE FieldValue SET value_json = ? WHERE id = ?",
+                    &[&unquoted, &id],
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    /// 与 sqlite `seed_system_tags` 逐行对称（grill 决策 #5）。幂等：按 `id` 存在性跳过插入；
+    /// 已存在的行回填 description / color（身份两要素为配置所有，系统标签只读）。
+    /// title 不回填（UNIQUE 约束可能被同名用户标签挡住）。
+    /// db id/title 与标签→字段分组均由 systemFieldSeed.json 派生（`system_tag_seeds()`）。
+    fn seed_system_tags(db: &Object) -> Result<(), Box<dyn std::error::Error>> {
+        for (id, title, field_ids, description, color) in system_tag_seeds() {
+            let existing = Self::query(db, "SELECT id FROM Tag WHERE id = ?1", &[id.as_str()])?;
+            if !existing.is_empty() {
+                Self::run_with_params(
+                    db,
+                    "UPDATE Tag SET description = ?, color = ? WHERE id = ?",
+                    &[&description, &color, &id],
+                )?;
+                continue;
+            }
+            let tag = Tag::seed(&id, &title, field_ids, &description, &color);
+            let field_ids_json = serde_json::to_string(&tag.field_ids).unwrap_or_else(|_| "[]".to_string());
+            // `extends` 列原地保留但不再读写（ADR-0050 D10：继承改单父 `parent_id` + 读时解析）
+            // 列名显式列出（sql.js 无动态 COLS 拼接），须与 Tag 落库列同步——含 identity 三要素 description / color。
+            Self::run_with_params(
+                db,
+                "INSERT INTO Tag (id, title, field_ids, created_at, updated_at, version, deleted_at, is_system, parent_id, description, color) VALUES (?, ?, ?, ?, ?, ?, NULL, 1, NULL, ?, ?)",
+                &[
+                    &tag.id, &tag.title, &field_ids_json,
+                    &tag.created_at.to_string(), &tag.updated_at.to_string(), &tag.version.to_string(),
+                    &tag.description, &tag.color,
+                ],
+            )?;
+        }
         Ok(())
     }
 
@@ -242,13 +543,6 @@ impl SqlJsAdapter {
         if !has_column("Link", "deleted_at") {
             Self::exec(db, "ALTER TABLE Link ADD COLUMN deleted_at INTEGER;")?;
         }
-        if !has_column("Property", "version") {
-            Self::exec(db, "ALTER TABLE Property ADD COLUMN version INTEGER NOT NULL DEFAULT 0;")?;
-        }
-        if !has_column("Property", "deleted_at") {
-            Self::exec(db, "ALTER TABLE Property ADD COLUMN deleted_at INTEGER;")?;
-            Self::exec(db, "UPDATE Property SET deleted_at = updated_at WHERE is_deleted = 1 AND deleted_at IS NULL;")?;
-        }
         if !has_column("RelationshipType", "version") {
             Self::exec(db, "ALTER TABLE RelationshipType ADD COLUMN version INTEGER NOT NULL DEFAULT 0;")?;
         }
@@ -263,6 +557,14 @@ impl SqlJsAdapter {
         }
         if !has_column("DateRef", "deleted_at") {
             Self::exec(db, "ALTER TABLE DateRef ADD COLUMN deleted_at INTEGER;")?;
+        }
+        // Notification 此前漏在该清单之外 —— 而它早在 SyncTable 里，同步全量导出会
+        // 报 "no such column: deleted_at"（与 sqlite.rs 逐条对称）。
+        if !has_column("Notification", "version") {
+            Self::exec(db, "ALTER TABLE Notification ADD COLUMN version INTEGER NOT NULL DEFAULT 0;")?;
+        }
+        if !has_column("Notification", "deleted_at") {
+            Self::exec(db, "ALTER TABLE Notification ADD COLUMN deleted_at INTEGER;")?;
         }
         Ok(())
     }
@@ -460,12 +762,25 @@ impl BlockRepository for SqlJsAdapter {
         Ok(result.into_iter().map(|r| row_to_block_js(&r)).collect())
     }
 
+    fn get_by_id_including_deleted(&self, id: &str) -> Result<Block, Box<dyn std::error::Error>> {
+        // 不过滤 deleted_at：搬移判定要能读到「仍软删」的那一行。
+        let result = Self::query(&self.db, &format!("SELECT {} FROM Block WHERE id = ?", block_select_cols()), &[id])?;
+        if result.is_empty() {
+            return Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "Block not found")));
+        }
+        Ok(row_to_block_js(&result[0]))
+    }
+
     fn create(&mut self, block: &Block) -> Result<Block, Box<dyn std::error::Error>> {
         let parent_id = block.parent_id.as_deref().unwrap_or("");
-        Self::run_with_params(&self.db, "INSERT INTO Block (id, page_id, parent_id, pos, content, format, type, version, deleted_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)", &[
+        // tags 由 BlockService::update/create 经 resolve_tag_ids_for_content 从 content
+        // 派生后装入 block.tags；此处必须随行写入，否则 Block.tags 列恒为 '[]'，
+        // 投影层（get_blocks_projection 读 Block.tags）按任务 tag 过滤会让块永远进不了任务列表/四象限。
+        let tags_json = serde_json::to_string(&block.tags).unwrap_or_else(|_| "[]".to_string());
+        Self::run_with_params(&self.db, "INSERT INTO Block (id, page_id, parent_id, pos, content, format, type, tags, version, deleted_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)", &[
             &block.id, &block.page_id, parent_id,
             &block.pos.to_string(), &block.content, &block.format,
-            &block.r#type, &block.version.to_string(),
+            &block.r#type, &tags_json, &block.version.to_string(),
             &block.created_at.to_string(), &block.updated_at.to_string()
         ])?;
         Ok(block.clone())
@@ -473,9 +788,11 @@ impl BlockRepository for SqlJsAdapter {
 
     fn update(&mut self, block: &Block) -> Result<Block, Box<dyn std::error::Error>> {
         let parent_id = block.parent_id.as_deref().unwrap_or("");
-        Self::run_with_params(&self.db, "UPDATE Block SET page_id = ?, parent_id = ?, pos = ?, content = ?, format = ?, type = ?, version = version + 1, updated_at = ? WHERE id = ?", &[
+        let tags_json = serde_json::to_string(&block.tags).unwrap_or_else(|_| "[]".to_string());
+        Self::run_with_params(&self.db, "UPDATE Block SET page_id = ?, parent_id = ?, pos = ?, content = ?, format = ?, type = ?, tags = ?, version = version + 1, updated_at = ? WHERE id = ?", &[
             &block.page_id, parent_id, &block.pos.to_string(),
             &block.content, &block.format, &block.r#type,
+            &tags_json,
             &block.updated_at.to_string(), &block.id
         ])?;
         Ok(block.clone())
@@ -491,6 +808,18 @@ impl BlockRepository for SqlJsAdapter {
         // 撤销软删除：deleted_at 清 NULL，版本 +1，刷新 updated_at（与 delete 对称）。
         let now = chrono::Utc::now().timestamp_millis();
         Self::run_with_params(&self.db, "UPDATE Block SET deleted_at = NULL, version = version + 1, updated_at = ? WHERE id = ?", &[&now.to_string(), id])?;
+        let result = Self::query(&self.db, &format!("SELECT {} FROM Block WHERE id = ?", block_select_cols()), &[id])?;
+        if result.is_empty() {
+            return Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "Block not found")));
+        }
+        Ok(row_to_block_js(&result[0]))
+    }
+
+    fn touch_updated_at(&mut self, id: &str) -> Result<Block, Box<dyn std::error::Error>> {
+        // 仅刷新 updated_at（不 bump version）——字段值写入的派生时间戳收口，
+        // 与原生 block_touch_updated_at 同语义（见 entity/block.rs 注释）。
+        let now = chrono::Utc::now().timestamp_millis();
+        Self::run_with_params(&self.db, "UPDATE Block SET updated_at = ? WHERE id = ?", &[&now.to_string(), id])?;
         let result = Self::query(&self.db, &format!("SELECT {} FROM Block WHERE id = ?", block_select_cols()), &[id])?;
         if result.is_empty() {
             return Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "Block not found")));
@@ -863,105 +1192,311 @@ impl DateRefRepository for SqlJsAdapter {
     }
 }
 
-impl PropertyRepository for SqlJsAdapter {
-    fn get_all(&self) -> Result<Vec<Property>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, &format!("SELECT {} FROM Property WHERE is_deleted = 0 AND deleted_at IS NULL", property_select_cols()), &[])?;
-        Ok(result.into_iter().map(|r| row_to_property_js(&r)).collect())
-    }
-
-    fn get_by_id(&self, id: &str) -> Result<Property, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, &format!("SELECT {} FROM Property WHERE id = ? AND deleted_at IS NULL", property_select_cols()), &[id])?;
+impl TagRepository for SqlJsAdapter {
+    fn get_by_id(&self, id: &str) -> Result<Tag, Box<dyn std::error::Error>> {
+        let result = Self::query(&self.db, &format!("SELECT {} FROM Tag WHERE id = ? AND deleted_at IS NULL", tag_select_cols()), &[id])?;
         if result.is_empty() {
-            return Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "Property not found")));
+            return Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "Tag not found")));
         }
-        Ok(row_to_property_js(&result[0]))
+        Ok(row_to_tag_js(&result[0]))
     }
 
-    fn get_by_block_id(&self, block_id: &str) -> Result<Vec<Property>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, &format!("SELECT {} FROM Property WHERE block_id = ? AND is_deleted = 0 AND deleted_at IS NULL ORDER BY sort_order", property_select_cols()), &[block_id])?;
-        Ok(result.into_iter().map(|r| row_to_property_js(&r)).collect())
+    fn get_by_title(&self, title: &str) -> Result<Option<Tag>, Box<dyn std::error::Error>> {
+        let result = Self::query(&self.db, &format!("SELECT {} FROM Tag WHERE title = ? AND deleted_at IS NULL", tag_select_cols()), &[title])?;
+        if result.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(row_to_tag_js(&result[0])))
+        }
     }
 
-    fn get_by_block_ids(&self, block_ids: &[String]) -> Result<Vec<Property>, Box<dyn std::error::Error>> {
+    fn get_by_title_including_deleted(&self, title: &str) -> Result<Option<Tag>, Box<dyn std::error::Error>> {
+        let result = Self::query(&self.db, &format!("SELECT {} FROM Tag WHERE title = ?", tag_select_cols()), &[title])?;
+        if result.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(row_to_tag_js(&result[0])))
+        }
+    }
+
+    fn undelete(&mut self, id: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let now = chrono::Utc::now().timestamp_millis();
+        Self::run_with_params(&self.db, "UPDATE Tag SET deleted_at = NULL, version = version + 1, updated_at = ? WHERE id = ?", &[&now.to_string(), id])?;
+        Ok(())
+    }
+
+    fn get_all(&self) -> Result<Vec<Tag>, Box<dyn std::error::Error>> {
+        let result = Self::query(&self.db, &format!("SELECT {} FROM Tag WHERE deleted_at IS NULL ORDER BY created_at", tag_select_cols()), &[])?;
+        Ok(result.into_iter().map(|r| row_to_tag_js(&r)).collect())
+    }
+
+    fn create(&mut self, tag: &Tag) -> Result<Tag, Box<dyn std::error::Error>> {
+        let field_ids_json = serde_json::to_string(&tag.field_ids).unwrap_or_else(|_| "[]".to_string());
+        let is_system_str = if tag.is_system { "1" } else { "0" };
+        // NULLIF(?, '')：TS 侧传空串即落 NULL，与原生适配器的 Option → NULL 落盘一致（ADR-0050 D10）。
+        let parent_id_str = tag.parent_id.clone().unwrap_or_default();
+        // description / color 走 NOT NULL DEFAULT ''，无需 NULLIF 归一化（ADR-0050 D11）。
+        Self::run_with_params(&self.db, "INSERT INTO Tag (id, title, field_ids, created_at, updated_at, version, deleted_at, is_system, parent_id, description, color) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, NULLIF(?, ''), ?, ?)", &[
+            &tag.id, &tag.title, &field_ids_json,
+            &tag.created_at.to_string(), &tag.updated_at.to_string(), &tag.version.to_string(), &is_system_str, &parent_id_str,
+            &tag.description, &tag.color
+        ])?;
+        Ok(tag.clone())
+    }
+
+    fn update(&mut self, tag: &Tag) -> Result<Tag, Box<dyn std::error::Error>> {
+        let field_ids_json = serde_json::to_string(&tag.field_ids).unwrap_or_else(|_| "[]".to_string());
+        let parent_id_str = tag.parent_id.clone().unwrap_or_default();
+        Self::run_with_params(&self.db, "UPDATE Tag SET title = ?, field_ids = ?, parent_id = NULLIF(?, ''), description = ?, color = ?, updated_at = ?, version = version + 1 WHERE id = ?", &[
+            &tag.title, &field_ids_json, &parent_id_str, &tag.description, &tag.color, &tag.updated_at.to_string(), &tag.id
+        ])?;
+        Ok(tag.clone())
+    }
+
+    fn delete(&mut self, id: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let now = chrono::Utc::now().timestamp_millis();
+        Self::run_with_params(&self.db, "UPDATE Tag SET deleted_at = ?, version = version + 1, updated_at = ? WHERE id = ?", &[&now.to_string(), &now.to_string(), id])?;
+        Ok(())
+    }
+}
+
+impl FieldDefinitionRepository for SqlJsAdapter {
+    fn get_by_id(&self, id: &str) -> Result<FieldDefinition, Box<dyn std::error::Error>> {
+        let result = Self::query(&self.db, &format!("SELECT {} FROM FieldDefinition WHERE id = ? AND deleted_at IS NULL", field_definition_select_cols()), &[id])?;
+        if result.is_empty() {
+            return Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "FieldDefinition not found")));
+        }
+        Ok(row_to_field_definition_js(&result[0]))
+    }
+
+    fn get_by_key(&self, key: &str) -> Result<Option<FieldDefinition>, Box<dyn std::error::Error>> {
+        let result = Self::query(&self.db, &format!("SELECT {} FROM FieldDefinition WHERE key = ? AND deleted_at IS NULL", field_definition_select_cols()), &[key])?;
+        if result.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(row_to_field_definition_js(&result[0])))
+        }
+    }
+
+    fn get_all(&self) -> Result<Vec<FieldDefinition>, Box<dyn std::error::Error>> {
+        let result = Self::query(&self.db, &format!("SELECT {} FROM FieldDefinition WHERE deleted_at IS NULL ORDER BY created_at", field_definition_select_cols()), &[])?;
+        Ok(result.into_iter().map(|r| row_to_field_definition_js(&r)).collect())
+    }
+
+    fn create(&mut self, fd: &FieldDefinition) -> Result<FieldDefinition, Box<dyn std::error::Error>> {
+        let closed_values_json = serde_json::to_string(&fd.closed_values).unwrap_or_else(|_| "null".to_string());
+        let is_system = if fd.is_system { "1" } else { "0" };
+        let min_str = fd.min.map(|v| v.to_string()).unwrap_or_default();
+        let max_str = fd.max.map(|v| v.to_string()).unwrap_or_default();
+        let step_str = fd.step.map(|v| v.to_string()).unwrap_or_default();
+        let spec_str = fd.spec.clone().unwrap_or_default();
+        Self::run_with_params(&self.db, "INSERT INTO FieldDefinition (id, key, title, type, closed_values, is_system, created_at, updated_at, version, deleted_at, default_value, hide_when, display_form_override, min, max, step, spec, description) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)", &[
+            &fd.id, &fd.key, &fd.title, &fd.r#type, &closed_values_json, is_system,
+            &fd.created_at.to_string(), &fd.updated_at.to_string(), &fd.version.to_string(),
+            fd.default_value.as_deref().unwrap_or(""),
+            &fd.hide_when,
+            &fd.display_form_override,
+            &min_str, &max_str, &step_str, &spec_str,
+            fd.description.as_deref().unwrap_or("")
+        ])?;
+        Ok(fd.clone())
+    }
+
+    fn update(&mut self, fd: &FieldDefinition) -> Result<FieldDefinition, Box<dyn std::error::Error>> {
+        let closed_values_json = serde_json::to_string(&fd.closed_values).unwrap_or_else(|_| "null".to_string());
+        let is_system = if fd.is_system { "1" } else { "0" };
+        let min_str = fd.min.map(|v| v.to_string()).unwrap_or_default();
+        let max_str = fd.max.map(|v| v.to_string()).unwrap_or_default();
+        let step_str = fd.step.map(|v| v.to_string()).unwrap_or_default();
+        let spec_str = fd.spec.clone().unwrap_or_default();
+        Self::run_with_params(&self.db, "UPDATE FieldDefinition SET key = ?, title = ?, type = ?, closed_values = ?, is_system = ?, default_value = ?, hide_when = ?, display_form_override = ?, min = ?, max = ?, step = ?, spec = ?, description = ?, updated_at = ?, version = version + 1 WHERE id = ?", &[
+            &fd.key, &fd.title, &fd.r#type, &closed_values_json, is_system,
+            fd.default_value.as_deref().unwrap_or(""),
+            &fd.hide_when,
+            &fd.display_form_override,
+            &min_str, &max_str, &step_str, &spec_str,
+            fd.description.as_deref().unwrap_or(""),
+            &fd.updated_at.to_string(), &fd.id
+        ])?;
+        Ok(fd.clone())
+    }
+
+    fn delete(&mut self, id: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let now = chrono::Utc::now().timestamp_millis();
+        Self::run_with_params(&self.db, "UPDATE FieldDefinition SET deleted_at = ?, version = version + 1, updated_at = ? WHERE id = ?", &[&now.to_string(), &now.to_string(), id])?;
+        Ok(())
+    }
+
+    fn soft_delete_at(&mut self, id: &str, now: i64) -> Result<(), Box<dyn std::error::Error>> {
+        let now_str = now.to_string();
+        Self::run_with_params(&self.db, "UPDATE FieldDefinition SET deleted_at = ?, version = version + 1, updated_at = ? WHERE id = ?", &[&now_str, &now_str, id])?;
+        Ok(())
+    }
+
+    fn get_by_id_including_deleted(&self, id: &str) -> Result<FieldDefinition, Box<dyn std::error::Error>> {
+        let result = Self::query(&self.db, &format!("SELECT {} FROM FieldDefinition WHERE id = ?", field_definition_select_cols()), &[id])?;
+        if result.is_empty() {
+            return Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "FieldDefinition not found")));
+        }
+        Ok(row_to_field_definition_js(&result[0]))
+    }
+
+    fn undelete(&mut self, id: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let now = chrono::Utc::now().timestamp_millis();
+        Self::run_with_params(&self.db, "UPDATE FieldDefinition SET deleted_at = NULL, version = version + 1, updated_at = ? WHERE id = ?", &[&now.to_string(), id])?;
+        Ok(())
+    }
+
+    fn get_deleted_presets(&self) -> Result<Vec<FieldDefinition>, Box<dyn std::error::Error>> {
+        let result = Self::query(
+            &self.db,
+            &format!(
+                "SELECT {} FROM FieldDefinition WHERE is_preset = 1 AND deleted_at IS NOT NULL",
+                field_definition_select_cols()
+            ),
+            &[],
+        )?;
+        Ok(result.into_iter().map(|r| row_to_field_definition_js(&r)).collect())
+    }
+
+    fn restore_presets(&mut self) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+        let ids_result = Self::query(
+            &self.db,
+            "SELECT id FROM FieldDefinition WHERE is_preset = 1 AND deleted_at IS NOT NULL",
+            &[],
+        )?;
+        let ids: Vec<String> = ids_result
+            .into_iter()
+            .filter_map(|row| row.get("id").cloned())
+            .collect();
+        if !ids.is_empty() {
+            let now_str = chrono::Utc::now().timestamp_millis().to_string();
+            let placeholders: Vec<&str> = ids.iter().map(|_| "?").collect();
+            let sql = format!(
+                "UPDATE FieldDefinition SET deleted_at = NULL, version = version + 1, updated_at = ? \
+                 WHERE id IN ({})",
+                placeholders.join(", ")
+            );
+            let mut params: Vec<&str> = vec![&now_str];
+            for id in &ids {
+                params.push(id);
+            }
+            Self::run_with_params(&self.db, &sql, &params)?;
+        }
+        Ok(ids)
+    }
+}
+
+impl FieldValueRepository for SqlJsAdapter {
+    fn get_by_id(&self, id: &str) -> Result<FieldValue, Box<dyn std::error::Error>> {
+        let result = Self::query(&self.db, &format!("SELECT {} FROM FieldValue WHERE id = ? AND deleted_at IS NULL", field_value_select_cols()), &[id])?;
+        if result.is_empty() {
+            return Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "FieldValue not found")));
+        }
+        Ok(row_to_field_value_js(&result[0]))
+    }
+
+    fn get_by_block_id(&self, block_id: &str) -> Result<Vec<FieldValue>, Box<dyn std::error::Error>> {
+        let result = Self::query(&self.db, &format!("SELECT {} FROM FieldValue WHERE block_id = ? AND deleted_at IS NULL ORDER BY seq", field_value_select_cols()), &[block_id])?;
+        Ok(result.into_iter().map(|r| row_to_field_value_js(&r)).collect())
+    }
+
+    fn get_by_block_ids(&self, block_ids: &[String]) -> Result<Vec<FieldValue>, Box<dyn std::error::Error>> {
         if block_ids.is_empty() {
             return Ok(Vec::new());
         }
         let placeholders: Vec<String> = (1..=block_ids.len()).map(|i| format!("?{}", i)).collect();
         let sql = format!(
-            "SELECT {} FROM Property WHERE block_id IN ({}) AND is_deleted = 0 AND deleted_at IS NULL ORDER BY sort_order",
-            property_select_cols(),
+            "SELECT {} FROM FieldValue WHERE block_id IN ({}) AND deleted_at IS NULL ORDER BY seq",
+            field_value_select_cols(),
             placeholders.join(", ")
         );
         let params: Vec<&str> = block_ids.iter().map(|s| s.as_str()).collect();
         let result = Self::query(&self.db, &sql, &params)?;
-        Ok(result.into_iter().map(|r| row_to_property_js(&r)).collect())
+        Ok(result.into_iter().map(|r| row_to_field_value_js(&r)).collect())
     }
 
-    fn get_by_block_id_and_key(&self, block_id: &str, key: &str) -> Result<Option<Property>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, &format!("SELECT {} FROM Property WHERE block_id = ? AND key = ? AND is_deleted = 0 AND deleted_at IS NULL", property_select_cols()), &[block_id, key])?;
+    fn get_all(&self) -> Result<Vec<FieldValue>, Box<dyn std::error::Error>> {
+        let result = Self::query(&self.db, &format!("SELECT {} FROM FieldValue WHERE deleted_at IS NULL ORDER BY seq", field_value_select_cols()), &[])?;
+        Ok(result.into_iter().map(|r| row_to_field_value_js(&r)).collect())
+    }
+
+    fn get_by_field_definition_id(&self, field_definition_id: &str) -> Result<Vec<FieldValue>, Box<dyn std::error::Error>> {
+        let result = Self::query(&self.db, &format!("SELECT {} FROM FieldValue WHERE field_definition_id = ? AND deleted_at IS NULL ORDER BY seq", field_value_select_cols()), &[field_definition_id])?;
+        Ok(result.into_iter().map(|r| row_to_field_value_js(&r)).collect())
+    }
+
+    fn get_by_id_including_deleted(&self, id: &str) -> Result<Option<FieldValue>, Box<dyn std::error::Error>> {
+        let result = Self::query(&self.db, &format!("SELECT {} FROM FieldValue WHERE id = ?", field_value_select_cols()), &[id])?;
         if result.is_empty() {
             Ok(None)
         } else {
-            Ok(Some(row_to_property_js(&result[0])))
+            Ok(Some(row_to_field_value_js(&result[0])))
         }
     }
 
-    fn query_block_ids_by_key_value(&self, key: &str, values: &[String]) -> Result<Vec<String>, Box<dyn std::error::Error>> {
-        if values.is_empty() {
-            return Ok(Vec::new());
-        }
-        let placeholders = values.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-        let sql = format!(
-            "SELECT DISTINCT block_id FROM Property WHERE key = ? AND value IN ({}) AND is_deleted = 0 AND deleted_at IS NULL",
-            placeholders
-        );
-        let mut params: Vec<&str> = Vec::new();
-        params.push(key);
-        for v in values {
-            params.push(v.as_str());
-        }
-        let rows = Self::query(&self.db, &sql, &params)?;
-        let ids: Vec<String> = rows.into_iter().filter_map(|r| r.get("block_id").map(|v| v.as_str()).map(|s| s.to_string())).collect();
-        Ok(ids)
+    fn undelete(&mut self, id: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let now = chrono::Utc::now().timestamp_millis();
+        Self::run_with_params(&self.db, "UPDATE FieldValue SET deleted_at = NULL, version = version + 1, updated_at = ? WHERE id = ?", &[&now.to_string(), id])?;
+        Ok(())
     }
 
-    fn create(&mut self, property: &Property) -> Result<Property, Box<dyn std::error::Error>> {
-        Self::run_with_params(&self.db, "INSERT INTO Property (id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, version, deleted_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)", &[
-            &property.id, &property.block_id, &property.key, &property.value, &property.r#type,
-            &property.sort_order.to_string(), &property.is_hidden.to_string(), &property.is_deleted.to_string(),
-            &property.schema_version.to_string(), &property.version.to_string(),
-            &property.created_at.to_string(), &property.updated_at.to_string()
+    fn create(&mut self, fv: &FieldValue) -> Result<FieldValue, Box<dyn std::error::Error>> {
+        Self::run_with_params(&self.db, "INSERT INTO FieldValue (id, block_id, field_definition_id, value_json, value_type, seq, created_at, updated_at, version, deleted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)", &[
+            &fv.id, &fv.block_id, &fv.field_definition_id, &fv.value_json, &fv.value_type,
+            &fv.seq.to_string(), &fv.created_at.to_string(), &fv.updated_at.to_string(), &fv.version.to_string()
         ])?;
-        Ok(property.clone())
-    }
-    fn upsert(&mut self, property: &Property) -> Result<Property, Box<dyn std::error::Error>> {
-        Self::run_with_params(&self.db, "INSERT INTO Property (id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, version, deleted_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?) ON CONFLICT(block_id, key) DO UPDATE SET value = excluded.value, type = excluded.type, updated_at = excluded.updated_at, sort_order = excluded.sort_order, is_hidden = excluded.is_hidden, schema_version = excluded.schema_version, is_deleted = 0, deleted_at = NULL", &[
-            &property.id, &property.block_id, &property.key, &property.value, &property.r#type,
-            &property.sort_order.to_string(), &property.is_hidden.to_string(), &property.is_deleted.to_string(),
-            &property.schema_version.to_string(), &property.version.to_string(),
-            &property.created_at.to_string(), &property.updated_at.to_string()
-        ])?;
-        Ok(property.clone())
+        Ok(fv.clone())
     }
 
-    fn update(&mut self, property: &Property) -> Result<Property, Box<dyn std::error::Error>> {
-        Self::run_with_params(&self.db, "UPDATE Property SET value = ?, type = ?, sort_order = ?, is_hidden = ?, is_deleted = ?, version = version + 1, updated_at = ? WHERE id = ?", &[
-            &property.value, &property.r#type, &property.sort_order.to_string(),
-            &property.is_hidden.to_string(), &property.is_deleted.to_string(),
-            &property.updated_at.to_string(), &property.id
+    fn update(&mut self, fv: &FieldValue) -> Result<FieldValue, Box<dyn std::error::Error>> {
+        Self::run_with_params(&self.db, "UPDATE FieldValue SET value_json = ?, value_type = ?, seq = ?, updated_at = ?, version = version + 1 WHERE id = ?", &[
+            &fv.value_json, &fv.value_type, &fv.seq.to_string(), &fv.updated_at.to_string(), &fv.id
         ])?;
-        Ok(property.clone())
+        Ok(fv.clone())
     }
 
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn std::error::Error>> {
         let now = chrono::Utc::now().timestamp_millis();
-        Self::run_with_params(&self.db, "UPDATE Property SET deleted_at = ?, version = version + 1, updated_at = ? WHERE id = ?", &[&now.to_string(), &now.to_string(), id])?;
+        Self::run_with_params(&self.db, "UPDATE FieldValue SET deleted_at = ?, version = version + 1, updated_at = ? WHERE id = ?", &[&now.to_string(), &now.to_string(), id])?;
         Ok(())
     }
 
     fn delete_by_block_id(&mut self, block_id: &str) -> Result<(), Box<dyn std::error::Error>> {
         let now = chrono::Utc::now().timestamp_millis();
-        Self::run_with_params(&self.db, "UPDATE Property SET deleted_at = ?, version = version + 1, updated_at = ? WHERE block_id = ?", &[&now.to_string(), &now.to_string(), block_id])?;
+        Self::run_with_params(&self.db, "UPDATE FieldValue SET deleted_at = ?, version = version + 1, updated_at = ? WHERE block_id = ?", &[&now.to_string(), &now.to_string(), block_id])?;
+        Ok(())
+    }
+
+    fn soft_delete_by_field_definition(
+        &mut self,
+        field_definition_id: &str,
+        now: i64,
+    ) -> Result<usize, Box<dyn std::error::Error>> {
+        // sql.js 的 execute 拿不到 changed rows，故先 COUNT 再 UPDATE（ADR D9 的受影响条目数）。
+        let count_rows = Self::query(
+            &self.db,
+            "SELECT COUNT(*) AS c FROM FieldValue WHERE field_definition_id = ? AND deleted_at IS NULL",
+            &[field_definition_id],
+        )?;
+        let count = count_rows
+            .first()
+            .and_then(|r| r.get("c"))
+            .and_then(|s| s.parse::<usize>().ok())
+            .unwrap_or(0);
+
+        let now_str = now.to_string();
+        Self::run_with_params(&self.db, "UPDATE FieldValue SET deleted_at = ?, version = version + 1, updated_at = ? WHERE field_definition_id = ? AND deleted_at IS NULL", &[&now_str, &now_str, field_definition_id])?;
+        Ok(count)
+    }
+
+    fn restore_by_field_definition(
+        &mut self,
+        field_definition_id: &str,
+        deleted_at: i64,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let now = chrono::Utc::now().timestamp_millis();
+        Self::run_with_params(&self.db, "UPDATE FieldValue SET deleted_at = NULL, version = version + 1, updated_at = ? WHERE field_definition_id = ? AND deleted_at = ?", &[&now.to_string(), field_definition_id, &deleted_at.to_string()])?;
         Ok(())
     }
 }
@@ -1103,6 +1638,17 @@ impl ScreenViewRepository for SqlJsAdapter {
     fn get_all_by_entity(&self, entity: &str) -> Result<Vec<ScreenView>, Box<dyn std::error::Error>> {
         let result = Self::query(&self.db, &format!("SELECT {} FROM screen_view WHERE entity = ?1 ORDER BY sort_order ASC, created_at DESC", screen_view_select_cols()), &[entity])?;
         Ok(result.into_iter().map(|r| row_to_screen_view_js(&r)).collect())
+    }
+
+    fn get_all(&self) -> Result<Vec<ScreenView>, Box<dyn std::error::Error>> {
+        let result = Self::query(&self.db, &format!("SELECT {} FROM screen_view ORDER BY entity ASC, sort_order ASC, created_at DESC", screen_view_select_cols()), &[])?;
+        Ok(result.into_iter().map(|r| row_to_screen_view_js(&r)).collect())
+    }
+
+    fn set_entity(&mut self, id: &str, entity: &str, updated_at: i64) -> Result<(), Box<dyn std::error::Error>> {
+        let ts = updated_at.to_string();
+        Self::run_with_params(&self.db, "UPDATE screen_view SET entity = ?, updated_at = ? WHERE id = ?", &[entity, &ts, id])?;
+        Ok(())
     }
 
     fn get_by_id(&self, id: &str) -> Result<ScreenView, Box<dyn std::error::Error>> {
@@ -1263,57 +1809,6 @@ impl SearchRepository for SqlJsAdapter {
 }
 
 #[cfg(target_arch = "wasm32")]
-impl BlockVersionRepository for SqlJsAdapter {
-    fn get_by_id(&self, id: &str) -> Result<BlockVersion, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, &format!("SELECT {} FROM BlockVersion WHERE id = ?", block_version_select_cols()), &[id])?;
-        if result.is_empty() {
-            return Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "BlockVersion not found")));
-        }
-        Ok(row_to_block_version_js(&result[0]))
-    }
-
-    fn get_by_block_id(&self, block_id: &str) -> Result<Vec<BlockVersion>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, &format!("SELECT {} FROM BlockVersion WHERE block_id = ? ORDER BY version DESC", block_version_select_cols()), &[block_id])?;
-        Ok(result.into_iter().map(|r| row_to_block_version_js(&r)).collect())
-    }
-
-    fn get_latest_version(&self, block_id: &str) -> Result<Option<BlockVersion>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, &format!("SELECT {} FROM BlockVersion WHERE block_id = ? ORDER BY version DESC LIMIT 1", block_version_select_cols()), &[block_id])?;
-        if result.is_empty() {
-            Ok(None)
-        } else {
-            Ok(Some(row_to_block_version_js(&result[0])))
-        }
-    }
-
-    fn create(&mut self, version: &BlockVersion) -> Result<BlockVersion, Box<dyn std::error::Error>> {
-        let message = version.message.as_deref().unwrap_or("");
-        let restored_from_version_id = version.restored_from_version_id.as_deref().unwrap_or("");
-        Self::run_with_params(&self.db, "INSERT INTO BlockVersion (id, block_id, version, snapshot, hash, message, source, restored_from_version_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", &[
-            &version.id, &version.block_id, &version.version.to_string(),
-            &version.snapshot, &version.hash, message,
-            &version.source, restored_from_version_id, &version.created_at.to_string()
-        ])?;
-        Ok(version.clone())
-    }
-
-    fn delete(&mut self, id: &str) -> Result<(), Box<dyn std::error::Error>> {
-        Self::run_with_params(&self.db, "DELETE FROM BlockVersion WHERE id = ?", &[id])?;
-        Ok(())
-    }
-
-    fn delete_by_block_id(&mut self, block_id: &str) -> Result<(), Box<dyn std::error::Error>> {
-        Self::run_with_params(&self.db, "DELETE FROM BlockVersion WHERE block_id = ?", &[block_id])?;
-        Ok(())
-    }
-
-    fn delete_older_than(&mut self, block_id: &str, timestamp: i64) -> Result<(), Box<dyn std::error::Error>> {
-        Self::run_with_params(&self.db, "DELETE FROM BlockVersion WHERE block_id = ? AND created_at < ?", &[block_id, &timestamp.to_string()])?;
-        Ok(())
-    }
-}
-
-#[cfg(target_arch = "wasm32")]
 impl StorageAdapter for SqlJsAdapter {
     fn blocks(&mut self) -> &mut dyn BlockRepository {
         self
@@ -1327,11 +1822,19 @@ impl StorageAdapter for SqlJsAdapter {
         self
     }
 
-    fn properties(&mut self) -> &mut dyn PropertyRepository {
+    fn relationship_types(&mut self) -> &mut dyn RelationshipTypeRepository {
         self
     }
 
-    fn relationship_types(&mut self) -> &mut dyn RelationshipTypeRepository {
+    fn tags(&mut self) -> &mut dyn TagRepository {
+        self
+    }
+
+    fn field_definitions(&mut self) -> &mut dyn FieldDefinitionRepository {
+        self
+    }
+
+    fn field_values(&mut self) -> &mut dyn FieldValueRepository {
         self
     }
 
@@ -1343,10 +1846,6 @@ impl StorageAdapter for SqlJsAdapter {
         self
     }
     
-    fn block_versions(&mut self) -> &mut dyn BlockVersionRepository {
-        self
-    }
-
     fn date_refs(&mut self) -> &mut dyn DateRefRepository {
         self
     }

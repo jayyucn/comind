@@ -1,7 +1,9 @@
 import type { Editor } from '@tiptap/vue-3'
 import { defineStore } from 'pinia'
 import { ref, shallowRef } from 'vue'
+
 import type { DateRefKind, RecurrenceRule } from '../utils/date-ref'
+import { usePanesStore } from './panes'
 
 export interface ToastMessage {
   id: string
@@ -11,6 +13,13 @@ export interface ToastMessage {
 
 export const useEditorStore = defineStore('editor', () => {
   const activeBlockId = ref<string | null>(null)
+  /**
+   * 当前活动块归属的 pane id。双 pane 同页时，两个 pane 渲染同一页、块 id 完全相同，
+   * 仅靠 `activeBlockId` 无法区分「哪个 pane 的该块是活动块」，会导致两边 Block 同时
+   * `isActive` 并互相抢焦点（表现为「点哪个 pane，焦点都落到最后打开的那个 pane」）。
+   * 见 issue：两 pane 同页点击激活错位。无 pane 上下文（测试 / 弹窗）时为 null。
+   */
+  const activeBlockPaneId = ref<string | null>(null)
   /** 激活后要恢复的目标光标位置（ProseMirror position），用完即清 */
   const pendingCursorPos = ref<number | null>(null)
   /** 激活后用 posAtCoords 定位的鼠标坐标，用完即清 */
@@ -22,6 +31,26 @@ export const useEditorStore = defineStore('editor', () => {
    * 用完即清。优先于 pendingCursorPos/pendingClickCoords 在 focusActiveEditor 中消费。
    */
   const pendingArrowFocus = ref<{ x: number | null; line: 'first' | 'last' } | null>(null)
+
+  /**
+   * 撤销/重做恢复的选区范围。撤销要恢复的不只是「光标在哪」，还有「选中了哪段」——
+   * 用户选中 D 删掉再撤销，必须回到「D 被选中」。单独一个 ref 而非复用 pendingCursorPos：
+   * 后者是单点语义（点击/方向键/分块都在用），改它会污染所有既有落点。
+   * 用完即清；由 focusActiveEditor 在 cursorPos 之前消费。
+   */
+  const pendingSelectionRange = ref<{ from: number; to: number } | null>(null)
+
+  /**
+   * 表格块「渲染态单击某格 → 激活后把光标落回该格」的交接位。
+   *
+   * 渲染态与编辑态在 `Block/index.vue` 里是两个 `<component>` 分支，激活会把 TableBlock
+   * **重新挂载**（实测栈：`focusActiveEditor` → flushPostFlushCbs → onMounted），
+   * 组件内的 ref 活不过去。而挂载时默认 `focusFirstCell()`，全靠随后的
+   * `focusAtCoords` 二次兜底才回到正确格 —— 坐标一旦落空（点在格线上/表格留白里/
+   * mousedown 被 preventDefault 而没记坐标），就表现为「点最后一行，光标跳到第一行」。
+   * 所以坐标必须经由 store 交给新挂载的那一份。用完即清。
+   */
+  const pendingTableCellFocus = ref<{ blockId: string; row: number; col: number } | null>(null)
   
   /** 当前活跃的编辑器实例 */
   const activeEditor = shallowRef<Editor | null>(null)
@@ -41,13 +70,23 @@ export const useEditorStore = defineStore('editor', () => {
       activeBlockId.value = null
     }
     activeBlockId.value = blockId
+    // 记录归属 pane：双 pane 同页时块 id 相同，须靠 pane 区分「哪个 pane 的该块是活动块」，
+    // 否则两个 pane 的同源块都会 isActive 并抢焦点。无 pane 上下文（测试 / 弹窗）记 null。
+    const panesStore = usePanesStore()
+    activeBlockPaneId.value = panesStore.activePaneId ?? null
     if (cursorPos !== undefined) {
       pendingCursorPos.value = cursorPos
     }
   }
 
   function deactivateBlock() {
+    const prev = activeBlockId.value
     activeBlockId.value = null
+    activeBlockPaneId.value = null
+    // 真正失活时（点击空白等），由这里兜底清掉全局 activeEditor 与正文同步出口；
+    // 跨 pane 同页的「被动取消激活」由 Block 的 watch(isActive) 守卫处理，不会清错 pane。
+    activeEditor.value = null
+    if (prev) registerContentFlusher(prev, null)
   }
 
   /** 消费并清除待恢复的光标位置 */
@@ -86,9 +125,86 @@ export const useEditorStore = defineStore('editor', () => {
     return v
   }
 
+  /** 设置撤销/重做要恢复的选区范围（null = 清除） */
+  function setSelectionRange(range: { from: number; to: number } | null) {
+    pendingSelectionRange.value = range
+  }
+
+  /** 消费并清除待恢复的选区范围 */
+  function consumeSelectionRange(): { from: number; to: number } | null {
+    const range = pendingSelectionRange.value
+    pendingSelectionRange.value = null
+    return range
+  }
+
+  /** 设置表格块激活后要聚焦的格（由 TableBlock 渲染态单击写入） */
+  function setTableCellFocus(target: { blockId: string; row: number; col: number } | null) {
+    pendingTableCellFocus.value = target
+  }
+
+  /** 消费并清除待聚焦格；blockId 不符时丢弃（不让坐标落到别的表格块上） */
+  function consumeTableCellFocus(blockId: string | undefined) {
+    const target = pendingTableCellFocus.value
+    if (!target) return null
+    pendingTableCellFocus.value = null
+    return blockId && target.blockId === blockId ? target : null
+  }
+
+  /**
+   * 表格块激活瞬间的滚动位置交接。
+   *
+   * 激活会把 TableBlock 重挂载成编辑态，而编辑态首帧每一格都是 `rows="1"` 的一行高（高度全靠
+   * JS 量，见 `fitRowHeights`）。块高因此在首帧从「内容实际高度」塌到「行数 × 一行高」，
+   * 滚动祖先的内容高度跟着缩水，浏览器把 `scrollTop` 钳到塌陷后的上限 —— 长表格底部点一下，
+   * 页面直接跳上去（实测 16 行表格：1218 → 45）。高度随后虽被重量回来，`scrollTop` 不会自己回来。
+   * 所以在渲染态卸载前记下 `scrollTop`，编辑态量完高度后原样写回。用完即清。
+   */
+  const pendingTableScroll = ref<{ blockId: string; scrollTop: number; at: number } | null>(null)
+
+  /** 设置表格块激活前要还原的滚动位置（由 TableBlock 渲染态卸载前写入） */
+  function setTableScroll(blockId: string, scrollTop: number) {
+    if (!blockId) return
+    pendingTableScroll.value = { blockId, scrollTop, at: Date.now() }
+  }
+
+  /** 消费并清除待还原的滚动位置；blockId 不符或早已不是同一次激活（>1s）即丢弃 */
+  function consumeTableScroll(blockId: string | undefined): number | null {
+    const pending = pendingTableScroll.value
+    pendingTableScroll.value = null
+    if (!pending || !blockId || pending.blockId !== blockId) return null
+    if (Date.now() - pending.at > 1000) return null
+    return pending.scrollTop
+  }
+
   /** 设置当前编辑器实例 */
   function setActiveEditor(editor: Editor | null) {
     activeEditor.value = editor
+  }
+
+  /**
+   * 活动块「把编辑器里还没落库的正文同步进 store」的出口，由 Block 激活时注册。
+   *
+   * 为什么需要这道口子：打字进 store 走 300ms 防抖（`Editor.debouncedEmitSave`），而
+   * `runUndoOrRedo` 是先 `commitNow` 再判 `canUndo`。不先同步，刚打完字就按 Ctrl+Z 时
+   * 栈顶快照仍是旧正文 —— 新内容被判成回声丢步（按了没反应），或越过这一步多撤一次
+   * （光标落到更早位置）。带 blockId 双向核对，块切换时不会误调上一个块的出口。
+   */
+  const contentFlusher = shallowRef<{ blockId: string; run: () => Promise<void> } | null>(null)
+
+  /** 注册/注销正文同步出口（run 为 null 即注销，且只注销自己的） */
+  function registerContentFlusher(blockId: string, run: (() => Promise<void>) | null) {
+    if (run) {
+      contentFlusher.value = { blockId, run }
+      return
+    }
+    if (contentFlusher.value?.blockId === blockId) contentFlusher.value = null
+  }
+
+  /** 把指定块编辑器里的正文同步进 store（未注册或 blockId 不匹配 = no-op） */
+  async function flushActiveContent(blockId: string): Promise<void> {
+    const flusher = contentFlusher.value
+    if (!flusher || flusher.blockId !== blockId) return
+    await flusher.run()
   }
 
   /** 显示斜杠命令面板 */
@@ -124,20 +240,20 @@ export const useEditorStore = defineStore('editor', () => {
     }
   }
 
-  /** 属性编辑器状态（弹出位置与 quickPropertyEditor 同约定：来自触发元素矩形） */
-  const propertyEditor = ref<{
+  /** 字段值编辑器状态（弹出位置与 quickFieldValueEditor 同约定：来自触发元素矩形） */
+  const fieldValueEditor = ref<{
     visible: boolean
     blockId: string | null
     initialKey: string | null
     position: { x: number; y: number } | null
   } | null>(null)
 
-  function showPropertyEditor(
+  function showFieldValueEditor(
     blockId: string,
     initialKey?: string,
     position?: { x: number; y: number }
   ) {
-    propertyEditor.value = {
+    fieldValueEditor.value = {
       visible: true,
       blockId,
       initialKey: initialKey ?? null,
@@ -145,9 +261,9 @@ export const useEditorStore = defineStore('editor', () => {
     }
   }
 
-  function hidePropertyEditor() {
-    if (propertyEditor.value) {
-      propertyEditor.value.visible = false
+  function hideFieldValueEditor() {
+    if (fieldValueEditor.value) {
+      fieldValueEditor.value.visible = false
     }
   }
 
@@ -253,20 +369,35 @@ export const useEditorStore = defineStore('editor', () => {
     blockModalSnapshotOf.value = null
   }
 
-  /** 快捷属性编辑器状态 */
-  const quickPropertyEditor = ref<{
+  /**
+   * 完整字段设置弹窗（ADR-0057 D1）：fieldId 非空即显示，仿 BlockModal 受控模式。
+   * 入口两处（标签模板卡片 / block 字段行）经 FieldLabel emit 后由调用方调 open；
+   * 弹窗关闭由 App 级监听 close 事件回写。
+   */
+  const fieldSettingsFieldId = ref<string | null>(null)
+
+  function openFieldSettings(fieldId: string) {
+    fieldSettingsFieldId.value = fieldId
+  }
+
+  function closeFieldSettings() {
+    fieldSettingsFieldId.value = null
+  }
+
+  /** 快捷字段值编辑器状态 */
+  const quickFieldValueEditor = ref<{
     visible: boolean
     blockId: string
     key: string
     position: { x: number; y: number } | null
   } | null>(null)
 
-  function showQuickPropertyEditor(
+  function showQuickFieldValueEditor(
     blockId: string,
     key: string,
     position?: { x: number; y: number }
   ) {
-    quickPropertyEditor.value = {
+    quickFieldValueEditor.value = {
       visible: true,
       blockId,
       key,
@@ -274,17 +405,20 @@ export const useEditorStore = defineStore('editor', () => {
     }
   }
 
-  function hideQuickPropertyEditor() {
-    if (quickPropertyEditor.value) {
-      quickPropertyEditor.value.visible = false
+  function hideQuickFieldValueEditor() {
+    if (quickFieldValueEditor.value) {
+      quickFieldValueEditor.value.visible = false
     }
   }
 
   return {
     activeBlockId,
+    activeBlockPaneId,
     pendingCursorPos,
     pendingClickCoords,
     pendingArrowFocus,
+    pendingSelectionRange,
+    pendingTableCellFocus,
     activeEditor,
     slashCommand,
     activateBlock,
@@ -295,17 +429,25 @@ export const useEditorStore = defineStore('editor', () => {
     consumeClickCoords,
     setArrowFocus,
     consumeArrowFocus,
+    setSelectionRange,
+    consumeSelectionRange,
+    setTableCellFocus,
+    consumeTableCellFocus,
+    setTableScroll,
+    consumeTableScroll,
     setActiveEditor,
+    registerContentFlusher,
+    flushActiveContent,
     showSlashCommand,
     hideSlashCommand,
     updateSlashQuery,
     updateSlashSelectedIndex,
-    propertyEditor,
-    showPropertyEditor,
-    hidePropertyEditor,
-    quickPropertyEditor,
-    showQuickPropertyEditor,
-    hideQuickPropertyEditor,
+    fieldValueEditor,
+    showFieldValueEditor,
+    hideFieldValueEditor,
+    quickFieldValueEditor,
+    showQuickFieldValueEditor,
+    hideQuickFieldValueEditor,
     dateRefEditor,
     openDateRefEditor,
     closeDateRefEditor,
@@ -319,5 +461,8 @@ export const useEditorStore = defineStore('editor', () => {
     blockModalSnapshotOf,
     openBlockModal,
     closeBlockModal,
+    fieldSettingsFieldId,
+    openFieldSettings,
+    closeFieldSettings,
   }
 })

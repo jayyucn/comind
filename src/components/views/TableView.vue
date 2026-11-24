@@ -1,24 +1,15 @@
 <script setup lang="ts" generic="T">
-import {
-  Calendar,
-  CheckSquare,
-  ChevronDown,
-  Hash,
-  Link2,
-  ListChecks,
-  ListFilter,
-  MapPin,
-  Type,
-} from 'lucide-vue-next';
-import type { Component } from 'vue';
-import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
-import type { FieldDescriptor, Group, Option, SortRule } from '../../core/query';
-import type { TableColumnConfig, TableConfig } from '../../core/view';
-import BasePopover from '../common/BasePopover.vue';
-import Icon from '../Icons/Icon.vue';
-import PaginationFooter from './PaginationFooter.vue';
-import { distributeColumnWidths } from './tableWidths';
-import type { CellRegistry } from './types';
+import { ChevronDown, MapPin } from 'lucide-vue-next'
+import type { Component } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+
+import type { FieldDescriptor, Group, Option, SortRule } from '../../core/query'
+import type { TableColumnConfig, TableConfig } from '../../core/view'
+import BasePopover from '../common/BasePopover.vue'
+import Icon from '../Icons/Icon.vue'
+import PaginationFooter from './PaginationFooter.vue'
+import { distributeColumnWidths } from './tableWidths'
+import type { CellRegistry } from './types'
 
 /** 缺省每页行数。 */
 const DEFAULT_PAGE_SIZE = 50
@@ -48,10 +39,11 @@ const emit = defineEmits<{
   /** 单元格编辑（boolean/select 可编辑列触发）。 */
   cellChange: [itemId: string, fieldKey: string, value: unknown]
   /**
-   * 单元格点击：上报「点了哪个记录的哪个字段」的事实（itemId + fieldKey）。
+   * 单元格点击：上报「点了哪个记录的哪个字段」的事实（itemId + fieldKey + 原始鼠标事件）。
    * 组件不表达任何业务意图、不判断列角色；是否跳转/如何处理由业务方按字段 key 裁决。
+   * `event` 透出只为让业务方读到修饰键（如 Ctrl/⌘+Click 分屏打开），组件自身不解释它。
    */
-  cellClick: [itemId: string, fieldKey: string]
+  cellClick: [itemId: string, fieldKey: string, event: MouseEvent]
   /**
    * 列宽拖拽缩放（表头手柄，ADR-0013 边界联动）：上报本次拖拽涉及的列宽变更集合。
    * 拖宽本列时紧邻的下一列同步变窄（总宽恒定），故一次性带回本列与下一列的最终像素宽。
@@ -156,19 +148,6 @@ function fieldOf(key: string): FieldDescriptor | undefined {
   return props.fields.find((f) => f.key === key)
 }
 
-/** 表头类型图标（lucide）：link 角色列 → Link2；其余按字段类型映射；未知类型不渲染。 */
-function headerIconOf(col: TableColumnConfig) {
-  if (col.role === 'link') return Link2
-  const type = fieldOf(col.key)?.type
-  if (type === 'text') return Type
-  if (type === 'number') return Hash
-  if (type === 'date' || type === 'datetime') return Calendar
-  if (type === 'select') return ListFilter
-  if (type === 'multiSelect') return ListChecks
-  if (type === 'boolean') return CheckSquare
-  return undefined
-}
-
 /** 自定义单元格：列配置含 cell 且注册表命中 → 接管整格渲染（opt-in，ADR-0010）。否则回退内置 type/role 链。 */
 function hasCell(col: TableColumnConfig): boolean {
   return !!col.cell && !!props.cellRegistry?.[col.cell]
@@ -234,6 +213,9 @@ function colPxOf(col: TableColumnConfig): number {
 // 必须由 JS 计算（见 tableWidths.ts）。jsdom/SSR 无 ResizeObserver → 退化为全下限（每列 40px）。
 const rootEl = ref<HTMLElement | null>(null)
 const containerWidth = ref(0)
+/** 表格自身左右描边宽之和：`separate` 模式下表框不参与列宽分配，但计入表格的 used width，
+    故须从列宽预算里扣掉（见 tableWidth / colWidths）。 */
+const TABLE_BORDER_X = 2
 let ro: ResizeObserver | null = null
 function observeContainer() {
   const scroll = rootEl.value?.querySelector<HTMLElement>('.table-scroll') ?? null
@@ -247,26 +229,34 @@ function observeContainer() {
   }
 }
 onMounted(observeContainer)
-/** 各列渲染像素宽：min + 剩余空间按 (基准宽 - min) 权重分配；末列吸收误差（总和 = 表格宽）。 */
-const colWidths = computed<Record<string, number>>(() => {
-  const cs = columns.value
-  const arr = distributeColumnWidths(cs.map((c) => colPxOf(c)), containerWidth.value, MIN_COL_WIDTH)
-  return Object.fromEntries(cs.map((c, i) => [c.key, arr[i]]))
-})
-/** 表格宽 = max(容器宽, 各列下限之和)；容器更窄时表格宽保持下限之和 → .table-scroll 横向滚动。 */
+/**
+ * 表格 border-box 宽 = max(容器宽, 各列下限之和 + 描边)；容器更窄时保持下限和 + 描边 → .table-scroll 横向滚动。
+ *
+ * fixed 布局的 used width 是 `max(声明宽, 列宽和 + 表格边框)`：`separate` 模式下表格边框不参与列宽分配，
+ * 若声明宽被列宽和填满，used width 就多出 1~2px，表格右缘越过 .table-scroll（overflow: auto）的可视区
+ * → 右侧描边被裁掉（左侧仍可见）。故列宽预算扣掉描边（见 colWidths），下限分支也补偿同样的量。
+ */
 const tableWidth = computed<number>(() => {
   const n = columns.value.length
-  return Math.max(containerWidth.value, n * MIN_COL_WIDTH)
+  return Math.max(containerWidth.value, n * MIN_COL_WIDTH + TABLE_BORDER_X)
 })
 const tableStyle = computed<Record<string, string>>(() => ({ width: `${tableWidth.value}px` }))
+/** 各列渲染像素宽：预算 = 表格宽 − 描边；整数和恰为预算（由 tableWidths 在整数层收口）。
+    渲染层不得再引入取整 —— 逐列四舍五入会让小数列各自进位并累计，令「列宽和 + 描边」超过声明宽。 */
+const colWidths = computed<Record<string, number>>(() => {
+  const cs = columns.value
+  const arr = distributeColumnWidths(cs.map((c) => colPxOf(c)), tableWidth.value - TABLE_BORDER_X, MIN_COL_WIDTH)
+  return Object.fromEntries(cs.map((c, i) => [c.key, arr[i]]))
+})
 
 /**
- * 单列渲染宽：colWidths 中的像素值（四舍五入）。表格宽与各列宽都由 JS 计算，
- * 容器变化时按权重等比伸缩；拖拽边界联动改基准像素 → 权重随之更新，无需切换模式。
+ * 单列渲染宽：colWidths 中的**整数**像素值（契约保证整数且总和恰为预算，故此处不再取整）。
+ * 表格宽与各列宽都由 JS 计算，容器变化时按权重等比伸缩；
+ * 拖拽边界联动改基准像素 → 权重随之更新，无需切换模式。
  */
 function columnWidth(col: TableColumnConfig): string | undefined {
   const w = colWidths.value[col.key]
-  return w != null ? `${Math.round(w)}px` : undefined
+  return w != null ? `${w}px` : undefined
 }
 
 // ── 表头拖拽缩放（边界联动，ADR-0013）：每条分隔线只改左右两列，一增一减、总宽恒定，其余列不动。
@@ -348,10 +338,10 @@ function isDoneRow(item: T): boolean {
   return valueOf(item, statusCol) === 'Done'
 }
 
-function onCellClick(item: T, col: TableColumnConfig) {
-  // 只上报「点了哪个记录的哪个字段」的事实（itemId + fieldKey）；可编辑控件（checkbox/select）
-  // 已在控件上 stopPropagation，不会误报。跳转与否由业务方按字段 key 裁决。
-  emit('cellClick', idOf(item), col.key)
+function onCellClick(item: T, col: TableColumnConfig, e: MouseEvent) {
+  // 只上报「点了哪个记录的哪个字段」的事实（itemId + fieldKey + 原始事件）；可编辑控件
+  // （checkbox/select）已在控件上 stopPropagation，不会误报。跳转与否由业务方按字段 key 裁决。
+  emit('cellClick', idOf(item), col.key, e)
 }
 
 /** td 整体点击：根据字段类型分发——status 角色列循环切换、select + editable 直接唤起菜单；其余走 onCellClick。
@@ -366,7 +356,7 @@ function onCellMaybeOpenSelect(item: T, col: TableColumnConfig, e: MouseEvent) {
     openSelectMenu(item, col, e)
     return
   }
-  onCellClick(item, col)
+  onCellClick(item, col, e)
 }
 
 /** 该 cell 是否处于 select 菜单打开态（用于视觉指示 .open 类）。 */
@@ -524,6 +514,22 @@ function selectedColor(options: Option[], value: unknown): string | undefined {
   return options.find((o) => o.id === value)?.color
 }
 
+/** select 单元格当前值的选项配色（无配色 → undefined，渲染为中性胶囊）。 */
+function selectedOptionColor(item: T, col: TableColumnConfig): string | undefined {
+  return selectedColor(resolveOptions(fieldOf(col.key)), valueOf(item, col))
+}
+
+/**
+ * 值胶囊内联样式：有选项配色时底色取该色 10% 淡染、文字取该色；无配色返回 undefined，
+ * 走 .cell-chip 的 token 默认（中性底 + tertiary 字）。
+ * 配色可能形如 `var(--accent)`（字段元数据给出的是 token 而非字面色值），故底色用 color-mix 现算。
+ */
+function chipStyle(item: T, col: TableColumnConfig): Record<string, string> | undefined {
+  const color = selectedOptionColor(item, col)
+  if (!color) return undefined
+  return { color, background: `color-mix(in srgb, ${color} 10%, transparent)` }
+}
+
 /** 分组计数显示全量组内条数（ADR-0024：计数反映查询结果而非当前页切片）。 */
 function groupTotal(key: string): number {
   return sections.value.find((s) => s.key === key)?.items.length ?? 0
@@ -570,12 +576,6 @@ function groupTotal(key: string): number {
                   :style="{ width: columnWidth(col), textAlign: col.align }"
                 >
                   <div class="th-inner">
-                    <component
-                      :is="headerIconOf(col)"
-                      v-if="headerIconOf(col)"
-                      class="col-header-icon"
-                      :size="12"
-                    />
                     <button
                       type="button"
                       class="th-label"
@@ -655,7 +655,8 @@ function groupTotal(key: string): number {
                     >{{ Boolean(valueOf(item, col)) ? '✓' : '' }}</span>
                   </template>
 
-                  <!-- select：整个 cell 为点击区域（去边框、无 padding）；ChevronDown 常驻渲染，
+                  <!-- select：整个 cell 为点击区域（去边框、无 padding）；有值时渲染为值胶囊
+                  （无配色 → 中性底，有配色 → 该色淡染），ChevronDown 常驻渲染，
                   仅 hover / 菜单打开（.open）时显示（CSS 控制），靠右对齐；.empty 仅作空态标记 -->
                   <template v-else-if="fieldOf(col.key)?.type === 'select'">
                     <span
@@ -668,14 +669,12 @@ function groupTotal(key: string): number {
                       :title="optionLabel(resolveOptions(fieldOf(col.key)), valueOf(item, col))"
                     >
                       <span
-                        v-if="selectedColor(resolveOptions(fieldOf(col.key)), valueOf(item, col))"
-                        class="color-dot"
-                        :style="{ background: selectedColor(resolveOptions(fieldOf(col.key)), valueOf(item, col)) }"
-                      />
-                      <span
                         v-if="!isSelectEmpty(item, col)"
-                        class="cell-select-label"
-                      >{{ optionLabel(resolveOptions(fieldOf(col.key)), valueOf(item, col)) }}</span>
+                        class="cell-chip"
+                        :style="chipStyle(item, col)"
+                      >
+                        <span class="cell-select-label">{{ optionLabel(resolveOptions(fieldOf(col.key)), valueOf(item, col)) }}</span>
+                      </span>
                       <ChevronDown
                         :size="14"
                         class="cell-select-chevron"
@@ -831,7 +830,7 @@ function groupTotal(key: string): number {
   overflow: auto;
 }
 
-.table-section {
+.table-section:not(:last-child) {
   margin-bottom: 16px;
 }
 
@@ -873,11 +872,25 @@ function groupTotal(key: string): number {
 
 .data-table {
   width: 100%;
-  border-collapse: collapse;
+  /* 用 separate 而非 collapse：Chrome 忽略 collapse 表格的 border-radius（四角会是直角）。
+     border-spacing: 0 保证单元格之间无缝隙；副作用是 separate 模式不绘制 tr / row group 的边框，
+     行分隔线因此必须画在 td 上（见下方 td 规则）。 */
+  border-collapse: separate;
+  border-spacing: 0;
   table-layout: fixed;
   font-size: var(--text-sm);
 
-  /* 列宽由 JS 精确计算（ADR-0013 比例模式）：content-box 会把 border-right 加在宽度之外
+  /* 卡片化：表格自身即卡片（1px 描边 + 圆角）。必须用 border 而非 outline ——
+     thead 是 sticky（属于定位后代），按 CSS 绘制顺序画在表格自身的 outline 之上，
+     表头灰底会把卡片上缘（及左右上角）那 1px 描边吃掉；border 是表格盒子的一部分，
+     子元素背景盖不住它。
+     ⚠ 改这里的描边宽必须同步 JS 的 TABLE_BORDER_X：separate 模式下表格边框计入
+     fixed 布局的 used width，列宽预算要扣掉它（见 tableWidth），否则表格右缘越界
+     被滚动容器裁掉 —— 左侧描边还在，看起来就是「只有右边没线」。 */
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+
+  /* 列宽由 JS 精确计算（ADR-0013 比例模式）：content-box 会把边框加在宽度之外
      导致每列 +1px、总和超出表格宽。border-box 让列宽含边框，总和恰为表格宽。 */
   th,
   td {
@@ -888,34 +901,36 @@ function groupTotal(key: string): number {
     position: sticky;
     top: 0;
     z-index: 2;
-    background: var(--bg-base2);
 
+    /* 底色落在 th 而非 thead：只有 th 的圆角能裁掉底色，卡片上缘两角才不漏方角 */
     th {
       padding: 0;
-      text-align: center;
+      background: var(--surface-muted);
       font-weight: var(--font-medium);
-      color: var(--text-tertiary);
-      border-bottom: 1px solid var(--border-color, var(--app-split));
-      border-right: 1px solid var(--border-color, var(--app-split));
+      color: var(--text-secondary);
       white-space: nowrap;
-      font-size: var(--text-xs);
+      // 字号与数据格同级（表头靠浅字色与数据区分，不再靠缩小字号）
+      font-size: var(--text-sm);
       text-transform: uppercase;
       letter-spacing: 0.05em;
+      // 表头与数据格同侧起排（UA 表默认居中，须显式左对齐；列显式 align 由内联样式覆盖）
+      text-align: left;
+
+      &:first-child {
+        border-top-left-radius: var(--radius-sm);
+      }
+
+      &:last-child {
+        border-top-right-radius: var(--radius-sm);
+      }
     }
 
     /* 包裹层：th 是 table-cell，其 sticky/relative 对绝对定位子元素的包含块行为不可靠，
        故用普通块级 .th-inner 作 resizer 的锚点（ADR-0013 修复：手柄曾锚到 sticky thead 跑到整表最右）。 */
     .th-inner {
       position: relative;
-      padding: 8px 10px;
+      padding: 7px 12px;
       height: 100%;
-    }
-
-    /* 表头类型图标（lucide，12px）：跟随表头文字色（--text-tertiary），与标题基线对齐 */
-    .col-header-icon {
-      vertical-align: -1.5px;
-      margin-right: 4px;
-      opacity: 0.85;
     }
 
     /* 表头标题按钮：点击唤起列菜单（对齐/隐藏/重置列宽）。reset 原生 button 样式，
@@ -957,7 +972,6 @@ function groupTotal(key: string): number {
   }
 
   tbody tr {
-    border-bottom: 1px solid var(--border-color, var(--app-split));
     cursor: pointer;
 
     &.is-done {
@@ -970,14 +984,31 @@ function groupTotal(key: string): number {
   }
 
   td {
-    padding: 8px 10px;
+    padding: 13px 12px;
     vertical-align: middle;
-    border-right: 1px solid var(--border-color, var(--app-split));
-    transition: background 80ms ease;
+    transition: background var(--dur-fast) var(--ease-out);
+    // 行分隔线：比卡片描边（--border）浅一档，避免与卡片外框争视觉重量。
+    // 画在单元格上而非 tr 上 —— separate 模式下 tr / row group 的边框不参与绘制。
+    border-bottom: 1px solid var(--surface-subtle);
 
     &:hover {
       background: var(--bg-hover);
     }
+  }
+
+  /* 末行不画分隔线：卡片下缘由表格自身的描边收口 */
+  tbody tr:last-child td {
+    border-bottom: none;
+  }
+
+  /* 末行两角与卡片下圆角同心（半径 − 1px 边框厚）：border-radius 不裁切子元素，
+     而 hover 时 td 背景（--bg-hover，亮色下 #E7E5E4）是矩形，不补这两条会把卡片下缘两角填成直角。 */
+  tbody tr:last-child td:first-child {
+    border-bottom-left-radius: calc(var(--radius-sm) - 1px);
+  }
+
+  tbody tr:last-child td:last-child {
+    border-bottom-right-radius: calc(var(--radius-sm) - 1px);
   }
 }
 
@@ -996,12 +1027,6 @@ function groupTotal(key: string): number {
 .cell-link {
   text-align: center;
   width: 40px;
-}
-
-/* 末列右缘不画分割线（表格右缘即容器边界）。 */
-.data-table th:last-child,
-.data-table td:last-child {
-  border-right: none;
 }
 
 .link-btn {
@@ -1057,16 +1082,26 @@ function groupTotal(key: string): number {
   font-family: inherit;
   cursor: pointer;
 
-  /* 只读态（FieldDescriptor.editable=false）：去掉指针暗示 */
+  /* 只读态（FieldDescriptor.editable=false）：去掉指针暗示
+     （字色由值胶囊自持，不再随容器态变化） */
   &.readonly {
     cursor: default;
-    color: var(--text-secondary);
   }
+}
 
-  /* 菜单打开时高亮（select 字段点击 cell 后） */
-  &.open {
-    color: var(--accent);
-  }
+/* 值胶囊（select 有值态）：中性底 + tertiary 字；选项带配色时由内联样式改为该色淡染。
+   高度 = line-height 18 + 上下 padding 2 → 22px（行高 51px 时上下各留约 14px）。 */
+.cell-chip {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--surface-subtle);
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+  line-height: 18px;
 }
 
 /* 下拉箭头：靠右（margin-left:auto）；默认隐藏（未交互不显示），
@@ -1077,7 +1112,7 @@ function groupTotal(key: string): number {
   color: var(--text-tertiary);
   flex-shrink: 0;
   opacity: 0;
-  transition: opacity 80ms ease;
+  transition: opacity var(--dur-fast) var(--ease-out);
 
   .cell-select:hover &,
   .cell-select.open & {
@@ -1240,14 +1275,12 @@ function groupTotal(key: string): number {
 .cell-deadline {
   font-size: var(--text-xs);
   white-space: nowrap;
+  color: var(--text-secondary);
 
+  /* 仅过期（role='overdue-date' 且已过日）用错误色提示；未过期不再整列标黄 */
   &.overdue {
     color: var(--error, #DC2626);
     font-weight: var(--font-semibold);
-  }
-
-  &:not(.overdue) {
-    color: var(--warning, #D97706);
   }
 }
 </style>

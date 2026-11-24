@@ -123,7 +123,7 @@ onUnmounted(() => document.removeEventListener('click', onDocClick, true))
   background: transparent;
   color: var(--text-tertiary);
   cursor: pointer;
-  transition: background 100ms ease, color 100ms ease;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
 }
 
 .sync-dock-btn:hover {
@@ -200,7 +200,7 @@ onUnmounted(() => document.removeEventListener('click', onDocClick, true))
   display: flex;
   padding: 4px;
   border-radius: 6px;
-  transition: color 160ms ease, background 160ms ease;
+  transition: color var(--dur-base) var(--ease-out), background var(--dur-base) var(--ease-out);
 }
 
 .sync-dock-close:hover {

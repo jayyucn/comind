@@ -317,7 +317,7 @@ onUnmounted(stopTimers)
   color: var(--text-secondary);
   font-size: var(--text-xs);
   cursor: pointer;
-  transition: border-color 160ms ease;
+  transition: border-color var(--dur-base) var(--ease-out);
 }
 
 .device-sync-regenerate:hover:not(:disabled) {
@@ -434,7 +434,8 @@ onUnmounted(stopTimers)
   color: var(--text-secondary);
   font-size: var(--text-xs);
   cursor: pointer;
-  transition: border-color 160ms ease, color 160ms ease, background 160ms ease;
+  transition: border-color var(--dur-base) var(--ease-out), color var(--dur-base) var(--ease-out),
+    background var(--dur-base) var(--ease-out);
 }
 
 .device-action-btn.primary:hover:not(:disabled) {

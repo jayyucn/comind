@@ -1,7 +1,7 @@
 /**
  * useUndoHistory —— ADR-0046 撤销历史栈核心（T2 / issue #107）。
  *
- * 机制：整页快照（memento，D8）。观测点：监听权威状态 `blocks` 数组 + 属性表
+ * 机制：整页快照（memento，D8）。观测点：监听权威状态 `blocks` 数组 + 字段值表
  * （D9），按页面隔离（Map<pageId, HistoryStack>，D6）。~500ms idle 合并窗口
  * （D3 自动满足：一次结构操作的多次写入落在同一响应式批次，天然合成一步）。
  *
@@ -9,20 +9,55 @@
  * 不落库（D5 结构性必然）；不含页面级元数据（D4③）。
  *
  * 归因口径：每页挂一个「派生签名」看门狗（源 = 该页 blocks 的内容签名 + 该页
- * 属性签名），而非对全局 `blocks` 挂一个 deep watch。背景加载别的页（其它页块
+ * 字段值签名），而非对全局 `blocks` 挂一个 deep watch。背景加载别的页（其它页块
  * push 进共享 `blocks` 数组）不会改变当前页签名 → 不会误触发、不会产生重复快照。
  * 签名只用于「哪页变了」的归因，不是「新旧快照判重」的 dedupe（本票禁 dedupe）。
  */
 import { watch, type WatchStopHandle } from 'vue'
-import { useBlockStore } from '../stores/blocks'
-import { usePropertyStore } from '../stores/property'
-import type { Block } from '../types/block'
-import type { Property } from '../types/property'
 
-/** 单页快照信封：正文 + 结构 + format(含折叠) + 属性表（D11） */
+import { useBlockStore } from '../stores/blocks'
+import { useFieldValueStore } from '../stores/fieldValue'
+import type { Block } from '../types/block'
+import type { FieldValue } from '../types/field-value'
+
+/**
+ * 视图态：到达某快照时的选区。撤销/重做要恢复的不只是正文，还有「光标/选区在哪」——
+ * 用户在 "ABCD" 里把光标放在 D 右侧再删除，撤销后必须回到 D 右侧；选中 D 删除再撤销，
+ * 必须回到「D 被选中」。故选区随快照一起存，但**不参与内容签名与快照相等判定**
+ * （它是视图态，不是文档态；参与会让每次点光标都产生一步）。
+ */
+export interface TextViewSelection {
+  blockId: string
+  /** 编辑器内位置：ProseMirror 1-based / CodeMirror 0-based，恢复时按同一实现解释 */
+  from: number
+  to: number
+}
+
+/**
+ * 跨页一步撤销的配对信息（ADR-0025 D4b）。
+ *
+ * 撤销栈按页隔离（Map<pageId, HistoryStack>，D6），而跨页搬移**同时改动两页**，
+ * 于是两页各记一步。若不管，用户要按两次 Ctrl+Z、还得换页 —— 且在错误的顺序下
+ * 会出现「同一个 id 在两页并存」。所以搬移时把两页的栈顶快照**配成同一步**：
+ * 撤销任意一侧，另一侧跟着退；重做同理。
+ */
+export interface CrossPageStep {
+  /** 另一侧页面 */
+  partnerPageId: string
+  /** 对侧「搬移后」那条快照的 seq：撤销时校验它仍坐在游标上 */
+  partnerAfterSeq: number
+  /** 对侧「搬移前」那条快照的 seq：重做时校验它仍坐在游标上 */
+  partnerBeforeSeq: number | null
+}
+
+/** 单页快照信封：正文 + 结构 + format(含折叠) + 字段值表（D11）+ 视图态选区 */
 export interface HistoryEntry {
   blocks: Block[]
-  properties: Record<string, Property[]>
+  fieldValues: Record<string, FieldValue[]>
+  /** 到达本快照时的选区；null = 当时没有本页编辑态（页面加载后还没点过任何块） */
+  selection?: TextViewSelection | null
+  /** 仅「搬移后」那份快照带：与本条同属一步的另侧页面（见 CrossPageStep） */
+  crossPage?: CrossPageStep
 }
 
 const DEFAULT_IDLE_MS = 500
@@ -42,6 +77,8 @@ let idleMs = DEFAULT_IDLE_MS
 let maxBytes = DEFAULT_MAX_BYTES
 const stopHandles = new Map<string, WatchStopHandle[]>()
 const idleTimers = new Map<string, ReturnType<typeof setTimeout>>()
+/** 每页最近的选区（视图态影子）。新快照入栈时带上它 —— 见 recordSelection 的顺序约定 */
+const lastSelections = new Map<string, TextViewSelection | null>()
 
 // ---- 配置（仅供单测注入，生产走默认值）----
 export function configureUndoHistory(opts: { idleMs?: number; maxBytes?: number }): void {
@@ -56,6 +93,7 @@ export function resetUndoHistory(): void {
   for (const t of idleTimers.values()) clearTimeout(t)
   idleTimers.clear()
   pageStacks = new Map()
+  lastSelections.clear()
   timeline.length = 0
   seqCounter = 0
   totalBytes = 0
@@ -80,7 +118,7 @@ function deepClonePlain<T>(value: T): T {
  * 文档态投影（#113）：信封字段清单的**唯一书写处** —— 快照信封（cloneBlockSlim）、
  * 恢复 diff（blockDocumentEqual）、op 哨兵测试都从这里派生。新增文档态字段只改这里，
  * 三处自动跟进；类型化对象字面量保证拼错/漏字段编译期报错。
- * 时间戳（createdAt/updatedAt）不承载恢复语义，有意不在投影内（与属性信封归零同理）。
+ * 时间戳（createdAt/updatedAt）不承载恢复语义，有意不在投影内（与字段值信封归零同理）。
  */
 export function documentState(b: Block): Pick<Block, 'id' | 'pageId' | 'parentId' | 'pos' | 'content' | 'format' | 'type'> {
   return {
@@ -106,14 +144,14 @@ export function blockDocumentEqual(a: Block, b: Block): boolean {
   return JSON.stringify(documentState(a)) === JSON.stringify(documentState(b))
 }
 
-function cloneProperty(p: Property): Property {
-  // createdAt/updatedAt 归一化为 0：服务端写入的时间戳不承载恢复语义，却会漂移 ——
-  // 撤销「删块」后复活块的组件重挂载，useBlockPropertySync.onMounted 会
-  // loadBlockProperties 从 DB 重读，而恢复批次的 property set 刚刷过 updated_at。
-  // 若签名含该字段，「同一状态」会被判成一次新改动 ⇒ 推入一份近似重复的快照并截断
-  // redo 尾（2026-09-15 实机：删块 → Ctrl+Z 后约 500ms 起 Ctrl+Shift+Z 变 null；
-  // 实测唯一漂移字节 = 属性行的 updatedAt）。信封只承载恢复所需字段，故归零。
-  return { ...p, value: deepClonePlain(p.value), createdAt: 0, updatedAt: 0 }
+function cloneFieldValue(p: FieldValue): FieldValue {
+  // created_at/updated_at 归一化为 0：服务端写入的时间戳不承载恢复语义，却会漂移 ——
+  // 撤销「删块」后复活块的组件重挂载，会从 DB 重读字段值，而恢复批次的字段值 set
+  // 刚刷过 updated_at。若签名含该字段，「同一状态」会被判成一次新改动 ⇒ 推入一份近似
+  // 重复的快照并截断 redo 尾（2026-09-15 实机：删块 → Ctrl+Z 后约 500ms 起
+  // Ctrl+Shift+Z 变 null；实测唯一漂移字节 = 字段值行的 updated_at）。
+  // 信封只承载恢复所需字段，故归零。
+  return { ...p, created_at: 0, updated_at: 0 }
 }
 
 // ---- 字节预算（D5：32MB 上限，超限裁最旧）----
@@ -128,36 +166,70 @@ function byteSize(snap: HistoryEntry): number {
 }
 
 /**
- * ⚠️ 本函数**只读客户端缓存**（`propertyStore`），不查 DB。其安全前提是「页面每个块只要渲染
- * 就会被挂载、挂载即**无条件**加载属性」（`useBlockPropertySync.onMounted` → `loadBlockProperties`），
- * 因此缓存对本页块是**完备**的 —— 若前提不成立，信封会缺块，撤销「删块」时该块属性随级联软删
- * **永久丢失**（DB 行已被 `PropertyService::delete_by_block_id` 软删）。
+ * ⚠️ 本函数**只读客户端缓存**（`fieldValueStore`），不查 DB。其安全前提是「页面每个块只要渲染
+ * 就会被挂载、挂载即**无条件**加载字段值」（挂载 → `loadBlockFieldValues`），
+ * 因此缓存对本页块是**完备**的 —— 若前提不成立，信封会缺块，撤销「删块」时该块字段值随级联软删
+ * **永久丢失**（DB 行已被 `FieldValueService::delete_by_block_id` 软删）。
  *
  * 该前提已钉成两条可执行哨兵（2026-09-15 grill-up 核查后加，此前是一条**未验证的推测**）：
- * - 前提侧：`BlockList.undo-redo.test.ts` H 组「页面块集合 ⊆ propertyStore 键集合」
- * - 信封侧：`useUndoHistory.test.ts`「信封覆盖 store 中所有有属性的块」
+ * - 前提侧：`BlockList.undo-redo.test.ts` H 组「页面块集合 ⊆ fieldValueStore 键集合」
+ * - 信封侧：`useUndoHistory.test.ts`「信封覆盖 store 中所有有字段值的块」
  * 任一变红 ⇒ 前提被破坏（虚拟滚动 / 懒渲染 / 条件加载 / 缓存驱逐），**那时才需要**动 Rust
- * （让 `undelete_blocks` 顺带复活属性行，须先过 ADR-0046 D10）。现状核查结论：无虚拟滚动
+ * （让 `undelete_blocks` 顺带复活字段值行，须先过 ADR-0046 D10）。现状核查结论：无虚拟滚动
  * （`v-for` 全量渲染）、折叠是 `display: none` 不卸载、`clearBlockCache` 生产零调用、
  * 删块入口只在 `BlockList` ⇒ 不可达，故**未**改 T1 语义。
  */
 
-/** 属性信封（D11）：{ blockId → 属性深拷贝[] }。captureEntry 与 propSig 的**单一真源** ——
+/** 字段值信封（D11）：{ blockId → 字段值深拷贝[] }。captureEntry 与 fieldValueSig 的**单一真源** ——
  *  两处必须逐字节一致，否则「签名变了 ⇔ 快照会变」不成立（Spec #7）。 */
-function propEnvelope(pageBlocks: Block[]): Record<string, Property[]> {
-  const propertyStore = usePropertyStore()
-  const properties: Record<string, Property[]> = {}
+function fieldValueEnvelope(pageBlocks: Block[]): Record<string, FieldValue[]> {
+  const fieldValueStore = useFieldValueStore()
+  const fieldValues: Record<string, FieldValue[]> = {}
   for (const b of pageBlocks) {
-    const props = propertyStore.propertiesByBlock.get(b.id)
-    if (props && props.length > 0) properties[b.id] = props.map(cloneProperty)
+    const rows = fieldValueStore.fieldValuesByBlock.get(b.id)
+    if (rows && rows.length > 0) fieldValues[b.id] = rows.map(cloneFieldValue)
   }
-  return properties
+  return fieldValues
 }
 
 // ---- 快照捕获 ----
 function captureEntry(pageId: string): HistoryEntry {
   const pageBlocks = useBlockStore().getBlocksByPage(pageId)
-  return { blocks: pageBlocks.map(cloneBlockSlim), properties: propEnvelope(pageBlocks) }
+  return {
+    blocks: pageBlocks.map(cloneBlockSlim),
+    fieldValues: fieldValueEnvelope(pageBlocks),
+    // 视图态取自实时影子（不是当场读编辑器：捕获发生在 ~500ms idle 后，编辑器可能早已失活）
+    selection: lastSelections.get(pageId) ?? null,
+  }
+}
+
+/**
+ * 记录选区（视图态）。两件事一起做，顺序无关，但**调用方必须区分本次是否改了正文**
+ * （`contentChanged`）：这是「撤销回到改动前那一刻的选区」能成立的关键。
+ *
+ * - 只移动光标/改选区（`contentChanged: false`）→ 把 `stack[cursor]` 的 selection 就地更新。
+ *   于是「选中 D」（不产生新快照）会把**当前快照**的选区改成「D 选中」；随后删除产生新快照，
+ *   撤销回到当前快照时就能把 D 重新选中。
+ * - 本次改动同时改了正文（`contentChanged: true`）→ **不**动 `stack[cursor]`。改动后那一刻的
+ *   选区属于**即将入栈的新快照**，若在此覆盖旧快照，撤销回来会落到「改动后」的位置
+ *   （Backspace 删 D 后撤销会停在 C 与 D 之间，而不是用户要的 D 右侧）。
+ *   新快照的 selection 由 `captureEntry` 读取的实时影子给出。
+ * - `selection === null`（编辑态失活 / 退出编辑）→ 影子清空，不改已有快照的 selection：
+ *   失活不该抹掉「用户上次在哪」这个事实。
+ */
+export function recordSelection(
+  pageId: string,
+  selection: TextViewSelection | null,
+  opts: { contentChanged?: boolean } = {},
+): void {
+  if (selection) lastSelections.set(pageId, selection)
+  else lastSelections.delete(pageId)
+
+  if (opts.contentChanged) return
+  const ps = pageStacks.get(pageId)
+  const top = ps?.stack[ps.cursor]
+  if (!ps || !top) return
+  top.selection = selection
 }
 
 // ---- 归因签名（哪页变了，非 dedupe）----
@@ -172,9 +244,9 @@ function blockSig(pageId: string): string {
   return JSON.stringify(blockStore.getBlocksByPage(pageId).map(cloneBlockSlim))
 }
 
-/** 该页属性的签名。与 captureEntry 共用 propEnvelope（Spec #7：单一真源）。 */
-function propSig(pageId: string): string {
-  return JSON.stringify(propEnvelope(useBlockStore().getBlocksByPage(pageId)))
+/** 该页字段值的签名。与 captureEntry 共用 fieldValueEnvelope（Spec #7：单一真源）。 */
+function fieldValueSig(pageId: string): string {
+  return JSON.stringify(fieldValueEnvelope(useBlockStore().getBlocksByPage(pageId)))
 }
 
 // ---- 公开 API ----
@@ -188,7 +260,7 @@ export function ensureStack(pageId: string): void {
   totalBytes += byteSize(snap)
 
   const stopB = watch(() => blockSig(pageId), () => schedule(pageId))
-  const stopP = watch(() => propSig(pageId), () => schedule(pageId))
+  const stopP = watch(() => fieldValueSig(pageId), () => schedule(pageId))
   stopHandles.set(pageId, [stopB, stopP])
 }
 
@@ -225,6 +297,17 @@ function schedule(pageId: string): void {
   )
 }
 
+/**
+ * 快照**内容**相等（含正文/结构/字段值），有意**排除 selection**：选区是视图态，
+ * 若参与判等，「点一下光标」就会被当成新步骤入栈并截断 redo 尾。
+ */
+function entryContentEqual(a: HistoryEntry, b: HistoryEntry): boolean {
+  return (
+    JSON.stringify(a.blocks) === JSON.stringify(b.blocks) &&
+    JSON.stringify(a.fieldValues) === JSON.stringify(b.fieldValues)
+  )
+}
+
 function pushSnapshot(pageId: string): void {
   const ps = pageStacks.get(pageId)
   if (!ps) return
@@ -238,7 +321,9 @@ function pushSnapshot(pageId: string): void {
   // Ctrl+Z 看似无效。这不是禁项目里的「用户动作去重」——只拦「状态已与游标处
   // 相同」的回声；真实编辑产出的快照必定不同，不受影响。
   const top = stack[ps.cursor]
-  if (top && JSON.stringify(top) === JSON.stringify(snap)) {
+  if (top && entryContentEqual(top, snap)) {
+    // 内容回声：视图态仍以最新为准（不新增步骤，只同步选区）
+    top.selection = snap.selection
     return
   }
 
@@ -320,6 +405,47 @@ export function canRedo(pageId: string): boolean {
 /** 某页是否已建撤销栈（页面隔离 D6 的查询口，供跨页接管判定用） */
 export function hasStack(pageId: string): boolean {
   return pageStacks.has(pageId)
+}
+
+/** 某页当前游标处的快照 seq（跨页一步撤销的失效判定用） */
+export function cursorSeq(pageId: string): number | null {
+  const ps = pageStacks.get(pageId)
+  if (!ps) return null
+  return ps.seqs[ps.cursor] ?? null
+}
+
+/**
+ * 把两页的**当前栈顶**配成同一步（跨页搬移，ADR-0025 D4b）。
+ *
+ * 调用方须先 `commitNow` 两页，使「搬移后」这一状态确实落在各自栈顶 —— 否则标签会贴到
+ * 更早那条快照上，撤销时连带退错步。任一侧没有栈（该页本次会话没打开过）→ 静默跳过，
+ * 退回「两页各撤一步」，不会做半套。
+ */
+export function linkCrossPageStep(pageId: string, partnerPageId: string): void {
+  if (!pageId || !partnerPageId || pageId === partnerPageId) return
+  const a = pageStacks.get(pageId)
+  const b = pageStacks.get(partnerPageId)
+  if (!a || !b) return
+  const aAfter = a.seqs[a.cursor]
+  const bAfter = b.seqs[b.cursor]
+  if (aAfter === undefined || bAfter === undefined) return
+  a.stack[a.cursor].crossPage = {
+    partnerPageId,
+    partnerAfterSeq: bAfter,
+    partnerBeforeSeq: b.cursor > 0 ? (b.seqs[b.cursor - 1] ?? null) : null,
+  }
+  b.stack[b.cursor].crossPage = {
+    partnerPageId: pageId,
+    partnerAfterSeq: aAfter,
+    partnerBeforeSeq: a.cursor > 0 ? (a.seqs[a.cursor - 1] ?? null) : null,
+  }
+}
+
+/** 当前游标那一步的跨页配对（没有则 null） */
+export function crossPagePartner(pageId: string): CrossPageStep | null {
+  const ps = pageStacks.get(pageId)
+  const top = ps?.stack[ps.cursor]
+  return top?.crossPage ?? null
 }
 
 /** 仅供单测断言内部状态 */

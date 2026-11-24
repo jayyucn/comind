@@ -1,4 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { ref } from 'vue'
 import { createEditorEvents, type EditorEventCtx } from '../editorEvents'
 
@@ -13,6 +15,12 @@ function makeCtx(overrides: Partial<EditorEventCtx> = {}): EditorEventCtx {
     menuQuery: ref(''),
     menuRef: ref({ confirmSelect: vi.fn(), close: vi.fn(), selectNext: vi.fn(), selectPrev: vi.fn() }),
     menuAnchorEl: ref(null),
+    tagMenuVisible: ref(false),
+    tagMenuPosition: ref({ x: 0, y: 0 }),
+    tagMenuRange: ref({ from: 0, to: 0 }),
+    tagMenuQuery: ref(''),
+    tagMenuRef: ref({ confirmSelect: vi.fn(), close: vi.fn(), selectNext: vi.fn(), selectPrev: vi.fn() }),
+    tagMenuAnchorEl: ref(null),
     kindSelectorVisible: ref(false),
     kindSelectorPosition: ref({ left: 0, top: 0, bottom: 0 }),
     kindSelectorRange: ref({ from: 0, to: 0 }),
@@ -20,6 +28,10 @@ function makeCtx(overrides: Partial<EditorEventCtx> = {}): EditorEventCtx {
     relMenu: { open: vi.fn(), close: vi.fn() },
     openDateRefPanel: vi.fn(),
     closeWikiLinkMenuByEditor: vi.fn(),
+    closeTagMenuByEditor: vi.fn(),
+    navigateToTag: vi.fn(),
+    navigateToPage: vi.fn(),
+    openPageInOtherPane: vi.fn(),
     ...overrides,
   }
 }
@@ -88,6 +100,8 @@ describe('createEditorEvents — 声明式事件表', () => {
       { detail: { type: 'outdent' }, expectArgs: ['outdent'] },
       { detail: { type: 'moveUp', x: 50 }, expectArgs: ['moveUp', 50] },
       { detail: { type: 'moveDown', x: 80 }, expectArgs: ['moveDown', 80] },
+      { detail: { type: 'moveLeft', x: 12 }, expectArgs: ['moveLeft', 12] },
+      { detail: { type: 'moveRight', x: 34 }, expectArgs: ['moveRight', 34] },
       { detail: { type: 'exitEdit' }, expectArgs: ['exitEdit'] },
     ]
     for (const c of cases) {
@@ -96,11 +110,41 @@ describe('createEditorEvents — 声明式事件表', () => {
     }
   })
 
-  it('enter-as-block save 读取编辑器文本 emit', () => {
-    const ctx = makeCtx({ getEditor: () => ({ getText: () => 'hello' }) as any })
+  it('enter-as-block save 读取编辑器文本 emit（落库口径把硬换行记作 `\\n`）', () => {
+    const ctx = makeCtx({
+      getEditor: () => ({
+        state: {
+          doc: {
+            descendants: (cb: (node: any) => void) => {
+              cb({ isText: true, text: 'hello', marks: [], type: { name: 'text' } })
+              cb({ isText: false, text: '', marks: [], type: { name: 'hardBreak' } })
+              cb({ isText: true, text: 'world', marks: [], type: { name: 'text' } })
+            },
+          },
+        },
+      }) as any,
+    })
     const { dom } = setup(ctx)
     dom.dispatchEvent(new CustomEvent('enter-as-block', { detail: { type: 'save' } }))
-    expect(ctx.emit).toHaveBeenCalledWith('save', 'hello')
+    expect(ctx.emit).toHaveBeenCalledWith('save', 'hello\nworld')
+  })
+
+  /**
+   * 死接线回归网（本网钉的是 `moveLeft`/`moveRight` 那一类）：事件表 `ctx.emit('x')` 的名字
+   * 必须在宿主 `Editor.vue` 的 `defineEmits` 里声明，否则 Vue 只在**开发期**打一行警告，
+   * 并把事件拐去 `$attrs` —— 消费方（`Block` 的 `@move-left`）永远收不到。而按键已被扩展
+   * `return true` 吞掉，表现为「块首按左键没反应」，静默且难归因。生产期连警告都没有。
+   */
+  it('事件表 emit 的事件名都已在 Editor.vue 的 emits 中声明', () => {
+    const emitNames = (source: string, re: RegExp) =>
+      new Set([...source.matchAll(re)].map((m) => m[1]))
+    const read = (rel: string) => readFileSync(resolve(process.cwd(), rel), 'utf8')
+
+    const declared = emitNames(read('src/components/Editor.vue'), /\(e: '([\w-]+)'/g)
+    const emitted = emitNames(read('src/components/Block/editorEvents.ts'), /ctx\.emit\('([\w-]+)'/g)
+
+    expect([...emitted].length).toBeGreaterThan(0)
+    expect([...emitted].filter((name) => !declared.has(name))).toEqual([])
   })
 
   it('relationship-trigger 打开关系菜单并传入 onSelect', () => {
@@ -173,7 +217,7 @@ describe('createEditorEvents — 声明式事件表', () => {
     expect(ctx.kindSelectorVisible.value).toBe(false)
   })
 
-  it('返回的事件表恰好覆盖 14 个 handler', () => {
+  it('返回的事件表恰好覆盖 handler（含 tag 菜单）', () => {
     const ctx = makeCtx()
     const events = createEditorEvents(ctx)
     expect(Object.keys(events)).toEqual([
@@ -184,13 +228,106 @@ describe('createEditorEvents — 声明式事件表', () => {
       'wiki-link-menu-escape',
       'wiki-link-menu-arrowdown',
       'wiki-link-menu-arrowup',
+      'tag-trigger',
+      'tag-update',
+      'tag-close',
+      'tag-menu-enter',
+      'tag-menu-escape',
+      'tag-menu-arrowdown',
+      'tag-menu-arrowup',
       'enter-as-block',
       'relationship-trigger',
       'relationship-close',
       'dateRefTrigger',
       'dateRefClick',
+      'inlineTagClick',
+      'wikiLinkClick',
       'dateRefKindSelect',
       'dateRefKindSelectClose',
     ])
   })
+
+  it('tag-trigger 设置 tag 菜单状态', () => {
+    const ctx = makeCtx()
+    const { dom } = setup(ctx)
+    const fakeView = { coordsAtPos: () => ({ left: 10, bottom: 20 }) }
+    dom.dispatchEvent(new CustomEvent('tag-trigger', {
+      detail: { view: fakeView, position: 5, range: { from: 1, to: 3 }, query: 'foo' },
+    }))
+    expect(ctx.tagMenuVisible.value).toBe(true)
+    expect(ctx.tagMenuQuery.value).toBe('foo')
+    expect(ctx.tagMenuRange.value).toEqual({ from: 1, to: 3 })
+    expect(ctx.tagMenuPosition.value).toEqual({ x: 10, y: 28 })
+  })
+
+  it('tag-update 更新查询', () => {
+    const ctx = makeCtx()
+    const { dom } = setup(ctx)
+    dom.dispatchEvent(new CustomEvent('tag-update', { detail: { query: 'bar' } }))
+    expect(ctx.tagMenuQuery.value).toBe('bar')
+  })
+
+  it('tag-close 关闭 tag 菜单并通知扩展', () => {
+    const ctx = makeCtx()
+    ctx.tagMenuVisible.value = true
+    const { dom } = setup(ctx)
+    dom.dispatchEvent(new CustomEvent('tag-close', {}))
+    expect(ctx.tagMenuVisible.value).toBe(false)
+  })
+
+  it('tag-menu-enter/escape/arrowdown/arrowup 委托给 tagMenuRef', () => {
+    const ctx = makeCtx()
+    const { dom } = setup(ctx)
+    dom.dispatchEvent(new CustomEvent('tag-menu-enter', {}))
+    dom.dispatchEvent(new CustomEvent('tag-menu-escape', {}))
+    dom.dispatchEvent(new CustomEvent('tag-menu-arrowdown', {}))
+    dom.dispatchEvent(new CustomEvent('tag-menu-arrowup', {}))
+    expect(ctx.tagMenuRef.value?.confirmSelect).toHaveBeenCalled()
+    expect(ctx.tagMenuRef.value?.close).toHaveBeenCalled()
+    expect(ctx.tagMenuRef.value?.selectNext).toHaveBeenCalled()
+    expect(ctx.tagMenuRef.value?.selectPrev).toHaveBeenCalled()
+  })
+
+  // ── 编辑态 inline 单元点击导航（与渲染态 handleContentClick 同口径）──
+
+  it('inlineTagClick → navigateToTag(tagId)', () => {
+    const ctx = makeCtx()
+    const { dom } = setup(ctx)
+    dom.dispatchEvent(new CustomEvent('inlineTagClick', {
+      detail: { title: '项目', tagId: 't-1' },
+    }))
+    expect(ctx.navigateToTag).toHaveBeenCalledWith('t-1')
+    expect(ctx.navigateToPage).not.toHaveBeenCalled()
+  })
+
+  it('inlineTagClick 缺 tagId → no-op（不误跳 /tags/ 空参路由）', () => {
+    const ctx = makeCtx()
+    const { dom } = setup(ctx)
+    dom.dispatchEvent(new CustomEvent('inlineTagClick', { detail: { title: 'x', tagId: '' } }))
+    expect(ctx.navigateToTag).not.toHaveBeenCalled()
+  })
+
+  it('wikiLinkClick → navigateToPage(page)', () => {
+    const ctx = makeCtx()
+    const { dom } = setup(ctx)
+    dom.dispatchEvent(new CustomEvent('wikiLinkClick', { detail: { page: 'MyPage' } }))
+    expect(ctx.navigateToPage).toHaveBeenCalledWith('MyPage')
+    expect(ctx.navigateToTag).not.toHaveBeenCalled()
+  })
+
+  it('wikiLinkClick openInOtherPane → openPageInOtherPane(page) 且不导航', () => {
+    const ctx = makeCtx()
+    const { dom } = setup(ctx)
+    dom.dispatchEvent(new CustomEvent('wikiLinkClick', { detail: { page: 'MyPage', openInOtherPane: true } }))
+    expect(ctx.openPageInOtherPane).toHaveBeenCalledWith('MyPage')
+    expect(ctx.navigateToPage).not.toHaveBeenCalled()
+  })
+
+  it('wikiLinkClick 缺 page → no-op', () => {
+    const ctx = makeCtx()
+    const { dom } = setup(ctx)
+    dom.dispatchEvent(new CustomEvent('wikiLinkClick', { detail: { page: '' } }))
+    expect(ctx.navigateToPage).not.toHaveBeenCalled()
+  })
 })
+

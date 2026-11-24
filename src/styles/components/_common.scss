@@ -3,14 +3,13 @@
 @use '../tokens/primitives' as *;
 @use '../mixins' as *;
 
-// 应用布局
+// 应用布局：顶栏独占第一行，其下 侧栏 + 内容区 横向排列
 .app-layout {
   display: flex;
-  flex-direction: row;
+  flex-direction: column;
   height: 100vh;
   width: 100vw;
   overflow: hidden;
-  background: var(--bg-base);
 }
 
 // 页面容器
@@ -49,7 +48,7 @@
   justify-content: center;
   border-radius: $radius-sm;
   color: var(--text-tertiary);
-  transition: all 100ms ease;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out), opacity var(--dur-fast) var(--ease-out);
 
   &:hover:not(.disabled) {
     background: var(--bg-hover);
@@ -117,7 +116,30 @@
   padding: var(--space-6);
   min-width: 320px;
   max-width: 480px;
-  box-shadow: var(--shadow-modal);
+  position: relative;
+  background: var(--corner-glow), var(--grad-surface); // 维度②：顶亮渐变 + accent 顶边光带（叠在背景层，位于内容之下）
+  border: none; // 实色 border 让位给 ::after 渐变描边
+  box-shadow: var(--shadow-floating);
+  animation: dialog-in var(--dur-slow) var(--ease-spring); // 维度①：入场弹入（门面 slow 档，ADR-0053 D4）
+
+  // 维度②：渐变描边（premium 感，替换平色 border）
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    background: var(--grad-border);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+  }
+}
+
+@keyframes dialog-in {
+  from { opacity: 0; transform: translateY(4px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 .dialog-title {
@@ -188,4 +210,9 @@
 
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }

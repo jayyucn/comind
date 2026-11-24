@@ -1,24 +1,19 @@
 <script setup lang="ts">
-import { computed, ref, onBeforeUnmount, onMounted, nextTick, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import BlockList from '../BlockList.vue'
-import Backlinks from '../Backlinks.vue'
-import Toc from './Toc.vue'
-import ConfirmDialog from '../ConfirmDialog.vue'
-import SlashCommandMenu from '../SlashCommandMenu.vue'
-import PropertyQuickEditor from '../Block/PropertyQuickEditor.vue'
-import PropertyEditor from '../Block/PropertyEditor.vue'
-import RelationshipMenu from '../RelationshipMenu.vue'
-import IdeasSnapshotPage from '../Ideas/IdeasSnapshotPage.vue'
-import { usePageStore } from '../../stores/pages'
+
+import { useLayoutShell } from '../../composables/useLayoutShell'
+import { openReaderWindow } from '../../composables/useReaderWindow'
 import { useBlockStore } from '../../stores/blocks'
 import { useEditorStore } from '../../stores/editor'
-import { useRelationshipMenu } from '../../composables/useRelationshipMenu'
-import { openReaderWindow } from '../../composables/useReaderWindow'
-import { isTauriEnvironment } from '../../wasm/tauri-platform'
-import { useLayoutShell } from '../../composables/useLayoutShell'
-import { isStaleIdeasPage } from '../../utils/ideas-snapshot'
+import { usePageStore } from '../../stores/pages'
 import type { Page } from '../../types/page'
+import { isStaleIdeasPage } from '../../utils/ideas-snapshot'
+import { isTauriEnvironment } from '../../wasm/tauri-platform'
+import Backlinks from '../Backlinks.vue'
+import BlockList from '../BlockList.vue'
+import ConfirmDialog from '../ConfirmDialog.vue'
+import IdeasSnapshotPage from '../Ideas/IdeasSnapshotPage.vue'
 
 const props = defineProps<{
   pageId: string
@@ -28,7 +23,6 @@ const router = useRouter()
 const pageStore = usePageStore()
 const blockStore = useBlockStore()
 const editorStore = useEditorStore()
-const relMenu = useRelationshipMenu()
 
 // 把页面正文列写入布局壳，供 Toc 据其左缘定位（取代全局 querySelector('.page-container .main-content')）。
 const shell = useLayoutShell()
@@ -187,7 +181,9 @@ async function saveTitle() {
 async function handleConfirmRename() {
   showRenameDialog.value = false
   if (!pendingNewTitle.value) return
-  await pageStore.renamePage(await resolvedPageId.value, pendingNewTitle.value)
+  const result = await pageStore.renamePage(await resolvedPageId.value, pendingNewTitle.value)
+  // 页名约束（建链准入）拒绝时，标题保持原样并说明原因 + 替换建议
+  if (result?.invalid) editorStore.showToast(result.invalid, 'error')
   pendingNewTitle.value = ''
 }
 
@@ -268,11 +264,14 @@ function handleCancelMerge() {
         />
       </main>
 
-      <Backlinks />
+      <Backlinks :page-id="resolvedPageId" />
     </div>
 
-    <!-- 通用 TOC 浮层（普通页=heading 大纲 / 书页=章→节投影），自行 Teleport 到 body -->
-    <Toc :page-id="resolvedPageId" />
+    <!-- 通用 TOC 已迁移到右栏面板 tab（TocPanel，ADR-0059 D6），此处不再渲染浮动浮层。 -->
+
+    <!-- 全局弹层（SlashCommandMenu / FieldValueQuickEditor / FieldValueEditor / RelationshipMenu）
+         已上提到 App.vue 统一渲染（ADR-0058）：Page 需可被 pane 复用，弹层单例若留在此处，
+         两栏并存时会双实例渲染导致菜单/面板叠加。 -->
 
     <ConfirmDialog
       :visible="showMergeDialog"
@@ -286,11 +285,6 @@ function handleCancelMerge() {
       </template>
       页面「<strong class="dialog-highlight">{{ editingTitle }}</strong>」已存在，合并后将把所有内容移入已有页面。
     </ConfirmDialog>
-
-    <SlashCommandMenu />
-    <PropertyQuickEditor />
-    <PropertyEditor />
-    <RelationshipMenu :menu="relMenu" />
 
     <!-- 重命名确认弹窗 -->
     <ConfirmDialog
@@ -308,7 +302,7 @@ function handleCancelMerge() {
 
 <style lang="scss" scoped>
 :deep(.navigate-highlight) {
-  animation: navigate-pulse 2s ease-out;
+  animation: navigate-pulse var(--dur-slow) var(--ease-out);
 }
 
 // 书 Page 标题下的「开始阅读」入口（票 03 / ADR-0040 D4：唤起独立阅读器窗口）
@@ -322,7 +316,8 @@ function handleCancelMerge() {
   color: var(--text-secondary);
   font-size: var(--text-sm);
   cursor: pointer;
-  transition: all 120ms ease;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
 
   &:hover {
     border-color: var(--accent);

@@ -111,67 +111,93 @@ describe('DateRefExtension decoration rendering', () => {
 })
 
 describe('DateRefExtension handleClick event', () => {
-  it('dispatches dateRefClick with correct payload', () => {
-    const mockDispatch = vi.fn((e: Event) => true)
-    const mockSpan = {
-      classList: { contains: (cls: string) => cls === 'date-ref' },
-      dataset: { kind: 'deadline', iso: '2026-07-15T14:00', recurrence: 'weekly' },
-      dispatchEvent: mockDispatch,
-    } as unknown as HTMLElement
-    const fakeEvent = { target: mockSpan } as unknown as MouseEvent
+  /** 取 dateRef 装饰插件的 handleClick（真实 view 驱动；键盘插件挂的是 handleKeyDown） */
+  function dateRefClickHandler(editor: Editor) {
+    const plugins = DateRefExtension.config.addProseMirrorPlugins() ?? []
+    const plugin = plugins.find(p => typeof p?.spec?.props?.handleClick === 'function')
+    const handleClick = plugin?.spec.props.handleClick as
+      | ((view: EditorView, pos: number, event: MouseEvent) => boolean)
+      | undefined
+    expect(handleClick).toBeTypeOf('function')
+    return handleClick!
+  }
 
-    const target = fakeEvent.target as HTMLElement
-    if (!target.classList.contains('date-ref')) {
-      expect(true).toBe(false)
-      return
-    }
+  it('dispatches dateRefClick with unit range [from,to]（点击落在单元内部）', () => {
+    const handle = createEditor('meet @2026-07-15T14:00 📅|weekly tomorrow')
+    const unit = dateRefRangeFromDoc(handle.editor)[0]
+    const span = decoratedSpans(handle.element)[0]
+    expect(span).toBeDefined()
 
-    const pos = 42
-    const from = pos
-    const to = pos
-
-    const payload: DateRefClickPayload = {
-      from,
-      to,
-      blockId: '',
-      kind: (target.dataset.kind ?? '') as any,
-      iso: target.dataset.iso ?? '',
-      recurrence: (target.dataset.recurrence ?? '') as any,
-    }
-
-    target.dispatchEvent(
-      new CustomEvent(DATE_REF_CLICK_EVENT, {
-        bubbles: true,
-        composed: true,
-        detail: payload,
-      })
+    const dispatched: CustomEvent<DateRefClickPayload>[] = []
+    span.addEventListener(DATE_REF_CLICK_EVENT, (e) =>
+      dispatched.push(e as CustomEvent<DateRefClickPayload>)
     )
 
-    expect(mockDispatch).toHaveBeenCalledTimes(1)
-    const dispatchedEvent = (mockDispatch as any).mock.calls[0][0] as CustomEvent<DateRefClickPayload>
-    expect(dispatchedEvent.type).toBe(DATE_REF_CLICK_EVENT)
-    expect(dispatchedEvent.detail.kind).toBe('deadline')
-    expect(dispatchedEvent.detail.iso).toBe('2026-07-15T14:00')
-    expect(dispatchedEvent.detail.recurrence).toBe('weekly')
-    expect(dispatchedEvent.detail.from).toBe(42)
-    expect(dispatchedEvent.detail.to).toBe(42)
-    expect(dispatchedEvent.detail.blockId).toBe('')
+    // 点击落在单元内部（非边界）—— 曾因 getState 恒空退化为 from=to=pos
+    const handled = dateRefClickHandler(handle.editor)(
+      handle.editor.view,
+      unit.from + 3,
+      { target: span } as unknown as MouseEvent
+    )
+
+    expect(handled).toBe(true)
+    expect(dispatched).toHaveLength(1)
+    expect(dispatched[0].detail.from).toBe(unit.from)
+    expect(dispatched[0].detail.to).toBe(unit.to)
+    expect(dispatched[0].detail.kind).toBe('schedule')
+    expect(dispatched[0].detail.iso).toBe('2026-07-15T14:00')
+    expect(dispatched[0].detail.recurrence).toBe('weekly')
+    handle.teardown()
   })
 
   it('returns false and does not dispatch for non-date-ref target', () => {
-    const mockDispatch = vi.fn((e: Event) => true)
-    const nonDateRefSpan = {
-      classList: { contains: () => false },
-      dataset: {},
-      dispatchEvent: mockDispatch,
-    } as unknown as HTMLElement
+    const handle = createEditor('meet @2026-07-15T14:00 📅|weekly tomorrow')
+    const span = decoratedSpans(handle.element)[0]
+    const dispatched: Event[] = []
+    span.addEventListener(DATE_REF_CLICK_EVENT, (e) => dispatched.push(e))
 
-    const target = nonDateRefSpan
-    if (!target.classList.contains('date-ref')) {
-      expect(mockDispatch).not.toHaveBeenCalled()
-      return
-    }
-    expect(true).toBe(false)
+    const plain = document.createElement('span')
+    const handled = dateRefClickHandler(handle.editor)(
+      handle.editor.view,
+      1,
+      { target: plain } as unknown as MouseEvent
+    )
+
+    expect(handled).toBe(false)
+    expect(dispatched).toHaveLength(0)
+    handle.teardown()
+  })
+
+  it('点击 chip 后选区还原到点击前位置（不落进 chip 内部）', () => {
+    const handle = createEditor('meet @2026-07-15T14:00 📅|weekly tomorrow')
+    const unit = dateRefRangeFromDoc(handle.editor)[0]
+    const span = decoratedSpans(handle.element)[0]
+    // 同一插件实例：mousedown 与 handleClick 共享 preClickSel 闭包
+    const plugins = DateRefExtension.config.addProseMirrorPlugins() ?? []
+    const plugin = plugins.find(
+      p => typeof p?.spec?.props?.handleDOMEvents?.mousedown === 'function'
+        && typeof p?.spec?.props?.handleClick === 'function'
+    )
+    const mousedown = plugin?.spec.props.handleDOMEvents?.mousedown as
+      (view: EditorView, event: MouseEvent) => boolean
+    const click = plugin?.spec.props.handleClick as
+      (view: EditorView, pos: number, event: MouseEvent) => boolean
+
+    // 点击前把选区放到单元之外（块首），记录 PM 规范后的实际位置
+    handle.editor.commands.setTextSelection(0)
+    const expectedFrom = handle.editor.state.selection.from
+    const expectedTo = handle.editor.state.selection.to
+    // mousedown 记录点击前选区
+    mousedown(handle.editor.view, { target: span } as unknown as MouseEvent)
+    // handleClick 派发事件并还原选区
+    const handled = click(handle.editor.view, unit.from + 3, { target: span } as unknown as MouseEvent)
+
+    expect(handled).toBe(true)
+    // 选区应回到点击前的位置，而非落进 chip [unit.from, unit.to)
+    expect(handle.editor.state.selection.from).toBe(expectedFrom)
+    expect(handle.editor.state.selection.to).toBe(expectedTo)
+    expect(handle.editor.state.selection.from).toBeLessThan(unit.from)
+    handle.teardown()
   })
 })
 
@@ -196,11 +222,13 @@ function dateRefRangeFromDoc(editor: Editor): { from: number; to: number }[] {
   return ranges
 }
 
-/** 取 dateRef 插件的 handleKeyDown（真实 view 驱动） */
+/** 取 dateRef 键盘插件的 handleKeyDown（真实 view 驱动） */
 function dateRefKeydown(editor: Editor, key: string, pos: number) {
-  // TipTap 会把插件 key 重写为 'dateRef$'，不能靠 key 从 state.plugins 里 find；
-  // 直接从扩展配置拿 handler（与 DateRefTriggerExtension.test.ts 同范式），再喂真实 view。
-  const [plugin] = DateRefExtension.config.addProseMirrorPlugins() ?? []
+  // 键盘语义已收编至共享原语（inline-unit-keyboard），dateRef 扩展现挂两个插件：
+  // 装饰插件（无 handleKeyDown）+ 共享键盘插件。按「带 handleKeyDown」查找，
+  // 不再依赖下标顺序（TipTap 会把插件 key 重写为 'dateRef$'，也不能靠 key find）。
+  const plugins = DateRefExtension.config.addProseMirrorPlugins() ?? []
+  const plugin = plugins.find(p => typeof p?.spec?.props?.handleKeyDown === 'function')
   const handleKeyDown = plugin?.spec.props.handleKeyDown as ((view: EditorView, event: KeyboardEvent) => boolean) | undefined
   expect(handleKeyDown).toBeTypeOf('function')
   editor.commands.setTextSelection(pos)
@@ -333,18 +361,19 @@ describe('DateRefExtension handleKeyDown — 整单元删除', () => {
     expect(plainText(handle.editor)).toBe('meet tomorrow')
   })
 
-  it('Backspace：光标在单元右侧但有选区（非 collapsed）→ 不拦截（交给默认选区删除）', () => {
+  it('Backspace：有选区且与 dateRef 重叠 → 源头整单元删除（原子语义，不交默认选区删除）', () => {
     handle = createEditor('meet @2026-07-15T14:00 📅|weekly tomorrow')
     const { from } = dateRefRangeFromDoc(handle.editor)[0]
-    // 构建非空选区：from..from+1
+    // 构建非空选区：from..from+1（选中单元首字符即与单元重叠）
     handle.editor.commands.setTextSelection({ from, to: from + 1 })
-    const [plugin] = DateRefExtension.config.addProseMirrorPlugins() ?? []
+    const plugins = DateRefExtension.config.addProseMirrorPlugins() ?? []
+    const plugin = plugins.find(p => typeof p?.spec?.props?.handleKeyDown === 'function')
     const handleKeyDown = plugin?.spec.props.handleKeyDown as ((view: EditorView, event: KeyboardEvent) => boolean) | undefined
     const event = { key: 'Backspace', preventDefault: vi.fn() } as unknown as KeyboardEvent
     const handled = handleKeyDown!(handle.editor.view, event)
-    expect(handled).toBe(false)
-    expect(event.preventDefault).not.toHaveBeenCalled()
-    expect(plainText(handle.editor)).toContain('@2026-07-15')
+    expect(handled).toBe(true)
+    expect(event.preventDefault).toHaveBeenCalled()
+    expect(plainText(handle.editor)).not.toContain('@2026-07-15')
   })
 
   it('Backspace：光标在单元右侧且 to 之后紧跟文本 → 只删单元，保留后续文本', () => {
@@ -451,7 +480,8 @@ describe('DateRefExtension handleKeyDown — 方向键跨过单元', () => {
     handle = createEditor('meet @2026-07-15T14:00 📅|weekly tomorrow')
     const { from } = dateRefRangeFromDoc(handle.editor)[0]
     handle.editor.commands.setTextSelection(from)
-    const [plugin] = DateRefExtension.config.addProseMirrorPlugins() ?? []
+    const plugins = DateRefExtension.config.addProseMirrorPlugins() ?? []
+    const plugin = plugins.find(p => typeof p?.spec?.props?.handleKeyDown === 'function')
     const handleKeyDown = plugin?.spec.props.handleKeyDown as ((view: EditorView, event: KeyboardEvent) => boolean) | undefined
     const event = { key: 'ArrowRight', ctrlKey: true, preventDefault: vi.fn() } as unknown as KeyboardEvent
     const handled = handleKeyDown!(handle.editor.view, event)
@@ -463,11 +493,58 @@ describe('DateRefExtension handleKeyDown — 方向键跨过单元', () => {
     handle = createEditor('meet @2026-07-15T14:00 📅|weekly tomorrow')
     const { from } = dateRefRangeFromDoc(handle.editor)[0]
     handle.editor.commands.setTextSelection({ from, to: from + 1 })
-    const [plugin] = DateRefExtension.config.addProseMirrorPlugins() ?? []
+    const plugins = DateRefExtension.config.addProseMirrorPlugins() ?? []
+    const plugin = plugins.find(p => typeof p?.spec?.props?.handleKeyDown === 'function')
     const handleKeyDown = plugin?.spec.props.handleKeyDown as ((view: EditorView, event: KeyboardEvent) => boolean) | undefined
     const event = { key: 'ArrowRight', preventDefault: vi.fn() } as unknown as KeyboardEvent
     const handled = handleKeyDown!(handle.editor.view, event)
     expect(handled).toBe(false)
     expect(event.preventDefault).not.toHaveBeenCalled()
+  })
+})
+
+// ─── handleDOMEvents.mousedown：记录点击前选区 ───────────────────────────────
+// 编辑态点击 date-ref chip 不应把文本光标插进 chip 内部（chip 是原子单元，落光标会让
+// 用户敲坏 `@ISO📅...` 序列化文本）。mousedown 命中 chip 时仅记录点击前选区、不拦截
+// （返回 false、不 preventDefault）——PM 的 handleClick 由 mousedown 阶段创建的
+// LeftMouseDown 在 mouseup 触发，一旦跳过则点击行为整体失效；选区还原在 handleClick 内完成。
+
+/** 取 dateRef 装饰插件的 mousedown 守卫 */
+function dateRefMousedownHandler(editor: Editor) {
+  const plugins = DateRefExtension.config.addProseMirrorPlugins() ?? []
+  const plugin = plugins.find(p => typeof p?.spec?.props?.handleDOMEvents?.mousedown === 'function')
+  const mousedown = plugin?.spec.props.handleDOMEvents?.mousedown as
+    | ((view: EditorView, event: MouseEvent) => boolean)
+    | undefined
+  expect(mousedown).toBeTypeOf('function')
+  return mousedown!
+}
+
+describe('DateRefExtension mousedown guard', () => {
+  it('chip 目标 → 不拦截（返回 false、不 preventDefault），仅记录点击前选区', () => {
+    const handle = createEditor('meet @2026-07-15T14:00 📅|weekly tomorrow')
+    const span = decoratedSpans(handle.element)[0]
+    expect(span).toBeDefined()
+    const preventDefault = vi.fn()
+    const ret = dateRefMousedownHandler(handle.editor)(
+      handle.editor.view,
+      { target: span, preventDefault } as unknown as MouseEvent
+    )
+    expect(preventDefault).not.toHaveBeenCalled()
+    expect(ret).toBe(false)
+    handle.teardown()
+  })
+
+  it('非 chip 目标 → 不 preventDefault', () => {
+    const handle = createEditor('plain text only')
+    const plain = document.createElement('span')
+    const preventDefault = vi.fn()
+    const ret = dateRefMousedownHandler(handle.editor)(
+      handle.editor.view,
+      { target: plain, preventDefault } as unknown as MouseEvent
+    )
+    expect(preventDefault).not.toHaveBeenCalled()
+    expect(ret).toBe(false)
+    handle.teardown()
   })
 })

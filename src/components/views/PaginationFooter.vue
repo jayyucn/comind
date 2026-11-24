@@ -121,7 +121,7 @@ function onSizeChange(e: Event) {
   font-size: var(--text-xs);
   font-family: inherit;
   cursor: pointer;
-  transition: border-color 80ms ease, color 80ms ease;
+  transition: border-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
 
   &:hover:not(:disabled) {
     border-color: var(--accent);

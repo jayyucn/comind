@@ -7,7 +7,7 @@
  * 跨记录引用所需的「目标记录字段清单」由 `crossRecordSources` 随记录一并带来，编辑器本身不查询任何业务注册表。
  *
  * 值形态（字段引用值特性，与求值器保持一致）：ConditionValue 判别联合
- * - 字面量 `{ kind:'literal', value }`：原值（text/number 字符串、date yyyy-MM-dd 或 [from,to]、select id、multiSelect id[]、boolean）
+ * - 字面量 `{ kind:'literal', value }`：原值（string/number 字符串、date yyyy-MM-dd 或 [from,to]、select id、multiSelect id[]、boolean）
  * - 同记录字段引用 `{ kind:'field', field }`：顶部「字段」开关切换，下拉选同类型字段
  * - 跨记录字段引用 `{ kind:'recordRef', entityType, recordId, field }`：「固定值」模式下点输入框内 `+` → 引用值 → 其他记录
  *
@@ -27,6 +27,7 @@ import type {
 } from '../../core/query'
 import DatePicker from '../common/DatePicker.vue'
 import CrossRecordRefPicker from './CrossRecordRefPicker.vue'
+import { fieldTypeSpec } from '../../types/field-type-registry'
 
 const props = withDefaults(
   defineProps<{
@@ -70,6 +71,10 @@ const isEmptyOp = computed(() => props.op === 'isEmpty' || props.op === 'isNotEm
 const isRange = computed(() => props.op === 'between' || props.op === 'within')
 /** 是否展示引用控件（字段开关 / + 菜单）：仅比较类 op、非 between，且未用 allowRefs 关闭。 */
 const showRefControls = computed(() => props.allowRefs !== false && !isEmptyOp.value && !isRange.value)
+
+/** 编辑器分派查中央注册表（issue #140）：类型 → editor token；未知类型回落 'text'。
+ * tags / pageRef token 无查询侧输入控件，走末尾的文本兜底分支（与旧行为一致）。 */
+const editorKind = computed(() => fieldTypeSpec(props.descriptor.type).editor)
 
 const kind = computed(() => model.value?.kind)
 const isFieldRef = computed(() => kind.value === 'field')
@@ -316,7 +321,7 @@ function chooseRecordRef(sourceId: string, entityType: string, field: string) {
       >无需值</span>
 
       <input
-        v-else-if="descriptor.type === 'text'"
+        v-else-if="editorKind === 'text'"
         class="qb-value"
         type="text"
         :value="getLiteral() as string"
@@ -325,7 +330,7 @@ function chooseRecordRef(sourceId: string, entityType: string, field: string) {
       >
 
       <input
-        v-else-if="descriptor.type === 'number'"
+        v-else-if="editorKind === 'number'"
         v-model="numberText"
         class="qb-value"
         type="number"
@@ -333,7 +338,7 @@ function chooseRecordRef(sourceId: string, entityType: string, field: string) {
       >
 
       <!-- date / datetime 共用日期输入（datetime 的 before/after 以 day 为目标，见 ADR-0041） -->
-      <template v-else-if="descriptor.type === 'date' || descriptor.type === 'datetime'">
+      <template v-else-if="editorKind === 'date' || editorKind === 'datetime'">
         <DatePicker
           :mode="isRange ? 'range' : 'single'"
           :dynamic="!isRange"
@@ -344,7 +349,7 @@ function chooseRecordRef(sourceId: string, entityType: string, field: string) {
       </template>
 
       <select
-        v-else-if="descriptor.type === 'select'"
+        v-else-if="editorKind === 'enum'"
         class="qb-value"
         :value="getLiteral() as string"
         @change="setLiteral(($event.target as HTMLSelectElement).value)"
@@ -359,7 +364,7 @@ function chooseRecordRef(sourceId: string, entityType: string, field: string) {
       </select>
 
       <div
-        v-else-if="descriptor.type === 'multiSelect'"
+        v-else-if="editorKind === 'multiEnum'"
         class="qb-multi"
       >
         <label
@@ -377,7 +382,7 @@ function chooseRecordRef(sourceId: string, entityType: string, field: string) {
       </div>
 
       <select
-        v-else-if="descriptor.type === 'boolean'"
+        v-else-if="editorKind === 'boolean'"
         v-model="boolText"
         class="qb-value"
       >

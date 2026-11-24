@@ -95,12 +95,66 @@ describe('runUndoOrRedo 空历史守卫（#122）', () => {
     await flushAsync()
     editor.activateBlock(a.id)
 
-    // 只断言编排层：有得撤 ⇒ 编辑态照旧退出（#109 既有语义，不得被守卫吃掉）、
-    // 游标确实退到栈底。落库侧（restoreEntry 的 executeBatch 单事务）由
-    // BlockList.undo-redo.test.ts 的集成网覆盖 —— 那里有真实 page 注册，本网没有。
+    // 只断言编排层：有得撤 ⇒ 撤销真的执行（栈退到栈底）。编辑态本身在退过一次之后
+    // 由「恢复选区 / 落点层 / 本函数的兜底」重新建起来 —— 本夹具没有 BlockList 也没有
+    // 选区记录，落到兜底分支把原块放回去（撤销不该把用户的编辑态扔掉，2026-10-23）。
+    // 落库侧（restoreEntry 的 executeBatch 单事务）由 BlockList.undo-redo.test.ts 的
+    // 集成网覆盖 —— 那里有真实 page 注册，本网没有。
     await runUndoOrRedo(pageId, 'undo')
 
-    expect(editor.activeBlockId).toBeNull()
     expect(canUndo(pageId)).toBe(false)
+    expect(editor.activeBlockId).toBe(a.id)
+  })
+
+  /**
+   * 打字进 store 走 300ms 防抖（Editor.debouncedEmitSave）：编辑器里已有新文本、store 还是旧的。
+   * 此时若不先把正文同步进 store，`commitNow` 推的快照与栈顶内容相等 → 判回声丢掉整步，
+   * `canUndo` 也可能落到更早的一步上 ⇒ 表现为「按了没反应」或「多撤一步、光标跑到更早位置」。
+   */
+  test('撤销前先把活动编辑器里未落库的正文同步进 store（否则这一步被回声吞掉）', async () => {
+    const store = useBlockStore()
+    const editor = useEditorStore()
+    const pageId = 'page-undo-flush-before-commit'
+    const a = await store.createBlock({ pageId, content: 'hello' })
+    await store.flushSave(a.id)
+    ensureStack(pageId)
+
+    // 模拟「刚打完字、防抖还没到」：新正文只存在于编辑器里，store 仍是 'hello'
+    let flushed = 0
+    editor.registerContentFlusher(a.id, async () => {
+      flushed++
+      await store.updateBlockContent(a.id, 'hello world')
+    })
+    editor.activateBlock(a.id, 12)
+
+    const res = await runUndoOrRedo(pageId, 'undo')
+
+    expect(flushed).toBe(1)
+    // 同步进 store ⇒ 这一步能入栈 ⇒ 撤销真的执行；不修则是 null（用户按了没反应）
+    expect(res).not.toBeNull()
+  })
+
+  test('出口已注销 / blockId 不匹配时不调用（块切换后不会误同步上一个块）', async () => {
+    const store = useBlockStore()
+    const editor = useEditorStore()
+    const pageId = 'page-undo-flush-registration'
+    const a = await store.createBlock({ pageId, content: 'hello' })
+    await store.flushSave(a.id)
+    ensureStack(pageId)
+
+    let flushed = 0
+    const flusher = async () => {
+      flushed++
+      await store.updateBlockContent(a.id, 'hello world')
+    }
+    // 注销自己的出口，再挂一个别的块的：撤销时都不该被调用
+    editor.registerContentFlusher(a.id, flusher)
+    editor.registerContentFlusher(a.id, null)
+    editor.registerContentFlusher('other-block', flusher)
+    editor.activateBlock(a.id, 3)
+
+    await runUndoOrRedo(pageId, 'undo')
+
+    expect(flushed).toBe(0)
   })
 })

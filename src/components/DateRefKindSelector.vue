@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
+
 import type { DateRefKind } from '../utils/date-ref'
 import BasePopover from './common/BasePopover.vue'
 
@@ -65,7 +66,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeyDown, true))
   background: var(--bg-base);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  box-shadow: var(--shadow-modal);
+  box-shadow: var(--shadow-floating);
   padding: 4px;
   display: flex;
   flex-direction: column;
@@ -85,12 +86,11 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeyDown, true))
   font-family: inherit;
   font-size: var(--text-sm);
   color: var(--text-primary);
-  transition: background var(--transition-fast);
+  transition: background var(--dur-fast) var(--ease-out);
+}
 
-  &:hover,
-  &--active {
-    background: var(--bg-hover);
-  }
+.kind-item--active {
+  background: var(--bg-active);
 }
 
 .kind-icon {

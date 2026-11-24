@@ -37,6 +37,15 @@ function eqScalars(a: unknown, b: unknown): boolean {
 }
 
 /**
+ * daterange 值形守卫：{ start, end } 内存对象（yyyy-MM-dd 两端）。
+ * 数组（multiSelect 等值形）不算区间。
+ */
+function isDaterangeValue(v: unknown): v is { start: string; end: string } {
+  return typeof v === 'object' && v !== null && !Array.isArray(v)
+    && 'start' in v && 'end' in v
+}
+
+/**
  * 把 {@link ConditionValue} 解析为「比较目标值」。
  *
  * - literal：原值。
@@ -152,9 +161,14 @@ export function matchCondition(
     case 'lt':
       return Number(value) < Number(target)
     // date：日粒度，yyyy-MM-dd 字符串比较即可正确排序
+    // daterange（issue T8）：区间整体与参照日比较——
+    // before = 区间整体早于参照（end < 参照，严格小于：end == 参照日不算整体早于）；
+    // after  = 区间整体晚于参照（start > 参照，严格大于）。
     case 'before':
+      if (isDaterangeValue(value)) return String(value.end) < String(target)
       return String(value) < String(target)
     case 'after':
+      if (isDaterangeValue(value)) return String(value.start) > String(target)
       return String(value) > String(target)
     case 'between': {
       const [from, to] = Array.isArray(targetRaw) ? (targetRaw as [unknown, unknown]) : [targetRaw, targetRaw]
