@@ -875,6 +875,15 @@ defineExpose({
   font-size: 1.5em;
   letter-spacing: -1ch;
   line-height: inherit;
+  /* 行盒不参与（key）：inline-block 默认按**自身基线**与段落 strut 对齐，而前缀字号被放大到
+     1.5em，它的基线比正文低约 2.8px ⇒ 整段行盒被顶高（列表 24.41 → 26.41），正文下沉 1px、
+     `::before` 标记上浮 1px。渲染态两者都钉在同一处，肉眼就是「进编辑态 f 掉下去、圆点浮上来」
+     （同一列表里跟相邻项对照最明显）。改成 top 对齐 + 盒高锁「1 行」后，行盒完全由段落决定，
+     两态逐像素一致；顺带把前缀内的插入符从行盒顶拉回正文行 —— 敲第一个字时光标不再纵向跳 2px。
+     标题必须同时改写 line-height（见下面的 heading-preview-hN 组）：它的行盒由 `.heading-preview`
+     按 `leading-snug × 标题字号` 撑，前缀盒只有跟着变成同样高，插入符才会落在正文光标那一行。 */
+  vertical-align: top;
+  height: 1lh;
   -webkit-text-fill-color: transparent;
   /* 第二道保险：万一有人把上面换回 `color: transparent`，插入符也不会跟着消失 */
   caret-color: var(--text-primary);
@@ -883,13 +892,24 @@ defineExpose({
 /* 标题前缀的字号是「标题字号 × 1.46」而不是继承来的 1.5em：插入符高度取的是字号度量，
    前缀必须自己放大到标题正文那颗插入符的高度（h1 35 / h2 30 / h3 26，实测），
    否则行首光标 24px、正文 35px —— 同一个块里两种高度的光标。1.46 是实测比例（正文字体
-   上下高度 1.46–1.5em，等宽字体 1.0em）。宽度由 `width: 0` 硬压，字号放大不撑开布局。 */
-.editor-wrapper :deep(.pm-prefix-hidden.heading-preview-h1) { font-size: calc(var(--heading-1) * 1.46); }
-.editor-wrapper :deep(.pm-prefix-hidden.heading-preview-h2) { font-size: calc(var(--heading-2) * 1.46); }
-.editor-wrapper :deep(.pm-prefix-hidden.heading-preview-h3) { font-size: calc(var(--heading-3) * 1.46); }
-.editor-wrapper :deep(.pm-prefix-hidden.heading-preview-h4) { font-size: calc(var(--heading-4) * 1.46); }
-.editor-wrapper :deep(.pm-prefix-hidden.heading-preview-h5) { font-size: calc(var(--heading-5) * 1.46); }
-.editor-wrapper :deep(.pm-prefix-hidden.heading-preview-h6) { font-size: calc(var(--heading-6) * 1.46); }
+   上下高度 1.46–1.5em，等宽字体 1.0em）。宽度由 `width: 0` 硬压，字号放大不撑开布局。
+   `line-height` 同步改成「标题行高」＝ leading-snug × 标题字号，而不是继承段落那 24.4px：
+   前缀现在按 top 对齐（见上），盒高＝自己的 line-height，只有等于标题行高时它才既顶不高行盒、
+   又让插入符落在正文光标同一行（h1 实测 129.7 → 132.0，正文 132.0）。 */
+.editor-wrapper :deep(.pm-prefix-hidden.heading-preview-h1) { font-size: calc(var(--heading-1) * 1.46); line-height: calc(var(--leading-snug) * var(--heading-1)); }
+.editor-wrapper :deep(.pm-prefix-hidden.heading-preview-h2) { font-size: calc(var(--heading-2) * 1.46); line-height: calc(var(--leading-snug) * var(--heading-2)); }
+.editor-wrapper :deep(.pm-prefix-hidden.heading-preview-h3) { font-size: calc(var(--heading-3) * 1.46); line-height: calc(var(--leading-snug) * var(--heading-3)); }
+.editor-wrapper :deep(.pm-prefix-hidden.heading-preview-h4) { font-size: calc(var(--heading-4) * 1.46); line-height: calc(var(--leading-snug) * var(--heading-4)); }
+.editor-wrapper :deep(.pm-prefix-hidden.heading-preview-h5) { font-size: calc(var(--heading-5) * 1.46); line-height: calc(var(--leading-snug) * var(--heading-5)); }
+.editor-wrapper :deep(.pm-prefix-hidden.heading-preview-h6) { font-size: calc(var(--heading-6) * 1.46); line-height: calc(var(--leading-snug) * var(--heading-6)); }
+
+/* h4–h6 的段落行高也要跟着标题级别走：`.tiptap` 的 `leading-snug × 1em + 2px` 是**正文**行高
+   （24.4px），而 h4–h6 的标题行高比它还小（23.52 / 22.4 / 21.28）—— 段落 strut 会把行盒顶回
+   24.4，比渲染态高 1px、正文下移 1px。h1–h3 的行高更大、把 strut 吃掉了，不需要这条
+   （实测给 h1/h2 也加会让块高多出 4px，两态反而更不一致）。 */
+.editor-wrapper :deep(.tiptap p:has(.heading-preview-h4)) { line-height: calc(var(--leading-snug) * var(--heading-4)); }
+.editor-wrapper :deep(.tiptap p:has(.heading-preview-h5)) { line-height: calc(var(--leading-snug) * var(--heading-5)); }
+.editor-wrapper :deep(.tiptap p:has(.heading-preview-h6)) { line-height: calc(var(--leading-snug) * var(--heading-6)); }
 
 /* `-1ch` 已经把 advance 精确压到 0（选区宽 0）；这条再兜两层：
    ① 选区不画底色（选区只属于正文）；
@@ -921,7 +941,15 @@ defineExpose({
   content: attr(data-marker);
   position: absolute;
   right: var(--space-2);
-  min-width: 14px;
+  /* 列宽**锁死** 14px，与渲染态 `.block-list-marker` 的 `flex: 0 0 14px` 同宽。
+     这里原来是 `min-width: 14px`：圆点 `•` 的字形 advance 恰好 16px（> 14），会把盒子
+     撑到 16px；而盒子右缘由 `right: 8px` 钉死 ⇒ 多出的 2px 全落在左缘，左对齐的字形
+     跟着左移 2px —— 无序列表的圆点因此比渲染态偏左 2px（有序列表 `1.` 内容不到 14px，
+     撑不动，所以只有圆点露出来）。锁死宽度后溢出的方向、量都与渲染态一致。 */
+  width: 14px;
+  /* flex item 的 `min-width: auto` 会解析成 min-content，这里同理：必须一并归零，
+     否则 `10.` 这类超宽序号仍会把盒子撑宽（同渲染态那三条注释） */
+  min-width: 0;
   color: var(--text-tertiary);
   /* span 自身是 text-fill transparent，会被 ::before 继承 —— 必须显式翻回来，
      否则标记字形也是透明的（实测：不写这行标记整个消失） */

@@ -534,6 +534,10 @@ $callout-tones: (
   // flex item 的 `min-width: auto` 会把宽度撑到 min-content（`10.` ≈ 20px），
   // 锁列宽必须一并置 0，否则上面两条白写
   min-width: 0;
+  // 锁宽后 `10.` 的内容比盒子宽：`white-space` 继承自 `.block-list` 的 `pre-wrap`，
+  // 会在 `10` 与 `.` 之间断行 —— 标记自己折成两行，整块高度凭空多一行（正文照旧一行）。
+  // 必须 `pre`：不折行，超宽内容按 `text-align: right` 向左溢出，与编辑态伪元素同向同量。
+  white-space: pre;
   color: var(--text-tertiary);
   // 等宽数字：`9.` → `10.` 时标记列不抖，正文起点不动
   font-variant-numeric: tabular-nums;
