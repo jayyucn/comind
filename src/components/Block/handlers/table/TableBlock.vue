@@ -3177,6 +3177,16 @@ defineExpose({
   background: var(--table-strip-active-bg);
 }
 
+/* 选区（块多选）态不出行列条。
+   条是块内编辑 chrome：块被选中时既不能点进去编辑，也不该从条开范围菜单；
+   而条本身在 --z-sticky（10）上、选区遮罩在 --z-sticky - 1（见 _block.scss），
+   悬停一块被选中的表格会看到深色长条横切选区色块、还紧贴上一块的选区下沿。
+   特异度写到 (0,4,0) 是为了压过 `.table-block:hover .strip` 与 `.strip.is-active`。 */
+.block.cb-selected .table-block .strip {
+  opacity: 0;
+  pointer-events: none;
+}
+
 /* 「+」贴在条的端点：列条在右端（列右边界）、行条在底端（行底边）。
    它是条的子元素——鼠标从条移到「+」上时父级 hover 不中断，不会闪。 */
 .strip-plus {

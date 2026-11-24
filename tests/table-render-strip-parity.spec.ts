@@ -159,6 +159,46 @@ test('渲染态 hover 出条时，左侧入口图标仍可点（条没有盖住�
   await expect(page.locator('.block-entry-menu')).toBeVisible()
 })
 
+test('块选区态：悬停表格不再浮出行列条', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto('/')
+  await page.waitForLoadState('networkidle')
+  await page.waitForTimeout(600)
+
+  // 两段文本 + 表格：Ctrl+A 两次（600ms 内、同一块）升级为块全选
+  await page.locator('.block').first().click()
+  await page.waitForTimeout(300)
+  await page.keyboard.type('alpha', { delay: 20 })
+  await page.keyboard.press('Enter')
+  await page.waitForTimeout(200)
+  await page.keyboard.type('beta', { delay: 20 })
+  await page.keyboard.press('Enter')
+  await page.waitForTimeout(200)
+  await page.keyboard.type('/table', { delay: 30 })
+  await page.waitForTimeout(400)
+  await page.keyboard.press('Enter')
+  await page.waitForTimeout(800)
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(400)
+
+  await page.locator('.block-text').first().click()
+  await page.waitForTimeout(300)
+  await page.keyboard.press('Control+a')
+  await page.waitForTimeout(80)
+  await page.keyboard.press('Control+a')
+  await page.waitForTimeout(400)
+  expect(await page.locator('.block.cb-selected').count()).toBeGreaterThan(0)
+
+  // 悬停表格本体：条是块内编辑 chrome，选区态必须一条都不出
+  const table = page.locator('.table-block').first()
+  const box = await table.boundingBox()
+  if (!box) throw new Error('量不到表格')
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.waitForTimeout(400)
+  expect((await opacities(page, COL)).every(v => v === 0)).toBe(true)
+  expect((await opacities(page, ROW)).every(v => v === 0)).toBe(true)
+})
+
 test('渲染态点「+」：插入一行并激活块，光标落到新行首格', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto('/')
