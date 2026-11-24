@@ -1006,3 +1006,21 @@ describe('parseParagraphStyle — 标题的 format 双读兜底', () => {
     expect(parseParagraphStyle('普通段落').style).toBe('text')
   })
 })
+
+describe('末尾换行落地（渲染态空末行不塌）', () => {
+  it('content 以 \\n 结尾：输出末尾补零宽空格，撑起空末行盒', () => {
+    const html = renderContentToHtml({ segments: [], content: '首行\n' })
+    expect(html).toContain('&#8203;')
+  })
+
+  it('content 不以 \\n 结尾：不补（不影响既有断言与选择行为）', () => {
+    const html = renderContentToHtml({ segments: [], content: '首行' })
+    expect(html).not.toContain('&#8203;')
+  })
+
+  it('结构化 segments 路径同样补', () => {
+    const segments: RenderSegment[] = [{ type: 'text', start: 0, end: 3, text: '首行\n' }]
+    const html = renderContentToHtml({ segments, content: '首行\n' })
+    expect(html).toContain('&#8203;')
+  })
+})

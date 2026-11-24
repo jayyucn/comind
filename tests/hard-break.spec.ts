@@ -133,3 +133,37 @@ test('标题与列表带硬换行时样式不塌回普通正文', async ({ page 
   await expect(page.locator('.ProseMirror-focused .heading-preview:not(.pm-prefix-hidden)').first())
     .toBeVisible()
 })
+
+test('高亮块：编辑态保住壳底，渲染态空末行不塌', async ({ page }) => {
+  await boot(page)
+  const block = page.locator('.block').first()
+  await block.click()
+  await wait(250)
+  await page.keyboard.type('首行')
+  await page.keyboard.press('Shift+Enter')
+  await wait(150)
+  // 第二行留空直接退出 —— content = '首行\n'
+  await page.keyboard.press('Escape')
+  await wait(400)
+  await block.hover()
+  await wait(150)
+  await block.locator('.block-entry-icon').click()
+  await wait(300)
+  await page.locator('.block-entry-menu [data-text-style="callout"]').click()
+  await wait(400)
+
+  // 渲染态：空末行要有高度（两个行盒，而非塌成一行）
+  const text = block.locator('.block-text')
+  const lineH = await text.evaluate(el => parseFloat(getComputedStyle(el).lineHeight))
+  const h = (await text.boundingBox())?.height ?? 0
+  expect(h).toBeGreaterThanOrEqual(lineH * 1.8)
+
+  // 编辑态：壳底不透明（激活时同色相加深，不再置 transparent）
+  await text.click()
+  await wait(400)
+  const bg = await block.locator('.block-content').evaluate(
+    el => getComputedStyle(el).backgroundColor,
+  )
+  expect(bg).not.toBe('rgba(0, 0, 0, 0)')
+  await block.screenshot({ path: 'test-results/callout-editing-bg.png' })
+})

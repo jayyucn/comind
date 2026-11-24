@@ -403,10 +403,20 @@ $callout-tones: (
   --callout-alpha: 3%;
 }
 
-// 激活态让壳底退让：--block-active-bg 铺在 .block-text 上，与语义底叠会串色
-// （暗色 --info 与 --block-active-bg 同为 #818CF8 系）。激活信号交给描边与图标。
+// 激活态（编辑中）保住语义底：全局激活底 --block-active-bg 铺在 .block-text 上，
+// 与语义底叠会串色（暗色 --info 与 --block-active-bg 同为 #818CF8 系）——壳内把
+// 全局紫底关掉，「编辑中」的信号改为壳底同色相加深一档（8% → 12%），色相不漂移。
 .block.active>.block-row .block-content[class*='is-callout-'] {
-  background: transparent;
+  --callout-alpha: 12%;
+
+  & .block-text {
+    background: transparent;
+  }
+}
+
+// 壳内已有行内底色（quiet 3%）时，激活加深同步减半：两层标注本就同色，叠深会糊
+.block.active>.block-row .block-content.is-callout-quiet {
+  --callout-alpha: 6%;
 }
 
 // 语义图标：既是"这是哪种语义"的标签，也是切换入口。

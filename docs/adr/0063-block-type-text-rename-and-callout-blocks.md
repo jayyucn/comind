@@ -52,7 +52,11 @@ format.callout?: 'info' | 'warn' | 'success' | 'danger'
 
 `.block-content` 是唯一只含正文的层（`display:flex`，无 padding），左边界即正文起点。图标作为它的第一个子元素（`flex: 0 0 20px`），正文与图标同处一个 flex 行 —— 这是唯一不需要负边距、也不需要改动胶囊几何的排法。
 
-配色复用 `--info / --warning / --success / --error`，四语义各固定一个字形的图标（`CalloutToneIcon.vue`），不开放自定义。
+配色复用 `--info / --warning / --success / --error`，四语义各固定一个字形的图标（字形单源 `utils/callout.ts` 的 `CALLOUT_TONE_ICONS`，块内图标、切换浮层与入口胶囊读同一份），不开放自定义。
+
+**编辑态不退让**：全局激活底 `--block-active-bg` 铺在 `.block-text` 上，与语义底叠会串色（暗色 `--info` 与之同为 `#818CF8` 系）——壳内把它关掉，激活信号改为壳底**同色相加深**（8% → 12%；quiet 3% → 6%），色相不漂移，编辑中壳底始终可见。
+
+配套的一条渲染规则：正文以 `\n` 结尾时（块内 Shift+Enter 留下空末行），渲染输出末尾补一个零宽空格 —— `pre-wrap` 容器里空末行盒按 CSS 规则零高塌掉，不补则「第二行是空行」在渲染态直接消失，与编辑态不同形。
 
 ### D4 与段落样式互斥，执行点单点
 
@@ -108,10 +112,10 @@ Rust：`storage/entity/block.rs`（两条读路径归一 + 缺省值）、`types
 | `src/components/Block/components/CalloutToneIcon.vue` | 新增：四语义固定字形 |
 | `src/components/Block/index.vue` | 壳 class、语义图标、切换浮层、互斥、`hasInlineBg`、标题兜底、入口胶囊改读语义字形 |
 | `src/components/Block/components/BlockMenuTextStyle.vue` | 七格两行网格（4+3：文本/H1/H2/H3 ‖ 有序/无序/高亮），「高亮」是普通一格（`data-text-style="callout"`），`calloutTone` prop 决定点亮 |
-| `src/composables/useContentRenderer.ts` | `parseParagraphStyle` 的 `format` 双读兜底 |
+| `src/composables/useContentRenderer.ts` | `parseParagraphStyle` 的 `format` 双读兜底；正文末尾 `\n` 时输出补零宽空格（空末行不塌） |
 | `src/components/Block/handlers/bullet/BulletRender.vue` | 把 `blockFormat` 喂给样式判定 |
 | `src/components/Block/composables/useBlockEditorLifecycle.ts` | Enter 继承 | 
-| `src/styles/components/_block.scss` | 壳、图标列、切换浮层、行内底色收敛、激活态让位 |
+| `src/styles/components/_block.scss` | 壳、图标列、切换浮层、行内底色收敛、激活态同色相加深（不退让） |
 
 ### 已知代价
 

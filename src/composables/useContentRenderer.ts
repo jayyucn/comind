@@ -311,9 +311,13 @@ function renderContentToHtml(input: RenderInput): string {
   const { content, segments, blockId = '' } = input
   const marks = input.inlineMarks
   const markOffset = input.markOffset ?? 0
+  // 末尾换行落地：pre-wrap 容器里，正文末尾的 `\n` 产生的**空末行盒**按 CSS 规则
+  // 零高塌掉 ——「第二行是空行」在渲染态直接消失（编辑态 hardBreak 有行高，两侧不同形）。
+  // 补一个零宽空格让末行盒有内容、撑起高度；只补在输出末尾，不碰正文内部断行。
+  const trailingBreak = content.endsWith('\n') ? '&#8203;' : ''
   if (!segments || segments.length === 0) {
     // Fallback: no structured data available — use plain escaped text
-    return renderTextWithMarks(content, 0, content.length, marks, markOffset)
+    return renderTextWithMarks(content, 0, content.length, marks, markOffset) + trailingBreak
   }
 
   const parts: string[] = []
@@ -438,7 +442,7 @@ function renderContentToHtml(input: RenderInput): string {
     }
   }
 
-  return parts.join('')
+  return parts.join('') + trailingBreak
 }
 
 export function useContentRenderer() {
