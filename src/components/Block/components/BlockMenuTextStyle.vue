@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { Heading1, Heading2, Heading3, Highlighter, List, ListOrdered, Type } from 'lucide-vue-next'
+import { Heading1, Heading2, Heading3, List, ListOrdered, Type } from 'lucide-vue-next'
 import type { Component } from 'vue'
 
 import type { ParagraphStyle } from '../../../composables/useContentRenderer'
 import type { CalloutTone } from '../../../utils/callout'
+import { CALLOUT_ENTRY_ICON } from '../../../utils/callout'
 
 /**
  * 块入口菜单顶部的**文本样式区**，七个格子排两行（4 + 3）：
@@ -44,7 +45,7 @@ const STYLE_ITEMS: TextStyleItem[] = [
   { style: 'h3', icon: Heading3, label: '三级标题' },
   { style: 'ol', icon: ListOrdered, label: '有序列表' },
   { style: 'ul', icon: List, label: '无序列表' },
-  { style: 'callout', icon: Highlighter, label: '高亮' },
+  { style: 'callout', icon: CALLOUT_ENTRY_ICON, label: '高亮' },
 ]
 </script>
 

@@ -70,7 +70,7 @@ test('文本样式菜单分两行：4+3 七格（含「高亮」普通格）', a
   await menu.screenshot({ path: 'test-results/text-style-menu.png' })
 })
 
-test('高亮块入口胶囊显示语义字形', async ({ page }) => {
+test('高亮块入口胶囊显示统一高亮标识', async ({ page }) => {
   await boot(page)
   const block = page.locator('.block').first()
   await block.click()
@@ -85,14 +85,14 @@ test('高亮块入口胶囊显示语义字形', async ({ page }) => {
   await wait(300)
   await page.locator('.block-entry-menu [data-text-style="callout"]').click()
   await wait(400)
-  // 壳已挂语义 class；入口胶囊字形 = 语义图标（lucide-vue-next 给 svg 挂 lucide-<名> 类），
-  // 不再是被降级的 T（lucide-type）
+  // 壳已挂语义 class；入口胶囊字形 = 统一高亮标识（与菜单「高亮」格同一个
+  // StickyNote），不再是被降级的 T（lucide-type）
   const first = page.locator('.block').first()
   await expect(first.locator('.block-content.is-callout-warn')).toHaveCount(1)
-  await expect(first.locator('.block-entry-icon svg.lucide-triangle-alert')).toHaveCount(1)
+  await expect(first.locator('.block-entry-icon svg.lucide-sticky-note')).toHaveCount(1)
   await expect(first.locator('.block-entry-icon svg.lucide-type')).toHaveCount(0)
   await first.hover()
-  await wait(150)
+  await wait(500)
   await first.locator('.block-bullet').screenshot({ path: 'test-results/callout-entry-icon.png' })
 })
 

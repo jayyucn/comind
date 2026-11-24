@@ -10,7 +10,7 @@
  * `BlockCard` 既无 `format` 也无 `type`，所以高亮在查询块 / 看板 / 卡片里不可见。
  */
 
-import { AlertTriangle, Ban, CircleCheck, Info } from 'lucide-vue-next'
+import { AlertTriangle, Ban, CircleCheck, Info, StickyNote } from 'lucide-vue-next'
 import type { Component } from 'vue'
 
 /** 四种语义。顺序即菜单里的呈现顺序（提示 → 注意 → 完成 → 禁止） */
@@ -30,11 +30,20 @@ export const CALLOUT_TONE_LABELS: Record<CalloutTone, string> = {
 }
 
 /**
- * 字形单源：语义与图标**一一固定**，不开放自定义。
+ * 高亮的统一标识字形：菜单「高亮」格与入口胶囊**同一个固定图标**。
+ *
+ * 便签造型与高亮壳的「彩色卡片」视觉同构，且与四语义字形（Info/三角/勾/Ban）
+ * 零撞形 —— 已否决按语义换胶囊字形：语义细节由块内图标承担，胶囊只回答
+ * 「这是高亮块」。
+ */
+export const CALLOUT_ENTRY_ICON: Component = StickyNote
+
+/**
+ * 语义字形单源：语义与图标**一一固定**，不开放自定义。
  *
  * 开放换图标会让同一种语义出现四种样子，之后任何按语义扫视（或聚合）都不成立；
  * 语义的辨识成本必须由「固定的形状」承担，颜色只是辅助（暗色四色仍可分，但形状更快）。
- * 读方三处：入口胶囊字形、块内可点的语义图标、切换语义浮层的四个选项 —— 同一份映射，
+ * 读方两处：块内可点的语义图标、切换语义浮层的四个选项 —— 同一份映射，
  * 避免「选的图标」与「显示出来的图标」对不上。
  */
 export const CALLOUT_TONE_ICONS: Record<CalloutTone, Component> = {

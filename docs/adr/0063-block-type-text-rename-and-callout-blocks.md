@@ -52,7 +52,7 @@ format.callout?: 'info' | 'warn' | 'success' | 'danger'
 
 `.block-content` 是唯一只含正文的层（`display:flex`，无 padding），左边界即正文起点。图标作为它的第一个子元素（`flex: 0 0 20px`），正文与图标同处一个 flex 行 —— 这是唯一不需要负边距、也不需要改动胶囊几何的排法。
 
-配色复用 `--info / --warning / --success / --error`，四语义各固定一个字形的图标（字形单源 `utils/callout.ts` 的 `CALLOUT_TONE_ICONS`，块内图标、切换浮层与入口胶囊读同一份），不开放自定义。
+配色复用 `--info / --warning / --success / --error`。字形分两层：**统一标识** `CALLOUT_ENTRY_ICON`（`StickyNote`，便签造型与彩色卡片壳同构、与四语义字形零撞形）——菜单「高亮」格与入口胶囊读它，胶囊只回答「这是高亮块」，已否决按语义换胶囊字形；**语义字形** `CALLOUT_TONE_ICONS`（Info/AlertTriangle/CircleCheck/Ban 一一固定，不开放自定义）——只活在块内可点图标与切换浮层。
 
 **编辑态不退让**：全局激活底 `--block-active-bg` 铺在 `.block-text` 上，与语义底叠会串色（暗色 `--info` 与之同为 `#818CF8` 系）——壳内把它关掉，激活信号改为壳底**同色相加深**（8% → 12%；quiet 3% → 6%），色相不漂移，编辑中壳底始终可见。
 
@@ -108,9 +108,9 @@ Rust：`storage/entity/block.rs`（两条读路径归一 + 缺省值）、`types
 
 | 文件 | 动作 |
 |---|---|
-| `src/utils/callout.ts` | 新增：枚举、文案、`calloutToneOf`、`calloutFormatPatch`、`CALLOUT_TONE_ICONS` 字形单源 |
+| `src/utils/callout.ts` | 新增：枚举、文案、`calloutToneOf`、`calloutFormatPatch`、`CALLOUT_ENTRY_ICON` 统一标识、`CALLOUT_TONE_ICONS` 语义字形单源 |
 | `src/components/Block/components/CalloutToneIcon.vue` | 新增：四语义固定字形 |
-| `src/components/Block/index.vue` | 壳 class、语义图标、切换浮层、互斥、`hasInlineBg`、标题兜底、入口胶囊改读语义字形 |
+| `src/components/Block/index.vue` | 壳 class、语义图标、切换浮层、互斥、`hasInlineBg`、标题兜底、入口胶囊读统一高亮标识 |
 | `src/components/Block/components/BlockMenuTextStyle.vue` | 七格两行网格（4+3：文本/H1/H2/H3 ‖ 有序/无序/高亮），「高亮」是普通一格（`data-text-style="callout"`），`calloutTone` prop 决定点亮 |
 | `src/composables/useContentRenderer.ts` | `parseParagraphStyle` 的 `format` 双读兜底；正文末尾 `\n` 时输出补零宽空格（空末行不塌） |
 | `src/components/Block/handlers/bullet/BulletRender.vue` | 把 `blockFormat` 喂给样式判定 |
