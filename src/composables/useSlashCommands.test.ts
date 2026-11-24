@@ -453,16 +453,16 @@ describe('useSlashCommands - executeTemplateCommand', () => {
   })
 })
 
-// ─── /code 切换代码块 ───────────────────────────────────────────────────────────
+// ─── /code-block 切换代码块 / /code 行内代码 ─────────────────────────────────────
 
 /**
- * 回归：`/code` 回车后命令文本不能被吃进代码块。
+ * 回归：`/code-block` 回车后命令文本不能被吃进代码块。
  *
  * 打字走 `Editor.vue` 的 300ms 防抖保存，切类型会卸载编辑器并取消该防抖，
- * 若不在切换前把编辑器正文显式落库，store 里仍是 `/code` ——
- * CodeMirrorEditor 用 `props.content` 初始化，代码块里就会显示 `/code`。
+ * 若不在切换前把编辑器正文显式落库，store 里仍是 `/code-block` ——
+ * CodeMirrorEditor 用 `props.content` 初始化，代码块里就会显示命令原文。
  */
-describe('useSlashCommands - /code 切换代码块', () => {
+describe('useSlashCommands - /code-block 切换代码块', () => {
   function makeEditor(textAfterDelete: string) {
     const chain = {
       deleteRange: vi.fn().mockReturnThis(),
@@ -475,19 +475,19 @@ describe('useSlashCommands - /code 切换代码块', () => {
     }
   }
 
-  const codeCommand = commands.find(c => c.id === 'code')!
+  const codeBlockCommand = commands.find(c => c.id === 'code-block')!
 
   it('切类型前把编辑器当前正文写回 store', async () => {
     const updateBlockContent = vi.fn().mockResolvedValue(undefined)
     const updateBlockType = vi.fn().mockResolvedValue(undefined)
     vi.mocked(useBlockStore).mockReturnValue({
-      getBlock: vi.fn(() => ({ id: 'block-1', content: '/code' })),
+      getBlock: vi.fn(() => ({ id: 'block-1', content: '/code-block' })),
       updateBlockContent,
       updateBlockType,
     } as any)
 
     const editor = makeEditor('')
-    await (codeCommand.action as any)({
+    await (codeBlockCommand.action as any)({
       editor,
       range: { from: 1, to: 1 },
       blockId: 'block-1',
@@ -504,12 +504,12 @@ describe('useSlashCommands - /code 切换代码块', () => {
     const updateBlockContent = vi.fn().mockResolvedValue(undefined)
     const updateBlockType = vi.fn().mockResolvedValue(undefined)
     vi.mocked(useBlockStore).mockReturnValue({
-      getBlock: vi.fn(() => ({ id: 'block-1', content: '/code const a = 1' })),
+      getBlock: vi.fn(() => ({ id: 'block-1', content: '/code-block const a = 1' })),
       updateBlockContent,
       updateBlockType,
     } as any)
 
-    await (codeCommand.action as any)({
+    await (codeBlockCommand.action as any)({
       editor: makeEditor('const a = 1'),
       range: { from: 1, to: 1 },
       blockId: 'block-1',
@@ -527,7 +527,7 @@ describe('useSlashCommands - /code 切换代码块', () => {
       updateBlockType,
     } as any)
 
-    await (codeCommand.action as any)({
+    await (codeBlockCommand.action as any)({
       editor: makeEditor(''),
       range: { from: 1, to: 1 },
       blockId: 'block-1',
@@ -535,6 +535,36 @@ describe('useSlashCommands - /code 切换代码块', () => {
 
     expect(updateBlockContent).not.toHaveBeenCalled()
     expect(updateBlockType).toHaveBeenCalledWith('block-1', 'code')
+  })
+})
+
+describe('useSlashCommands - /code 行内代码', () => {
+  const codeCommand = commands.find(c => c.id === 'code')!
+
+  it('/code 只套 code mark，不切块类型（命令文本已由菜单删除）', async () => {
+    const setCode = vi.fn().mockReturnThis()
+    const focus = vi.fn().mockReturnThis()
+    const run = vi.fn()
+    const editor = {
+      chain: vi.fn(() => ({ setCode, focus, run })),
+    }
+    const updateBlockType = vi.fn()
+
+    await (codeCommand.action as any)({
+      editor,
+      range: { from: 1, to: 1 },
+      blockId: 'block-1',
+    })
+
+    expect(setCode).toHaveBeenCalled()
+    expect(run).toHaveBeenCalled()
+    expect(updateBlockType).not.toHaveBeenCalled()
+  })
+
+  it('键入 /code 时 Code block 排在 Code 前（优先展示代码块）', () => {
+    const list = filterCommands('code')
+    expect(list[0].id).toBe('code-block')
+    expect(list[1].id).toBe('code')
   })
 })
 

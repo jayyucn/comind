@@ -144,6 +144,18 @@ async function insertCodeBlock({ editor, range, blockId }: CommandProps) {
 }
 
 /**
+ * 插入行内代码（markdown 单反引号语义）
+ *
+ * 走 TipTap 的 `code` mark（StarterKit 内置，自带 `` `x` `` 输入规则）：正文里不落反引号字面，
+ * 与加粗/斜体共用 `format.inlineMarks` 这一套单一真源，渲染态由 `wrapInlineHtml` 输出 `<code>`。
+ * 命令文本已由 `executeCommand` 删除并把光标放回 `/` 原位，这里只把 mark 套到光标处：
+ * 空选区 ⇒ stored mark（接着输入的字直接是代码），有选区 ⇒ 整段转代码。
+ */
+function insertInlineCode({ editor }: CommandProps) {
+  editor.chain().setCode().focus().run()
+}
+
+/**
  * 插入页面引用链接
  */
 function insertPageRef({ editor, range }: CommandProps) {
@@ -499,14 +511,8 @@ export const commands: Command[] = [
     icon: '🖍️',
     action: insertFormat('^^')
   },
-  {
-    id: 'code',
-    name: 'Code',
-    alias: ['代码'],
-    group: '文本格式',
-    icon: '💻',
-    action: insertCodeBlock
-  },
+  // 代码块在前：键入 `/code` 时两者同为 name 前缀命中（score 相同），数组顺序即展示顺序，
+  // 保持「/code 回车 = 代码块」的既有肌肉记忆；行内代码（`Code`）排其后按 ↓ 选。
   {
     id: 'code-block',
     name: 'Code block',
@@ -514,6 +520,15 @@ export const commands: Command[] = [
     group: '文本格式',
     icon: '📄',
     action: insertCodeBlock
+  },
+  // `/code` — 行内代码（单反引号语义，GitHub 渲染效果）
+  {
+    id: 'code',
+    name: 'Code',
+    alias: ['代码', '行内代码', 'inline-code'],
+    group: '文本格式',
+    icon: '💻',
+    action: insertInlineCode
   },
   {
     id: 'h1',
