@@ -14,11 +14,18 @@ import { parseParagraphStyle } from '../composables/useContentRenderer'
  * 一起变大），于是这里做两件事：
  *
  * 1. **藏起来**：前缀范围内的字符套 `pm-prefix-hidden`（零字号，见 Editor.vue 的样式）；
- * 2. **换成标记**：列表项在前缀起点放一个 widget（无序 `•`、有序出序号），与渲染态
- *    `.block-list-marker` 同宽同色 —— 两态文字起点因此落在同一列。标题**不出标记**：
- *    渲染态的标题本来就没有标记列，再摆一个 `H1` 字牌反而让两态文字起点差一列。
+ * 2. **换成标记**：列表项在前缀 span 上挂 `data-marker`，由 **`::before` 伪元素**画出
+ *    标记（无序 `•`、有序出序号），与渲染态 `.block-list-marker` 同宽同色 —— 两态文字
+ *    起点因此落在同一列。标题**不出标记**：渲染态的标题本来就没有标记列，再摆一个
+ *    `H1` 字牌反而让两态文字起点差一列。
  *
  * 文档内容一个字都不改（只是视觉装饰），所以保存、撤销、光标偏移、跨块选区全都不受影响。
+ *
+ * **标记为什么必须是伪元素而不是 widget 节点**：Chromium 的三连击/整段选区在初始绘制时
+ * 会把选区内的非可编辑 widget 字形**重影到文字起点**（ol 第二项实测：灰 `2.` 叠进选区
+ * 里的 `2` 上成贯穿线），且该路径无视 `::selection`/`visibility`/`opacity`/`user-select`
+ * （全部实测无效），选区落定后的任何一次重绘才恢复正常。伪元素不是 DOM 文本，选区
+ * 管线根本碰不到它 —— 这是唯一在不改文档的前提下按得住的画法。
  *
  * 前缀**始终**藏起来，不因光标位置露出（`# ` 在标题里露出来比什么都显眼）。能不能藏得住
  * 全看 Editor.vue 里 `.pm-prefix-hidden` 的写法：布局宽度压成 0、字号与所在段落一致，
@@ -30,28 +37,11 @@ import { parseParagraphStyle } from '../composables/useContentRenderer'
  * h1 正文 35px 高）。宽度由 `width: 0` 硬压，字号变大不会撑开布局。
  */
 
-interface PrefixMarker {
-  /** 顶替正文字符的那个标记文本 */
-  label: string
-  /** 决定样式与对齐（见 Editor.vue 的 `.pm-prefix-marker-*`） */
-  kind: 'unordered' | 'ordered'
-}
-
 /** 前缀 → 标记；标题与无前缀返回 null */
-function markerOf(info: ParagraphStyleInfo): PrefixMarker | null {
+function markerOf(info: ParagraphStyleInfo): { label: string, kind: 'unordered' | 'ordered' } | null {
   if (info.style === 'ul') return { label: '•', kind: 'unordered' }
   if (info.style === 'ol') return { label: `${info.listIndex ?? 1}.`, kind: 'ordered' }
   return null
-}
-
-function createMarkerElement(marker: PrefixMarker): HTMLElement {
-  const el = document.createElement('span')
-  el.className = `pm-prefix-marker pm-prefix-marker-${marker.kind}`
-  el.textContent = marker.label
-  // 标记是正文的替代品、不是可编辑内容：不接光标、不接指针、读屏跳过
-  el.setAttribute('contenteditable', 'false')
-  el.setAttribute('aria-hidden', 'true')
-  return el
 }
 
 /** 从文档状态算出全部装饰（导出供单测直接调用） */
@@ -77,11 +67,16 @@ export function buildParagraphStyleDecorations(state: EditorState): DecorationSe
     const prefixClass = info.level
       ? `pm-prefix-hidden heading-preview-h${info.level}`
       : 'pm-prefix-hidden'
-    decorations.push(Decoration.inline(from, prefixEnd, { class: prefixClass }))
+
+    // 标记经 data-* 下发给伪元素（见 Editor.vue 的 `.pm-prefix-hidden[data-marker]::before`）；
+    // 绝不能回到 widget 节点 —— 选区初始绘制会把它重影进选区（见文件头注释）。
     const marker = markerOf(info)
+    const attrs: Record<string, string> = { class: prefixClass }
     if (marker) {
-      decorations.push(Decoration.widget(from, () => createMarkerElement(marker), { side: -1 }))
+      attrs['data-marker'] = marker.label
+      attrs['data-marker-kind'] = marker.kind
     }
+    decorations.push(Decoration.inline(from, prefixEnd, attrs))
 
     // 标题整行放大：类名与样式沿用既有的 heading-preview（含 h4–h6 的弱化）。
     // 范围**必须从前缀之后起**：若从 pos 1 起，ProseMirror 会把两个 inline 装饰合并到同一个
@@ -109,7 +104,7 @@ export const ParagraphStylePreviewExtension = Extension.create({
       new Plugin({
         key: new PluginKey('paragraphStylePreview'),
         props: {
-          // 每次渲染按当前文档 + 选区重算（选区一变也要重算：光标进前缀就要露出原文）
+          // 每次渲染按当前文档重算（前缀始终隐藏，与选区无关）
           decorations(state) {
             return buildParagraphStyleDecorations(state)
           },

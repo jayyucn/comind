@@ -49,9 +49,9 @@ function hiddenText(handle: DecorationHandle): string | null {
   return handle.element.querySelector('.pm-prefix-hidden')?.textContent ?? null
 }
 
-/** widget 标记的文本（`H1` / `•` / `7.`） */
+/** 标记的文本（`H1` / `•` / `7.`）—— 经 data-marker 属性下发给 ::before 伪元素 */
 function markerText(handle: DecorationHandle): string | null {
-  return handle.element.querySelector('.pm-prefix-marker')?.textContent ?? null
+  return handle.element.querySelector('.pm-prefix-hidden')?.getAttribute('data-marker') ?? null
 }
 
 afterEach(() => {
@@ -96,7 +96,7 @@ describe('ParagraphStylePreviewExtension — 编辑态前缀换标记', () => {
     const handle = createEditor('7. 第七项')
     expect(hiddenText(handle)).toBe('7. ')
     expect(markerText(handle)).toBe('7.')
-    expect(handle.element.innerHTML).toContain('pm-prefix-marker-ordered')
+    expect(handle.element.innerHTML).toContain('data-marker-kind="ordered"')
   })
 
   it('h4–h6：样式格不认（style 为 null），但放大仍按级别走', () => {

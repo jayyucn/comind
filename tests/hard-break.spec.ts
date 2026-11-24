@@ -70,6 +70,31 @@ test('文本样式菜单分两行：4+3 七格（含「高亮」普通格）', a
   await menu.screenshot({ path: 'test-results/text-style-menu.png' })
 })
 
+test('列表标记是伪元素而非 widget：整段选区不重影字形', async ({ page }) => {
+  await boot(page)
+  const block = page.locator('.block').first()
+  await block.click()
+  await wait(250)
+  await page.keyboard.type('1. 第一项')
+  await wait(300)
+  await page.keyboard.press('Enter')
+  await wait(200)
+  await page.keyboard.type('2个')
+  await wait(500)
+  const second = page.locator('.block').nth(1)
+  const box = (await second.locator('.ProseMirror').boundingBox())!
+  // 三连击整段选中：Chromium 会把选区内非可编辑 widget 的字形重影到文字起点
+  // （暗色实测 `2.` 叠成贯穿线）——标记必须是 ::before 伪元素，选区管线碰不到
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2, { clickCount: 3 })
+  await wait(300)
+  // widget 已除名；标记经 data-marker 下发
+  await expect(page.locator('.pm-prefix-marker')).toHaveCount(0)
+  const hidden = second.locator('.pm-prefix-hidden')
+  await expect(hidden).toHaveAttribute('data-marker', '2.')
+  await expect(hidden).toHaveAttribute('data-marker-kind', 'ordered')
+  await second.screenshot({ path: 'test-results/list-marker-pseudo.png' })
+})
+
 test('高亮块入口胶囊显示统一高亮标识', async ({ page }) => {
   await boot(page)
   const block = page.locator('.block').first()
@@ -86,10 +111,10 @@ test('高亮块入口胶囊显示统一高亮标识', async ({ page }) => {
   await page.locator('.block-entry-menu [data-text-style="callout"]').click()
   await wait(400)
   // 壳已挂语义 class；入口胶囊字形 = 统一高亮标识（与菜单「高亮」格同一个
-  // StickyNote），不再是被降级的 T（lucide-type）
+  // CALLOUT_ENTRY_ICON，现为灯泡图标），不再是被降级的 T（lucide-type）
   const first = page.locator('.block').first()
   await expect(first.locator('.block-content.is-callout-warn')).toHaveCount(1)
-  await expect(first.locator('.block-entry-icon svg.lucide-sticky-note')).toHaveCount(1)
+  await expect(first.locator('.block-entry-icon svg.lucide-lightbulb')).toHaveCount(1)
   await expect(first.locator('.block-entry-icon svg.lucide-type')).toHaveCount(0)
   await first.hover()
   await wait(500)

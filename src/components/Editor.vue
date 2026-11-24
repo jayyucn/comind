@@ -615,6 +615,9 @@ function serializeMarks(doc: PMNode): InlineMarkRange[] {
         case 'strike':
           attrs.strike = true
           break
+        case 'code':
+          attrs.code = true
+          break
         case 'inlineTextColor':
           if (isTagColorToken(mark.attrs.color)) attrs.color = mark.attrs.color
           break
@@ -810,6 +813,17 @@ defineExpose({
   word-break: break-word;
 }
 
+/* 行内代码（markdown 单反引号语义，GitHub 风格）：等宽 + 弱底 + 小圆角。
+   渲染态同款规则在 styles/components/_block.scss 的 `.block-text code` ——
+   两处数值必须一致，否则进出编辑时文字宽度与行高会跳。 */
+.editor-wrapper :deep(.tiptap) code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  padding: 0.12em 0.35em;
+  border-radius: 4px;
+  background: var(--code-bg);
+}
+
 /* 编辑态正文前缀（`# ` / `- ` / `1. `）：字符藏起来；列表再摆一个 widget 标记代替
    （标题不出标记，渲染态的标题也没有标记列）。
    标记与渲染态 `.block-list-marker` 同宽（14px）同色（--text-tertiary）同间距（--space-2）
@@ -850,6 +864,7 @@ defineExpose({
 .editor-wrapper :deep(.pm-prefix-hidden) {
   display: inline-block;
   width: 0;
+  position: relative;
   white-space: pre;
   font-family: monospace;
   /* 等宽字体的上下高度只有 1.0em（正文字体约 1.5em）：同字号插入符会从 24 矮到 16。
@@ -873,26 +888,51 @@ defineExpose({
 .editor-wrapper :deep(.pm-prefix-hidden.heading-preview-h5) { font-size: calc(var(--heading-5) * 1.46); }
 .editor-wrapper :deep(.pm-prefix-hidden.heading-preview-h6) { font-size: calc(var(--heading-6) * 1.46); }
 
-/* `-1ch` 已经把 advance 精确压到 0（选区宽 0）；这条再兜一层：万一换字体后字宽超预期，
-   前缀被选中时也不会画底色。选区只该属于正文。 */
+/* `-1ch` 已经把 advance 精确压到 0（选区宽 0）；这条再兜两层：
+   ① 选区不画底色（选区只属于正文）；
+   ② `color: transparent` —— Chromium 已知坑：`-webkit-text-fill-color: transparent`
+      的文字被选区盖住时会用选区文字色**重绘**（暗色实测：隐藏前缀 `2. ` 在选区里
+      显形，`2` 与 `.` 叠出贯穿线）。`::selection` 里补 `color` 才按得住；只靠
+      text-fill-color 不行（实测 CSSOM 规则在、绘制仍穿透）。 */
 .editor-wrapper :deep(.pm-prefix-hidden::selection) {
   background-color: transparent;
+  color: transparent;
   -webkit-text-fill-color: transparent;
 }
 
-.editor-wrapper :deep(.pm-prefix-marker) {
-  display: inline-block;
-  min-width: 14px;
-  margin-right: var(--space-2);
-  color: var(--text-tertiary);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  user-select: none;
-  pointer-events: none;
+/* 列表标记：装饰经 data-marker 下发标签，画在前缀 span 的 ::before 上。
+   绝对定位挂在文字列左侧、不占布局 —— Chromium 三连击选区的初始绘制会把选区内
+   非可编辑 widget 的字形重影到文字起点（ol 第二项实测 `2.` 叠成贯穿线，且该路径
+   无视 ::selection / visibility / opacity / user-select），伪元素不是 DOM 文本，
+   选区管线碰不到它。 */
+.editor-wrapper :deep(.pm-prefix-hidden[data-marker]) {
+  /* 顶替原 widget 的占位（min-width 14 + margin 8），文字起点两态同列 */
+  padding-left: calc(14px + var(--space-2));
 }
 
-/* 有序列表序号右对齐：`1.` 与 `10.` 的句点落在同一列（同渲染态） */
-.editor-wrapper :deep(.pm-prefix-marker-ordered) {
+.editor-wrapper :deep(.pm-prefix-hidden[data-marker]::before) {
+  content: attr(data-marker);
+  position: absolute;
+  right: var(--space-2);
+  min-width: 14px;
+  color: var(--text-tertiary);
+  /* span 自身是 text-fill transparent，会被 ::before 继承 —— 必须显式翻回来，
+     否则标记字形也是透明的（实测：不写这行标记整个消失） */
+  -webkit-text-fill-color: var(--text-tertiary);
+  /* letter-spacing 也继承（span 的 -1ch）：ch 按标记自己的 16px 字体解析 ≈ -8px，
+     "2." 两字叠在一起并随 text-align:right 溢出盒右缘 —— 必须归位 */
+  letter-spacing: normal;
+  font-family: var(--font-sans);
+  font-size: var(--editor-font-size);
+  font-variant-numeric: tabular-nums;
+  white-space: pre;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* 有序列表序号右对齐：`1.` 与 `10.` 的句点落在同一列（同渲染态）；
+   无序列表维持左对齐（• 靠在盒左缘，与旧 widget 形态一致） */
+.editor-wrapper :deep(.pm-prefix-hidden[data-marker-kind='ordered']::before) {
   text-align: right;
 }
 
