@@ -507,7 +507,10 @@ defineExpose({ syncContent, focus, focusRange, getText, markSaved, getEditor })
     class="code-editor-wrapper"
     :class="{ 'is-collapsed': collapsed }"
   >
-    <header class="code-header">
+    <header
+      class="code-header"
+      data-text-selection-ignore
+    >
       <button
         type="button"
         class="code-toggle"
@@ -636,6 +639,8 @@ defineExpose({ syncContent, focus, focusRange, getText, markSaved, getEditor })
   background: transparent;
   font-size: var(--text-xs);
   color: var(--text-secondary);
+  /* 头部是纯交互区（折叠开关 / 语言 / 换行 / 复制），拖拽不应选中文字 */
+  user-select: none;
 }
 
 .code-editor-wrapper:not(.is-collapsed) .code-header {
@@ -655,7 +660,6 @@ defineExpose({ syncContent, focus, focusRange, getText, markSaved, getEditor })
   font-size: var(--text-xs);
   font-weight: var(--font-medium);
   cursor: pointer;
-  user-select: none;
 }
 
 .code-toggle:hover {

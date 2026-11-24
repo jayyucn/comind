@@ -106,8 +106,16 @@ function handleDragEnd(intent?: DragEndIntent | null) {
     blockStore.scheduleSave(id)
   }
   blockStore.reconcileCollapse(affected.emptied, affected.gained)
-  // 同级顺序变了 ⇒ 有序列表序号要重排（拖动是唯一绕过 store 的跨父/换序入口）
-  blockStore.scheduleOrderedListReindex(props.pageId)
+  // 拖动是唯一绕过 store 的跨父/换序入口 ⇒ 有序段要重排。作用域只取被碰到的父组：
+  // 同级换序不会进 gained/emptied，所以还要从 changed 的块反推它们现在的父块。
+  const touchedParents = new Set<string | null>()
+  for (const id of changed) {
+    const block = blockStore.getBlock(id)
+    if (block) touchedParents.add(block.parentId)
+  }
+  for (const id of affected.gained) touchedParents.add(id)
+  for (const id of affected.emptied) touchedParents.add(id)
+  blockStore.scheduleOrderedListReindex(props.pageId, { parents: touchedParents })
 }
 
 // ── 双击底部留白区域创建新 block ──

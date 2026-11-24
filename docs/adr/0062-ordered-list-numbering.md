@@ -3,6 +3,7 @@
 - Status: accepted
 - Date: 2026-11-23
 - 关联: ADR-0009（分层边界）、ADR-0025（块复制粘贴）、ADR-0039（块入口与段落样式）、ADR-0046（撤销历史）
+- Superseded: D2 的「段首字面作起点」与 D3 的锚点机制已由 [ADR-0064](./0064-ordered-list-always-restart-at-one.md) 取代（段首恒 1）；D1/D4/D5/D6/D7 仍然有效
 
 ## Context
 

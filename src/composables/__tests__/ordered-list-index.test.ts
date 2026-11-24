@@ -2,22 +2,22 @@ import { describe, expect, it } from 'vitest'
 
 import {
   isOrderedListItem,
+  isTransparentForNumbering,
   nextOrderedListIndexAfter,
   orderedListContentAtIndex,
   orderedListIndexAt,
   orderedListIndexForNewItem,
   planOrderedListNumbering,
-  readOrderedListAnchor,
-  withOrderedListAnchor,
   type OrderedListSibling,
 } from '../ordered-list-index'
 
-function sibling(id: string, content: string, anchor?: number | null): OrderedListSibling {
-  return {
-    id,
-    content,
-    format: anchor == null ? {} : withOrderedListAnchor({}, anchor),
-  }
+function sibling(id: string, content: string, extra: Partial<OrderedListSibling> = {}): OrderedListSibling {
+  return { id, content, format: {}, ...extra }
+}
+
+/** 透明块：非文本块（代码 / 图片 / 表格 / 查询 / embed） */
+function opaque(id: string, type = 'code'): OrderedListSibling {
+  return { id, content: `// ${id}`, type, format: {} }
 }
 
 /** 只取「需要写回」的那些，形状压成 id → 序号，断言可读 */
@@ -29,22 +29,19 @@ function changedMap(plan: ReturnType<typeof planOrderedListNumbering>) {
   return Object.fromEntries(plan.filter(e => e.changed).map(e => [e.id, e.content]))
 }
 
-describe('readOrderedListAnchor / withOrderedListAnchor', () => {
-  it('缺省与非法值一律 null', () => {
-    expect(readOrderedListAnchor(undefined)).toBeNull()
-    expect(readOrderedListAnchor({})).toBeNull()
-    expect(readOrderedListAnchor({ olIndex: '3' })).toBeNull()
-    expect(readOrderedListAnchor({ olIndex: Number.NaN })).toBeNull()
-    expect(readOrderedListAnchor({ olIndex: -1 })).toBeNull()
+describe('isTransparentForNumbering', () => {
+  it('文本块不透明；非文本块透明', () => {
+    expect(isTransparentForNumbering(sibling('a', '正文'))).toBe(false)
+    expect(isTransparentForNumbering(sibling('a', '1. A'))).toBe(false)
+    expect(isTransparentForNumbering(opaque('c', 'code'))).toBe(true)
+    expect(isTransparentForNumbering(opaque('q', 'query'))).toBe(true)
+    expect(isTransparentForNumbering(opaque('t', 'table'))).toBe(true)
   })
 
-  it('写入 / 清除都是新对象，不改入参', () => {
-    const source = { bold: true }
-    const written = withOrderedListAnchor(source, 10)
-    expect(written).toEqual({ bold: true, olIndex: 10 })
-    expect(source).toEqual({ bold: true })
-    expect(readOrderedListAnchor(written)).toBe(10)
-    expect(withOrderedListAnchor(written, null)).toEqual({ bold: true })
+  it('高亮块透明（format.callout），脏值不算', () => {
+    expect(isTransparentForNumbering(sibling('a', '注意', { format: { callout: 'warn' } }))).toBe(true)
+    expect(isTransparentForNumbering(sibling('a', '注意', { format: { callout: 'nope' } }))).toBe(false)
+    expect(isTransparentForNumbering(sibling('a', '注意', { format: {} }))).toBe(false)
   })
 })
 
@@ -68,51 +65,26 @@ describe('planOrderedListNumbering', () => {
     expect(changedMap(plan)).toEqual({ c: '2. C', d: '3. D' })
   })
 
-  it('段首字面即起始值：存量 5,6,7 不被改写成 1,2,3', () => {
+  it('段首恒 1：存量 5,6,7 归一到 1,2,3', () => {
     const plan = planOrderedListNumbering([
       sibling('a', '5. A'),
       sibling('b', '6. B'),
       sibling('c', '7. C'),
     ])
-    expect(desiredMap(plan)).toEqual({ a: 5, b: 6, c: 7 })
-    expect(changedMap(plan)).toEqual({})
+    expect(desiredMap(plan)).toEqual({ a: 1, b: 2, c: 3 })
+    expect(changedMap(plan)).toEqual({ a: '1. A', b: '2. B', c: '3. C' })
   })
 
-  it('段中锚点：手写跳号后后续跟着变，前面不动（允许断点 1, 10, 11）', () => {
+  it('段中跳号抹平：1,10,11 → 1,2,3', () => {
     const plan = planOrderedListNumbering([
       sibling('a', '1. A'),
-      sibling('b', '10. B', 10),
-      sibling('c', '3. C'),
-      sibling('d', '4. D'),
+      sibling('b', '10. B'),
+      sibling('c', '11. C'),
     ])
-    expect(desiredMap(plan)).toEqual({ a: 1, b: 10, c: 11, d: 12 })
-    expect(changedMap(plan)).toEqual({ c: '11. C', d: '12. D' })
+    expect(changedMap(plan)).toEqual({ b: '2. B', c: '3. C' })
   })
 
-  it('锚点与字面不一致时以锚点为准（写回对齐）', () => {
-    const plan = planOrderedListNumbering([sibling('a', '2. A', 10)])
-    expect(changedMap(plan)).toEqual({ a: '10. A' })
-  })
-
-  it('改小锚点同样带动后续（2 插在 5 之后）', () => {
-    const plan = planOrderedListNumbering([
-      sibling('a', '4. A'),
-      sibling('b', '5. B'),
-      sibling('c', '6. C', 2),
-      sibling('d', '7. D'),
-    ])
-    expect(desiredMap(plan)).toEqual({ a: 4, b: 5, c: 2, d: 3 })
-  })
-
-  it('段首锚点优先于字面（删段首后强制回 1）', () => {
-    const plan = planOrderedListNumbering([
-      sibling('a', '2. A', 1),
-      sibling('b', '3. B'),
-    ])
-    expect(changedMap(plan)).toEqual({ a: '1. A', b: '2. B' })
-  })
-
-  it('遇正文 / 标题 / 无序列表即断（各自成段，新段从字面起算）', () => {
+  it('遇正文 / 标题 / 无序列表即断（新段从 1 起算）', () => {
     const plan = planOrderedListNumbering([
       sibling('a', '1. A'),
       sibling('b', '2. B'),
@@ -122,20 +94,52 @@ describe('planOrderedListNumbering', () => {
       sibling('h', '## 标题'),
       sibling('u', '- 无序'),
     ])
-    expect(desiredMap(plan)).toEqual({ a: 1, b: 2, d: 7, e: 8 })
-    expect(changedMap(plan)).toEqual({})
+    expect(desiredMap(plan)).toEqual({ a: 1, b: 2, d: 1, e: 2 })
+    expect(changedMap(plan)).toEqual({ d: '1. D', e: '2. E' })
     expect(plan.filter(e => e.desired === null).map(e => e.id)).toEqual(['c', 'h', 'u'])
   })
 
-  it('跨段不串号：中间夹无序列表即断段，后段以自身字面为段首（决策 3）', () => {
+  it('空文本块也算断点：新段回 1', () => {
     const plan = planOrderedListNumbering([
       sibling('a', '1. A'),
-      sibling('u', '- 无序'),
-      sibling('b', '9. B'),
-      sibling('c', '10. C'),
+      sibling('blank', ''),
+      sibling('b', '2. B'),
     ])
-    expect(desiredMap(plan)).toEqual({ a: 1, b: 9, c: 10 })
+    expect(desiredMap(plan)).toEqual({ a: 1, b: 1 })
+    expect(changedMap(plan)).toEqual({ b: '1. B' })
+  })
+
+  it('非文本块透明：段跨过代码块/图片继续，也不占号', () => {
+    const plan = planOrderedListNumbering([
+      sibling('a', '1. A'),
+      opaque('code', 'code'),
+      opaque('img', 'image'),
+      sibling('b', '2. B'),
+    ])
+    expect(desiredMap(plan)).toEqual({ a: 1, b: 2 })
     expect(changedMap(plan)).toEqual({})
+  })
+
+  it('非文本块断掉之后的下半段：仍从 1 起（透明只跨块，不跨正文）', () => {
+    const plan = planOrderedListNumbering([
+      sibling('a', '1. A'),
+      opaque('code', 'code'),
+      sibling('t', '正文'),
+      sibling('b', '5. B'),
+    ])
+    expect(changedMap(plan)).toEqual({ b: '1. B' })
+  })
+
+  it('高亮块透明：不打断段、不占号，其字面原样保留', () => {
+    const callout = sibling('n', '3. 注意这里', { format: { callout: 'warn' } })
+    const plan = planOrderedListNumbering([
+      sibling('a', '1. A'),
+      callout,
+      sibling('b', '5. B'),
+    ])
+    expect(desiredMap(plan)).toEqual({ a: 1, b: 2 })
+    expect(plan[1]).toEqual({ id: 'n', literal: null, desired: null, content: '3. 注意这里', changed: false })
+    expect(changedMap(plan)).toEqual({ b: '2. B' })
   })
 
   it('空列表项（`3. ` 只有标记）保持标记并参与编号', () => {
@@ -167,19 +171,20 @@ describe('orderedListIndexAt / nextOrderedListIndexAfter', () => {
   const siblings = [sibling('a', '3. A'), sibling('b', '4. B'), sibling('t', '正文')]
 
   it('取推导值（而非字面）', () => {
-    expect(orderedListIndexAt(siblings, 'a')).toBe(3)
-    expect(orderedListIndexAt(siblings, 'b')).toBe(4)
+    expect(orderedListIndexAt(siblings, 'a')).toBe(1)
+    expect(orderedListIndexAt(siblings, 'b')).toBe(2)
     expect(orderedListIndexAt(siblings, 't')).toBeNull()
   })
 
   it('Enter 续行 = 推导值 + 1，非列表项从 1 起', () => {
-    expect(nextOrderedListIndexAfter(siblings, 'a')).toBe(4)
+    expect(nextOrderedListIndexAfter(siblings, 'a')).toBe(2)
+    expect(nextOrderedListIndexAfter(siblings, 'b')).toBe(3)
     expect(nextOrderedListIndexAfter(siblings, 't')).toBe(1)
   })
 })
 
 describe('orderedListIndexForNewItem（菜单转有序列表）', () => {
-  it('前面是列表 ⇒ 接上（决策 7）', () => {
+  it('前面是列表 ⇒ 接上', () => {
     expect(orderedListIndexForNewItem(
       [sibling('a', '1. A'), sibling('b', '2. B'), sibling('x', '随便')],
       'x',
@@ -195,6 +200,13 @@ describe('orderedListIndexForNewItem（菜单转有序列表）', () => {
     expect(orderedListIndexForNewItem(
       [sibling('a', '1. A'), sibling('b', '5. B'), sibling('c', '6. C')],
       'b',
+    )).toBe(2)
+  })
+
+  it('前面只有透明块 ⇒ 跨过去接更前面的段', () => {
+    expect(orderedListIndexForNewItem(
+      [sibling('a', '1. A'), opaque('code', 'code'), sibling('x', '随便')],
+      'x',
     )).toBe(2)
   })
 })

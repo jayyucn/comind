@@ -5,8 +5,9 @@ import { createPinia, setActivePinia } from 'pinia'
  * 有序列表序号推导（store 层）。
  *
  * 纯函数层的推演规则见 `composables/__tests__/ordered-list-index.test.ts`；这里只钉
- * 「纯函数管不了」的四件事：谁被写回（活动块跳过）、锚点的生灭、派生数据（行内格式 /
- * renderSegments）跟着平移、以及各结构入口（删除 / 缩进 / 拖动 / 粘贴）有没有触发重排。
+ * 「纯函数管不了」的四件事：谁被写回（活动块跳过）、归一到哪个段（作用域）、
+ * 派生数据（行内格式 / renderSegments）跟着平移、以及各结构入口（删除 / 缩进 / 粘贴）
+ * 有没有触发重排。
  */
 vi.mock('../wasm/client', () => ({
   initCoreClient: vi.fn(async () => ({
@@ -64,66 +65,56 @@ describe('有序列表序号推导 — store', () => {
     expect(store.applyOrderedListNumbering(pageId)).toEqual([])
   })
 
-  test('手写跳号 ⇒ 落成锚点，后续跟着变、前面不动（1, 10, 11）', async () => {
+  test('段首恒 1：存量 5,6,7 归一到 1,2,3，存量 olIndex 顺手丢弃', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-1'
+    const created = []
+    created.push(await store.createBlock({ pageId, content: '5. A', format: { olIndex: 5, bold: true } }))
+    created.push(await store.createBlock({ pageId, content: '6. B' }))
+    created.push(await store.createBlock({ pageId, content: '7. C' }))
+
+    store.applyOrderedListNumbering(pageId)
+
+    expect(created.map(b => b.content)).toEqual(['1. A', '2. B', '3. C'])
+    // 锚点字段已不在，其它 format 键原样
+    expect(created[0].format.olIndex).toBeUndefined()
+    expect(created[0].format.bold).toBe(true)
+  })
+
+  test('段中手写跳号被抹平：1,10,11 → 1,2,3', async () => {
     const store = useBlockStore()
     const pageId = 'page-1'
     const [a, b, c] = await seed(store, pageId, ['1. A', '2. B', '3. C'])
 
-    // 用户把第 2 项手改成 `10. `
     await store.updateBlockContent(b.id, '10. B')
-    store.applyOrderedListNumbering(pageId, { authoredBlockId: b.id })
-
-    expect(b.format.olIndex).toBe(10)
-    expect([a.content, b.content, c.content]).toEqual(['1. A', '10. B', '11. C'])
-  })
-
-  test('手写值回到自然顺排 ⇒ 锚点清除', async () => {
-    const store = useBlockStore()
-    const pageId = 'page-1'
-    const [a, b] = await seed(store, pageId, ['1. A', '10. B'])
-    b.format = { ...b.format, olIndex: 10 }
-
-    await store.updateBlockContent(b.id, '2. B')
-    store.applyOrderedListNumbering(pageId, { authoredBlockId: b.id })
-
-    expect(b.format.olIndex).toBeUndefined()
-    expect([a.content, b.content]).toEqual(['1. A', '2. B'])
-  })
-
-  test('锚点与字面不符时以锚点为准（写回对齐，不丢手写跳号）', async () => {
-    const store = useBlockStore()
-    const pageId = 'page-1'
-    const [, b, c] = await seed(store, pageId, ['1. A', '5. B', '6. C'])
-    b.format = { ...b.format, olIndex: 10 }
 
     store.applyOrderedListNumbering(pageId)
 
-    expect([b.content, c.content]).toEqual(['10. B', '11. C'])
+    expect([a.content, b.content, c.content]).toEqual(['1. A', '2. B', '3. C'])
   })
 
-  test('删段首 ⇒ 接替者锚定为 1，随后整段从 1 重排', async () => {
+  test('删段首 ⇒ 接替者回到 1，整段从 1 重排', async () => {
     const store = useBlockStore()
     const pageId = 'page-1'
     const [a, b, c] = await seed(store, pageId, ['1. A', '2. B', '3. C'])
 
     await store.deleteBlocks([a.id])
 
-    expect(b.format.olIndex).toBe(1)
     store.applyOrderedListNumbering(pageId)
     expect([b.content, c.content]).toEqual(['1. B', '2. C'])
   })
 
-  test('删段中项 ⇒ 不打锚点，只顺排', async () => {
+  test('删段中项 ⇒ 只顺排，不打任何标记', async () => {
     const store = useBlockStore()
     const pageId = 'page-1'
     const [a, b, c] = await seed(store, pageId, ['1. A', '2. B', '3. C'])
 
     await store.deleteBlocks([b.id])
 
-    expect(a.format.olIndex).toBeUndefined()
-    expect(c.format.olIndex).toBeUndefined()
     store.applyOrderedListNumbering(pageId)
     expect(c.content).toBe('2. C')
+    expect(a.content).toBe('1. A')
+    expect(c.format.olIndex).toBeUndefined()
   })
 
   test('活动块跳过写回，但仍影响后续编号连续性', async () => {
@@ -139,6 +130,47 @@ describe('有序列表序号推导 — store', () => {
     expect(b.content).toBe('9. B') // 正在打字：字面原样留着，交给编辑器
     expect(c.content).toBe('3. C') // 后续按推导（2）续号
     expect(a.content).toBe('1. A')
+  })
+
+  test('作用域：只归一被碰到的父组，别的段一个字段都不动', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-1'
+    const [a, b] = await seed(store, pageId, ['5. A', '6. B'])
+    const child1 = await store.createBlock({ pageId, content: '5. C', parentId: a.id })
+    const child2 = await store.createBlock({ pageId, content: '6. D', parentId: a.id })
+
+    const changed = store.applyOrderedListNumbering(pageId, { parents: [a.id] })
+
+    expect(changed.sort()).toEqual([child1.id, child2.id].sort())
+    expect([child1.content, child2.content]).toEqual(['1. C', '2. D'])
+    // 根组没被碰到 ⇒ 保持原样（段首恒 1 也不越界改写）
+    expect([a.content, b.content]).toEqual(['5. A', '6. B'])
+  })
+
+  test('透明块：代码块不打断段、不占号', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-1'
+    const a = await store.createBlock({ pageId, content: '5. A' })
+    const code = await store.createBlock({ pageId, content: 'const x = 1', type: 'code' })
+    const b = await store.createBlock({ pageId, content: '6. B' })
+
+    store.applyOrderedListNumbering(pageId)
+
+    expect([a.content, b.content]).toEqual(['1. A', '2. B'])
+    expect(code.content).toBe('const x = 1')
+  })
+
+  test('高亮块：透明且自身不占号，前缀原样保留', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-1'
+    const a = await store.createBlock({ pageId, content: '5. A' })
+    const note = await store.createBlock({ pageId, content: '3. 注意', format: { callout: 'warn' } })
+    const b = await store.createBlock({ pageId, content: '6. B' })
+
+    store.applyOrderedListNumbering(pageId)
+
+    expect([a.content, b.content]).toEqual(['1. A', '2. B'])
+    expect(note.content).toBe('3. 注意')
   })
 
   test('改号时行内格式跟着平移（不吞正文里的粗体）', async () => {
@@ -180,16 +212,16 @@ describe('有序列表序号推导 — store', () => {
     expect(i.renderSegments).toEqual([{ type: 'text', start: 1, end: 7 }])
   })
 
-  test('缩进跨父 ⇒ 锚点作废（锚点只在本父层内有效）', async () => {
+  test('缩进跨父 ⇒ 新父组里从 1 起算', async () => {
     const store = useBlockStore()
     const pageId = 'page-1'
     const [a, b] = await seed(store, pageId, ['1. A', '5. B'])
-    b.format = { ...b.format, olIndex: 5 }
 
     await store.indent(b.id)
 
     expect(b.parentId).toBe(a.id)
-    expect(b.format.olIndex).toBeUndefined()
+    store.applyOrderedListNumbering(pageId)
+    expect(b.content).toBe('1. B')
   })
 
   test('Enter 续行序号 = 推导值 + 1（不是字面 + 1）', async () => {

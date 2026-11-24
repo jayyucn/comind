@@ -18,7 +18,7 @@
  * 内容为空时渲染成 `<span></span>`（无文本节点，与真机一致）。
  */
 import { describe, test, expect, beforeEach, afterEach } from 'vitest'
-import { atomicUnitSpans, caretBlockOffsetFromDomSelection, collapsedRangeAtBlockOffset, selectionClientRects, type SelectionRect } from './selection-geometry'
+import { atomicUnitSpans, blockOffsetFromPoint, caretBlockOffsetFromDomSelection, collapsedRangeAtBlockOffset, selectionClientRects, type SelectionRect } from './selection-geometry'
 import type { BlockOffset } from './text-range'
 
 /** 构造一页（数组下标 = 文档序），空串模拟空行 */
@@ -448,5 +448,75 @@ describe('selectionClientRects - 多 pane 同页作用域隔离', () => {
     // 反向：head(b0,1) 在 anchor(b1,2) 之前 → start=b0,end=b1；矩形仍来自右 pane（100/101）。
     // b0 覆盖 "bc"(2)、b1 覆盖 "de"(2)。
     expect(painted(selectionClientRects(at(1, 2), at(0, 1), rightRoot))).toEqual([[100, 2], [101, 2]])
+  })
+})
+
+/**
+ * 交互 chrome（代码块 header）不得进文本坐标系（2026-11-24 用户截图）。
+ *
+ * 代码块 header（折叠开关 / 语言 / 自动换行 / 复制）渲染在 `.block-content` **内部**，
+ * 旧实现把它当正文文本节点：`collapsedRangeAtBlockOffset(blockId, 0)` 落在 header 首个
+ * 文本节点上，于是拖拽时高亮色带铺到工具栏按钮；`textContent` 偏移也被 header 文本撑长，
+ * 复制/删除切错字符。修复后 header 带 `data-text-selection-ignore`，整棵子树被跳过。
+ *
+ * DOM 形状照 `CodeMirrorEditor.vue`：`.block-content > .code-editor-wrapper > .code-header`
+ * + `.cm-editor > .cm-content > .cm-line`。
+ */
+describe('代码块 header（data-text-selection-ignore）不参与文本选区', () => {
+  function buildCodeBlock(): void {
+    document.body.innerHTML =
+      '<div class="block-list"><div data-block-id="b0" data-i="0"><div class="block-content">' +
+      '<div class="code-editor-wrapper">' +
+      '<header class="code-header" data-text-selection-ignore>' +
+      '<button class="code-toggle"><span>代码块</span></button>' +
+      '<div class="code-toolbar"><button>TypeScript</button><button>自动换行</button><button>复制</button></div>' +
+      '</header>' +
+      '<div class="code-editor-body"><div class="cm-editor"><div class="cm-content">' +
+      '<div class="cm-line">const a = 1</div></div></div></div>' +
+      '</div></div></div></div>'
+  }
+
+  /** 正文（CM 行）唯一文本节点 */
+  function bodyTextNode(): Text {
+    return document.querySelector('[data-block-id="b0"] .cm-line')!.firstChild as Text
+  }
+
+  test('偏移 0 落在正文首字符（旧实现落在 header 的「代码块」上）', () => {
+    buildCodeBlock()
+    const range = collapsedRangeAtBlockOffset('b0', 0)
+    expect(range).not.toBeNull()
+    expect(range!.startContainer).toBe(bodyTextNode())
+    expect(range!.startOffset).toBe(0)
+  })
+
+  test('光标在 header 内（点语言按钮）→ caretBlockOffsetFromDomSelection 返回 null', () => {
+    buildCodeBlock()
+    const langText = document.querySelector('.code-toolbar button')!.firstChild as Text
+    window.getSelection()!.collapse(langText, 3)
+    expect(caretBlockOffsetFromDomSelection()).toBeNull()
+  })
+
+  test('正文偏移不被 header 文本撑长：光标在正文首字符返回 offset 0', () => {
+    buildCodeBlock()
+    window.getSelection()!.collapse(bodyTextNode(), 0)
+    expect(caretBlockOffsetFromDomSelection()).toEqual({ blockId: 'b0', offset: 0 })
+  })
+
+  test('高亮矩形不含 header 文本：覆盖字符数等于正文选中长度（left = 6）', () => {
+    buildCodeBlock()
+    // 正文 "const a = 1" 的 [3,9) → "st a =" 共 6 字符
+    expect(painted(selectionClientRects(at(0, 3), at(0, 9)))).toEqual([[0, 6]])
+  })
+
+  test('坐标命中 header 内按钮：blockOffsetFromPoint 返回 null（拖拽起点被判无效）', () => {
+    buildCodeBlock()
+    const btn = document.querySelector('.code-toolbar button') as HTMLElement
+    // jsdom 无布局，elementFromPoint 恒 null/未实现：直接钉住命中结果
+    Object.defineProperty(document, 'elementFromPoint', { configurable: true, value: () => btn })
+    try {
+      expect(blockOffsetFromPoint(10, 10)).toBeNull()
+    } finally {
+      delete (document as { elementFromPoint?: unknown }).elementFromPoint
+    }
   })
 })

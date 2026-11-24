@@ -109,7 +109,8 @@ const { blockOffsetFromPointMock, caretBlockOffsetMock } = vi.hoisted(() => ({
 
 vi.mock('../../../services/selection-geometry', () => ({
   blockOffsetFromPoint: blockOffsetFromPointMock,
-  caretBlockOffsetFromDomSelection: caretBlockOffsetMock
+  caretBlockOffsetFromDomSelection: caretBlockOffsetMock,
+  SELECTION_IGNORE_SELECTOR: '[data-text-selection-ignore]',
 }))
 
 describe('useBlockEditorLifecycle', () => {
@@ -600,10 +601,11 @@ describe('useBlockEditorLifecycle', () => {
       expect(editorStore.activateBlock).toHaveBeenCalledWith('b2', 3)
     })
 
-    it('有序项 → 序号 +1（`3. ` → `4. `）', async () => {
+    it('有序项 → 序号 +1（段首恒 1：`3. ` 是第 1 项，续行给 `2. `）', async () => {
       const { lifecycle, blockStore, editorStore } = setupList('3. 第三项')
       await lifecycle.handleSplit(8)
-      expect(blockStore.blocks.find(b => b.id === 'b2')?.content).toBe('4. ')
+      // ADR-0064：段首恒 1，字面 `3.` 会在失活后归一成 `1.`，续行按推导值 +1
+      expect(blockStore.blocks.find(b => b.id === 'b2')?.content).toBe('2. ')
       expect(editorStore.activateBlock).toHaveBeenCalledWith('b2', 4)
     })
 
@@ -1081,6 +1083,28 @@ describe('useBlockEditorLifecycle', () => {
       expect(sel.startTextExtend).not.toHaveBeenCalled()
       expect(sel.startTextTracking).not.toHaveBeenCalled()
       expect(pd).not.toHaveBeenCalled()
+    })
+
+    it('点在交互 chrome（代码块 header）上：不启动拖拽、不记录光标坐标', () => {
+      const sel = { textRange: { value: null }, startTextTracking: vi.fn(), startTextExtend: vi.fn(), toggleBlock: vi.fn() }
+      const { lifecycle, editorStore } = setup(sel)
+      const setCoordsSpy = vi.spyOn(editorStore, 'setClickCoords').mockImplementation(() => {})
+      const header: any = { closest: (s: string) => (s === '[data-text-selection-ignore]' ? header : null) }
+      const e = {
+        target: header,
+        button: 0,
+        clientX: 30,
+        clientY: 40,
+        ctrlKey: false,
+        metaKey: false,
+        shiftKey: false,
+        preventDefault: () => {},
+      } as any
+
+      lifecycle.handleContentMousedown(e)
+
+      expect(sel.startTextTracking).not.toHaveBeenCalled()
+      expect(setCoordsSpy).not.toHaveBeenCalled()
     })
   })
 

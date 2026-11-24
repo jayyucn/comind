@@ -28,6 +28,24 @@ function contentRoot(blockEl: HTMLElement): HTMLElement {
 }
 
 /**
+ * 内容区里的**纯交互 chrome**：不属于正文、不能进文本坐标系、也不能作为选区端点。
+ *
+ * 目前只有代码块 header（折叠开关 / 语言 / 自动换行 / 复制）。它渲染在 `.block-content`
+ * 内部，于是旧实现把「代码块」「TypeScript」「自动换行」「复制」这些标签当成正文文本节点：
+ * ① `collapsedRangeAtBlockOffset(0)` 落在 header 首个文本节点 ⇒ 高亮色带铺到按钮上；
+ * ② 拖拽经过 header 时 `blockOffsetFromPoint` 命中 header 文本 ⇒ 选区端点跳进工具栏；
+ * ③ `textContent` 偏移被 header 文本撑长 ⇒ 复制/删除切错字符。
+ * 标记在 DOM 上（而非按块类型硬判），新增同类 chrome 只需加属性。
+ */
+export const SELECTION_IGNORE_SELECTOR = '[data-text-selection-ignore]'
+
+/** 节点是否位于选择忽略区内（含忽略区元素自身） */
+function isInSelectionIgnoreZone(node: Node): boolean {
+  const el = node.nodeType === Node.ELEMENT_NODE ? (node as Element) : node.parentElement
+  return !!el && !!el.closest(SELECTION_IGNORE_SELECTOR)
+}
+
+/**
  * 由屏幕坐标定位 block 内的字符偏移（UTF-16 码元）。
  * 返回 { blockId, offset }；offset 为 block 内容区渲染文本(textContent)中的偏移。
  *
@@ -39,6 +57,8 @@ function contentRoot(blockEl: HTMLElement): HTMLElement {
  */
 export function blockOffsetFromPoint(x: number, y: number): BlockOffset | null {
   const el = document.elementFromPoint(x, y)
+  // 命中交互 chrome（代码块 header）：不是正文落点，不给端点——否则选区端点会跳进工具栏
+  if (el?.closest(SELECTION_IGNORE_SELECTOR)) return null
   const blockEl = el?.closest('[data-block-id]') as HTMLElement | null
   if (!blockEl) return null
 
@@ -78,13 +98,18 @@ export function caretBlockOffsetFromDomSelection(): BlockOffset | null {
   const root = contentRoot(blockEl)
   // bullet 列 / 属性区不作为文本选区起点（与内容区拖拽的命中面一致）
   if (!root.contains(node)) return null
+  // 交互 chrome（代码块 header）同样不是起点
+  if (isInSelectionIgnoreZone(node)) return null
   const offset = textNodeOffsetInRoot(root, node, sel.anchorOffset)
   return offset === null ? null : { blockId, offset }
 }
 
-/** 遍历 root 下所有文本节点；回调返回 false 提前终止 */
+/** 遍历 root 下所有文本节点；回调返回 false 提前终止。选择忽略区（交互 chrome）整棵跳过 */
 function walkTextNodes(root: Node, fn: (node: Text) => false | void): void {
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode: (node) =>
+      isInSelectionIgnoreZone(node) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
+  })
   let node = walker.nextNode()
   while (node) {
     if (fn(node as Text) === false) return
@@ -104,6 +129,8 @@ function walkTextNodes(root: Node, fn: (node: Text) => false | void): void {
  * 用 Range 量出该点之前的文本长度，与文本节点路径同一坐标系。
  */
 function textNodeOffsetInRoot(root: HTMLElement, container: Node, offset: number): number | null {
+  // 落在交互 chrome（代码块 header）里：不是正文偏移，当作本次定位无效
+  if (isInSelectionIgnoreZone(container)) return null
   let total = 0
   let found = false
   walkTextNodes(root, (node) => {
@@ -120,7 +147,11 @@ function textNodeOffsetInRoot(root: HTMLElement, container: Node, offset: number
     const probe = document.createRange()
     probe.setStart(root, 0)
     probe.setEnd(container, offset)
-    return probe.toString().length
+    // cloneContents 而非 toString：需要能剔除忽略区文本，否则 code 块里 header 的
+    // 「代码块 / TypeScript / 自动换行 / 复制」会被算进正文偏移（端点整体右移）
+    const fragment = probe.cloneContents()
+    fragment.querySelectorAll(SELECTION_IGNORE_SELECTOR).forEach((el) => el.remove())
+    return fragment.textContent?.length ?? 0
   } catch {
     // offset 越界（元素容器的子节点下标非法）：不猜，按落空处理
     return null
@@ -230,24 +261,20 @@ export function collapsedRangeAtBlockOffset(blockId: string, offset: number, sco
   if (!blockEl) return null
 
   const root = contentRoot(blockEl)
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
   let remaining = Math.max(0, offset)
-  let node = walker.nextNode()
   let target: { node: Text; offset: number } | null = null
-  while (node) {
-    const len = (node as Text).length
+  // 与 textNodeOffsetInRoot 同一遍历口径：选择忽略区（代码块 header）整棵跳过。
+  // 否则 offset 0 会落到 header 首个文本节点（「代码块」），高亮色带铺到工具栏按钮上。
+  walkTextNodes(root, (node) => {
+    const len = node.length
     // 零长文本节点不能作为落点：其上的 Range 量不出矩形（空块渲染态中确实存在这种节点）
-    if (len === 0) {
-      node = walker.nextNode()
-      continue
-    }
+    if (len === 0) return
     if (remaining <= len) {
-      target = { node: node as Text, offset: remaining }
-      break
+      target = { node, offset: remaining }
+      return false
     }
     remaining -= len
-    node = walker.nextNode()
-  }
+  })
 
   if (target) {
     const range = document.createRange()

@@ -14,7 +14,7 @@ import { useNavigateToTag } from '../../../composables/useNavigateToTag'
 import { useOpenPageInOtherPane } from '../../../composables/useOpenPageInOtherPane'
 import { useRelationshipMenu } from '../../../composables/useRelationshipMenu'
 import { renderedOffsetToEncodedOffset } from '../../../services/render-text'
-import { blockOffsetFromPoint, caretBlockOffsetFromDomSelection } from '../../../services/selection-geometry'
+import { blockOffsetFromPoint, caretBlockOffsetFromDomSelection, SELECTION_IGNORE_SELECTOR } from '../../../services/selection-geometry'
 import type { useBlockStore } from '../../../stores/blocks'
 import type { useEditorStore } from '../../../stores/editor'
 import type { usePageStore } from '../../../stores/pages'
@@ -624,6 +624,10 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
     const target = e.target as HTMLElement
     // 仅响应左键（右键/中键留给上下文菜单等，避免误启动选区/激活）
     if (e.button !== 0) return
+    // 交互 chrome（代码块 header：折叠 / 语言 / 自动换行 / 复制）不是内容区：
+    // 不起文本选区，也不记录光标坐标——否则下拉/复制按钮会把块拉进编辑态，
+    // 且 clickCoords 之后被 posAtCoords 换算成 header 处的错误光标位。
+    if (target.closest(SELECTION_IGNORE_SELECTOR)) return
     // 表格块自带格选区（TableBlock 内实现）：内部拖拽不得进入跨块文本选区。
     // 表格的字符偏移是「所有单元格按行优先拼接」，跨格没有语义——从 A 格往下拖到
     // A 下方的格，在偏移坐标里已经越过整行后面的 B 格，于是 B 凭空入选；
