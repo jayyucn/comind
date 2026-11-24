@@ -10,7 +10,7 @@
  * `BlockCard` 既无 `format` 也无 `type`，所以高亮在查询块 / 看板 / 卡片里不可见。
  */
 
-import { AlertTriangle, Ban, CircleCheck, Info, StickyNote } from 'lucide-vue-next'
+import { AlertTriangle, Ban, CircleCheck, Info, Lightbulb } from 'lucide-vue-next'
 import type { Component } from 'vue'
 
 /** 四种语义。顺序即菜单里的呈现顺序（提示 → 注意 → 完成 → 禁止） */
@@ -36,7 +36,7 @@ export const CALLOUT_TONE_LABELS: Record<CalloutTone, string> = {
  * 零撞形 —— 已否决按语义换胶囊字形：语义细节由块内图标承担，胶囊只回答
  * 「这是高亮块」。
  */
-export const CALLOUT_ENTRY_ICON: Component = StickyNote
+export const CALLOUT_ENTRY_ICON: Component = Lightbulb
 
 /**
  * 语义字形单源：语义与图标**一一固定**，不开放自定义。
