@@ -404,6 +404,39 @@ function normalizeLineRects(rects: RawRect[], bandHeight: number): SelectionRect
 }
 
 
+/**
+ * 把纵向相接、左右同缘的矩形合并成一条。
+ *
+ * 选区色是**半透明的一层**：逐行 / 逐块绘制意味着每一道边界都要各自抗锯齿。
+ * DPR 为整数时两层的覆盖率正好拼满（看不出来）；DPR ≠ 1（Windows 125% / 150%、
+ * 浏览器缩放）边界落在分数设备像素上，覆盖率加起来可能差一点（露出页面底色的一条
+ * 细缝）也可能多一点（更深的一条线）。合并成单层后段内没有任何内部边界，缝与叠
+ * 都无从产生——这是唯一与 DPR 无关的写法。
+ *
+ * 判据刻意收紧：左右缘相差 ≤ EPS 且纵向相接/重叠（≤ EPS）才合并。跳块多选时中间
+ * 未选中的块因此不会被吞进来，嵌套子树也不会被吃进父矩形。
+ */
+export function mergeSelectionRects(rects: SelectionRect[], eps = 0.5): SelectionRect[] {
+  const sorted = rects
+    .filter(r => r.width > 0 && r.height > 0)
+    .sort((a, b) => a.top - b.top || a.left - b.left)
+  const out: SelectionRect[] = []
+  for (const r of sorted) {
+    const prev = out[out.length - 1]
+    const joins = prev
+      && Math.abs(prev.left - r.left) <= eps
+      && Math.abs((prev.left + prev.width) - (r.left + r.width)) <= eps
+      && r.top - (prev.top + prev.height) <= eps
+    if (joins) {
+      const bottom = Math.max(prev.top + prev.height, r.top + r.height)
+      prev.height = bottom - prev.top
+      continue
+    }
+    out.push({ ...r })
+  }
+  return out
+}
+
 /** 空白块行首窄条带的宽度（px）：示意「这一行也在选区内」，不铺满整行喧宾夺主 */
 const EMPTY_LINE_BAND_WIDTH = 8
 
@@ -541,5 +574,7 @@ export function selectionClientRects(anchor: BlockOffset, head: BlockOffset, sco
     const bandHeight = hasTextOutsideUnits(root) ? blockBand : Math.max(blockBand, globalBand)
     out.push(...normalizeLineRects(rects, bandHeight))
   }
+  // 这里保持「逐行一个矩形」的契约（工具条定位、单测都按它断言）；压成单层是
+  // **绘制**环节的事，见 mergeSelectionRects。
   return out
 }

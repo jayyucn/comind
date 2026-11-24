@@ -18,7 +18,7 @@
  * 内容为空时渲染成 `<span></span>`（无文本节点，与真机一致）。
  */
 import { describe, test, expect, beforeEach, afterEach } from 'vitest'
-import { atomicUnitSpans, blockOffsetFromPoint, caretBlockOffsetFromDomSelection, collapsedRangeAtBlockOffset, selectionClientRects, type SelectionRect } from './selection-geometry'
+import { atomicUnitSpans, blockOffsetFromPoint, caretBlockOffsetFromDomSelection, collapsedRangeAtBlockOffset, mergeSelectionRects, selectionClientRects, type SelectionRect } from './selection-geometry'
 import type { BlockOffset } from './text-range'
 
 /** 构造一页（数组下标 = 文档序），空串模拟空行 */
@@ -518,5 +518,45 @@ describe('代码块 header（data-text-selection-ignore）不参与文本选区'
     } finally {
       delete (document as { elementFromPoint?: unknown }).elementFromPoint
     }
+  })
+})
+
+describe('mergeSelectionRects - 压成单层（DPR≠1 的缝 / 叠）', () => {
+  const r = (left: number, top: number, width: number, height: number): SelectionRect => ({ left, top, width, height })
+
+  test('左右同缘且纵向相切 → 合并成一条', () => {
+    expect(mergeSelectionRects([r(10, 0, 100, 30), r(10, 30, 100, 30), r(10, 60, 100, 30)]))
+      .toEqual([r(10, 0, 100, 90)])
+  })
+
+  test('左右缘差半像素以内仍合并（分数坐标的相切）', () => {
+    expect(mergeSelectionRects([r(10, 0, 100, 30), r(10.4, 30.2, 99.6, 30)]))
+      .toEqual([r(10, 0, 100, 60.2)])
+  })
+
+  test('左右缘不同 → 不合并（缩进改变 / 行带宽度不同）', () => {
+    const rects = [r(10, 0, 100, 30), r(30, 30, 80, 30)]
+    expect(mergeSelectionRects(rects)).toEqual(rects)
+  })
+
+  test('中间隔着一个未选块 → 不合并（跳块多选不得被吞成一片）', () => {
+    const rects = [r(10, 0, 100, 30), r(10, 90, 100, 30)]
+    expect(mergeSelectionRects(rects)).toEqual(rects)
+  })
+
+  test('纵向重叠（负缝隙）也合并，且不产生双层', () => {
+    // 0..31 与 30..60 取并集 = 0..60
+    expect(mergeSelectionRects([r(10, 0, 100, 31), r(10, 30, 100, 30)]))
+      .toEqual([r(10, 0, 100, 60)])
+  })
+
+  test('零尺寸矩形被丢弃（折叠子树 / 不可见块）', () => {
+    expect(mergeSelectionRects([r(10, 0, 100, 0), r(10, 0, 0, 30), r(10, 0, 100, 30)]))
+      .toEqual([r(10, 0, 100, 30)])
+  })
+
+  test('乱序输入按 top 排序后合并', () => {
+    expect(mergeSelectionRects([r(10, 30, 100, 30), r(10, 0, 100, 30)]))
+      .toEqual([r(10, 0, 100, 60)])
   })
 })

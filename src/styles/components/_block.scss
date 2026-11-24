@@ -918,26 +918,17 @@ $callout-tones: (
 }
 
 // ===== 跨 Block 选中遮罩 =====
-// 层级：内容层最上沿（$z-sticky - 1），不是 1。遮罩要盖住块内**全部**内容，而表头是
-// sticky + z-index:2 的自成层叠上下文（表格视图 / 块内查询块的 `<thead>`）——放 1 时表头
-// 会浮在蓝色选区之上，选中整块时中间横着一条不着色的表带（真机实证）。
-// 上限卡在 $z-sticky 之下：该层及以上属 chrome（bullet/chevron = +2、表格行列条、
-// 拖拽柄、文本选区矩形），选区色不该染到这些可交互物上。pointer-events: none 不影响命中。
-.block.cb-selected::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: var(--selection-bg);
-  pointer-events: none;
-  border-radius: 0;
-  z-index: $z-sticky - 1;
-}
+// 绘制已迁到 BlockList 的 body 级覆盖层（ADR-0065）：层叠比常量、可跨块合并。
+// 逐块 `::after` 下线的原因是它必然在块与块之间留下一条**独立边界**——两道半透明
+// 边界各自抗锯齿，DPR≠1（Windows 125%/150%）时相切处时而漏一条细缝、时而叠一条深线。
+// `.cb-selected` 类保留：它仍是「这块在选区内」的状态标记（表格行列条抑制等规则按它走）。
+//
+// 覆盖层层级仍钉在 $z-sticky - 1：遮罩要盖住块内**全部**内容（表头是 sticky +
+// 自成层叠上下文，放低了会横着一条不着色的表带），但不能染到 chrome（bullet/chevron
+// = $z-sticky + 2、表格行列条、拖拽柄、文本选区矩形）。见 BlockList 的
+// `.block-selection-rect`。
 
-// 图片块选中时不改变整块背景色，仅保留 .image-frame 的描边提示
-// （避免选区色遮罩盖在图片上把整块染色）
-.block.cb-selected:has(.image-block)::after {
-  background: transparent;
-}
+// ===== 状态：已完成 / 已取消 =====
 
 // ===== 状态：已完成 / 已取消 =====
 // 优先级底色与左侧色条已下线（ADR-0054 D2）。

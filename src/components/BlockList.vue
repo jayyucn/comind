@@ -30,7 +30,7 @@ import {
   NON_PLAIN_UNIT_LABEL,
   renderedOffsetToEncodedOffset,
 } from '../services/render-text'
-import { blockOffsetFromPoint, selectionClientRects, type SelectionRect } from '../services/selection-geometry'
+import { blockOffsetFromPoint, mergeSelectionRects, selectionClientRects, type SelectionRect } from '../services/selection-geometry'
 import { normalizeTextRange } from '../services/text-range'
 import { useBlockStore } from '../stores/blocks'
 import { useEditorStore } from '../stores/editor'
@@ -899,15 +899,72 @@ function refreshTextHighlight() {
   highlightRects.value = tr ? selectionClientRects(tr.anchor, tr.head, rootEl.value) : []
 }
 
+/**
+ * 绘制用的行矩形：把左右同缘、纵向相切的行压成一条。
+ *
+ * 逐行画在 DPR=1 时看不出来（相切处正好拼满），但 Windows 125%/150% 缩放、浏览器
+ * 缩放时行边界落在分数设备像素上，两层的覆盖率会差一点或多一点 —— 表现为各条行缝处
+ * 忽隐忽现的浅缝 / 深线。压成单层后段内没有任何内部边界。定位用的 `highlightRects[0]`
+ * 仍取原始矩形（首行带），工具条位置不受影响。
+ */
+const highlightPaintRects = computed(() => mergeSelectionRects(highlightRects.value))
+
+// ── 块选区覆盖层（ADR-0065）：替代 `.block.cb-selected::after` 的逐块遮罩 ──
+// 逐块遮罩是「一块一层半透明」，相邻块相切处同样会因分数设备像素漏缝或叠色；
+// 这里把「无选中祖先的根选中块」量成视口矩形，按连续段合并成单层再画。
+const blockSelectionRects = ref<SelectionRect[]>([])
+
+function refreshBlockSelection() {
+  const root = rootEl.value
+  if (!root) {
+    blockSelectionRects.value = []
+    return
+  }
+  const blocks = blockStore.getBlocksByPage(props.pageId)
+  const byId = new Map(blocks.map(b => [b.id, b]))
+  const rects: SelectionRect[] = []
+  for (const block of blocks) {
+    if (!selection.isBlockSelected(block.id)) continue
+    // 子树由它的矩形整块覆盖（`.block` 盒含子树），逐块画只会叠出一层更深的色
+    let parentId = block.parentId
+    let nested = false
+    while (parentId) {
+      if (selection.isBlockSelected(parentId)) { nested = true; break }
+      parentId = byId.get(parentId)?.parentId ?? null
+    }
+    if (nested) continue
+    const el = root.querySelector<HTMLElement>(`.block[data-block-id="${block.id}"]`)
+    if (!el) continue
+    const r = el.getBoundingClientRect()
+    if (r.width > 0 && r.height > 0) {
+      rects.push({ left: r.left, top: r.top, width: r.width, height: r.height })
+    }
+  }
+  blockSelectionRects.value = mergeSelectionRects(rects)
+}
+
 function handleViewportChange() {
   refreshTextHighlight()
   refreshFlashRects()
+  refreshBlockSelection()
 }
 
 /** 布局变更（折叠侧栏 / 侧栏开合 / 拖 pane 分隔条）：不派发 window resize，但视口矩形已失效 */
 let offLayoutChange: (() => void) | null = null
 
 watch(() => selection.textRange.value, () => refreshTextHighlight())
+
+// 选中集合变化（含拖拽 tracking 阶段逐帧变化）：块渲染可能同帧还没落地，故 post 刷。
+// 用 id 串做签名而不是 watch 同一个 Set：state 每次转移都换新对象，但只有「哪些块被选中」
+// 变了才需要重量几何。
+const blockSelectionSignature = computed(() => {
+  const ids: string[] = []
+  for (const block of blockStore.getBlocksByPage(props.pageId)) {
+    if (selection.isBlockSelected(block.id)) ids.push(block.id)
+  }
+  return ids.join(',')
+})
+watch(blockSelectionSignature, () => refreshBlockSelection(), { flush: 'post' })
 
 // ── 跨块文本选区工具条（ADR-0035 D4 的配套能力）──
 // 内容区拖拽超过阈值后编辑器已失活，TipTap 的工具条无从出现；这里按选区覆盖的
@@ -1205,6 +1262,8 @@ onMounted(() => {
   window.addEventListener('resize', handleViewportChange)
   // 折叠侧栏只改内容容器宽度，不派发 resize：不订阅就是「高亮整段留在旧坐标」（见 layout-change.ts）
   offLayoutChange = onLayoutChange(handleViewportChange)
+  // 重挂载（切 tab / 切 pane）后选中集合可能没变，签名 watcher 不会触发，这里补一记
+  nextTick(refreshBlockSelection)
 })
 
 onBeforeUnmount(() => {
@@ -1257,13 +1316,24 @@ onBeforeUnmount(() => {
       :visible="indicatorVisible"
     />
 
+    <!-- 块选区覆盖层（ADR-0065）：连续段合并成单层矩形，替代逐块的 `.cb-selected::after`。
+         Teleport 到 body 同样是为了躲开 transform 祖先对 fixed 的困束（ADR-0032 铁律 2）。 -->
+    <Teleport to="body">
+      <div
+        v-for="(rect, i) in blockSelectionRects"
+        :key="`block-sel-${i}`"
+        class="block-selection-rect"
+        :style="{ top: `${rect.top}px`, left: `${rect.left}px`, width: `${rect.width}px`, height: `${rect.height}px` }"
+      />
+    </Teleport>
+
     <!-- 文本选区覆盖层高亮（ADR-0035 D4）：Teleport 到 body，避免 transform 祖先困住 fixed 定位（ADR-0032 铁律 2） -->
     <Teleport to="body">
       <div
-        v-for="(rect, i) in highlightRects"
+        v-for="(rect, i) in highlightPaintRects"
         :key="i"
         class="text-selection-rect"
-        :class="{ 'is-first': i === 0, 'is-last': i === highlightRects.length - 1 }"
+        :class="{ 'is-first': i === 0, 'is-last': i === highlightPaintRects.length - 1 }"
         :style="{ top: `${rect.top}px`, left: `${rect.left}px`, width: `${rect.width}px`, height: `${rect.height}px` }"
       />
     </Teleport>
@@ -1313,6 +1383,17 @@ onBeforeUnmount(() => {
   user-select: none;
   -webkit-user-select: none;
   cursor: default;
+}
+
+/* 块选区覆盖层（ADR-0065）：一个连续段一条矩形，段内没有内部边界 —— DPR≠1 时
+   才不会在块缝处漏细缝 / 叠深色（逐块 ::after 的老做法必然复发，见 _block.scss）。
+   层级钉在 chrome 之下（$z-sticky - 1）：盖住块内全部内容（含 sticky 表头），
+   但 bullet / 拖拽柄 / 表格行列条 / 文本选区矩形不被染色。 */
+.block-selection-rect {
+  position: fixed;
+  pointer-events: none;
+  background: var(--selection-bg);
+  z-index: calc(var(--z-sticky) - 1);
 }
 
 /* 文本选区覆盖层高亮：position:fixed + 视口矩形，pointer-events 穿透。
