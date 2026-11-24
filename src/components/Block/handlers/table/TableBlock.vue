@@ -3010,10 +3010,21 @@ defineExpose({
    再加一圈 --accent 内描边会在格线上叠出一道粗蓝框，视觉噪音明显。
    `is-active` 类保留（activeCell 仍是插入/删除行列的锚点），只是不再有视觉投影。 */
 
+/* 空单元格也要占**一行**：
+   编辑态的 contenteditable 天生撑出一个 caret 行盒（行高 21 + 上下 padding 12 = 33），
+   渲染态是空 `<div>`，内容高 0，全靠 min-height 撑着。两态若各写 `30px`，
+   空表每行渲染态短 3px —— 进出编辑态整表高度跳、横向格线跟着抖。
+   所以统一按「1 行 + 上下 padding」定 min-height；12px 就是 padding 6 + 6 的拆解。
+   `1lh` 是正解（跟着 line-height 走），旧引擎回落到 1.5em（= 下面声明的 line-height）。 */
+.cell-input,
+.cell-text {
+  min-height: calc(1.5em + 12px);
+  min-height: calc(1lh + 12px);
+}
+
 .cell-input {
   display: block;
   width: 100%;
-  min-height: 30px;
   padding: 6px 9px;
   border: 0;
   outline: 0;
@@ -3043,7 +3054,6 @@ defineExpose({
 
 .cell-text {
   display: block;
-  min-height: 30px;
   padding: 6px 9px;
   box-sizing: border-box;
   color: var(--text-primary);

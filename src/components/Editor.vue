@@ -908,8 +908,12 @@ defineExpose({
    非可编辑 widget 的字形重影到文字起点（ol 第二项实测 `2.` 叠成贯穿线，且该路径
    无视 ::selection / visibility / opacity / user-select），伪元素不是 DOM 文本，
    选区管线碰不到它。 */
-.editor-wrapper :deep(.pm-prefix-hidden[data-marker]) {
-  /* 顶替原 widget 的占位（min-width 14 + margin 8），文字起点两态同列 */
+/* 列表项的内缩挂在**段落**上（扩展用 Decoration.node 挂 `pm-list-item`），不挂在
+   前缀 span 上：inline 盒的 padding 只推首行，折行 / Shift-Enter 的续行会退回段落起点、
+   压到标记列上；渲染态 `.block-list` 是 flex 两列，续行始终对齐标记列右侧。
+   22px = 渲染态标记列 14px + gap 8px —— 两态的正文起点因此都在 26px（含块内 4px padding）。
+   标记本身仍由前缀 span 的 ::before 绝对定位画在段落 padding 区里，不占布局。 */
+.editor-wrapper :deep(.pm-list-item) {
   padding-left: calc(14px + var(--space-2));
 }
 

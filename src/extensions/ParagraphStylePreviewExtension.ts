@@ -75,6 +75,10 @@ export function buildParagraphStyleDecorations(state: EditorState): DecorationSe
     if (marker) {
       attrs['data-marker'] = marker.label
       attrs['data-marker-kind'] = marker.kind
+      // 内缩落在**段落**上而不是前缀 span 上：inline 盒的 padding 只推首行，
+      // 折行 / Shift-Enter 之后的续行会回到段落起点，直接压到标记列上；渲染态用的是
+      // flex 两列，续行始终对齐标记列右侧。两边要同列，只能把 22px 挂在段落级。
+      decorations.push(Decoration.node(pos, pos + node.nodeSize, { class: 'pm-list-item' }))
     }
     decorations.push(Decoration.inline(from, prefixEnd, attrs))
 

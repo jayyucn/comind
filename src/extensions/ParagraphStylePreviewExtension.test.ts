@@ -116,6 +116,18 @@ describe('ParagraphStylePreviewExtension — 编辑态前缀换标记', () => {
     expect(handle.element.innerHTML).not.toContain('heading-preview')
   })
 
+  it('列表项：内缩挂在段落上 —— 折行 / 硬换行的续行才对得齐标记列', () => {
+    const handle = createEditor('- 条目')
+    // 前缀 span 的 padding 只管首行；续行起点由段落 padding 决定，必须落在 <p> 上
+    expect(handle.element.querySelector('p')?.className).toContain('pm-list-item')
+    expect(handle.element.querySelector('.pm-prefix-hidden')?.className).toBe('pm-prefix-hidden')
+  })
+
+  it('标题 / 普通段落不挂列表内缩类', () => {
+    expect(createEditor('# 标题').element.querySelector('p')?.className).not.toContain('pm-list-item')
+    expect(createEditor('随便写点').element.querySelector('p')?.className).not.toContain('pm-list-item')
+  })
+
   it('空标题 `# `：敲下空格就认（不必等第一个字）', () => {
     const handle = createEditor('# ')
     expect(hiddenText(handle)).toBe('# ')

@@ -31,9 +31,21 @@ const hasSaveError = computed(() => {
 /** `format` 只用于标题的双读兜底（模板插入的标题块正文里没有前缀） */
 const paragraph = computed(() => parseParagraphStyle(props.content, { format: props.blockFormat }))
 
+/**
+ * 标题元素：**按前缀判定，1–6 级全认**。
+ *
+ * 早先只认 h1–h3（跟「文本样式」菜单的四格对齐），但 h4–h6 的前缀同样会被
+ * `parseParagraphStyle` 吃掉（`prefixLength > 0`）—— 于是 `normalContent` 返回空串、
+ * 这里又不出 heading 元素，`#### 标题` 在渲染态**整行消失**，而编辑态一直按级别放大。
+ * 样式侧 `.block-text h4/h5/h6` 本来就在，收窄判定后成了死代码。
+ *
+ * 只认前缀（`prefixLength > 0`）：模板遗留的 `format.type === 'heading'` 在两态都不放大
+ * —— 编辑态的装饰扩展拿不到 `block.format`，认它就会造出「渲染态放大、编辑态不放大」。
+ */
 const headingTag = computed(() => {
-  const style = paragraph.value.style
-  return style === 'h1' || style === 'h2' || style === 'h3' ? style : null
+  const { prefixLength, level } = paragraph.value
+  if (prefixLength === 0 || !level) return null
+  return `h${level}`
 })
 
 /**

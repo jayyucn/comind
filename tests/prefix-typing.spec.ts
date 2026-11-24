@@ -77,21 +77,21 @@ test('前缀：布局宽度 0、选区宽 0、插入符落在正文起点', asyn
 
   const geo = await page.evaluate(() => {
     const host = document.querySelector('.ProseMirror-focused, .ProseMirror') as HTMLElement
-    const marker = host.querySelector('.pm-prefix-marker') as HTMLElement
     const prefix = host.querySelector('.pm-prefix-hidden') as HTMLElement
+    const paragraph = prefix.closest('p') as HTMLElement
     const text = prefix.firstChild as Text
     const selectionRange = document.createRange()
     selectionRange.selectNodeContents(text)
     const caret = document.createRange()
     caret.setStart(text, text.length)
     caret.setEnd(text, text.length)
-    const markerRect = marker.getBoundingClientRect()
     return {
       prefixBoxWidth: prefix.getBoundingClientRect().width,
       glyphWidth: selectionRange.getBoundingClientRect().width,
       caretX: caret.getBoundingClientRect().x,
       prefixX: prefix.getBoundingClientRect().x,
-      markerRight: markerRect.right,
+      paragraphPaddingLeft: parseFloat(getComputedStyle(paragraph).paddingLeft),
+      markerContent: getComputedStyle(prefix, '::before').content,
     }
   })
 
@@ -101,7 +101,10 @@ test('前缀：布局宽度 0、选区宽 0、插入符落在正文起点', asyn
   expect(Math.abs(geo.glyphWidth)).toBeLessThan(1)
   // 插入符站在盒子左缘（＝正文起点），不是漂在正文右侧十几像素
   expect(Math.abs(geo.caretX - geo.prefixX)).toBeLessThan(1)
-  // 正文起点 = 标记右缘 + 间距（两态同列）
-  expect(geo.prefixX - geo.markerRight).toBeGreaterThan(4)
-  expect(geo.prefixX - geo.markerRight).toBeLessThan(14)
+  // 标记由前缀 span 的 ::before 画（acd4570 去掉了 DOM widget，这里同步）
+  expect(geo.markerContent).toContain('1.')
+  // 内缩必须落在**段落**上：只有段落级 padding 能让折行 / Shift-Enter 的续行与首行同列
+  // （22px = 渲染态标记列 14px + gap 8px）
+  expect(geo.paragraphPaddingLeft).toBeGreaterThan(20)
+  expect(geo.paragraphPaddingLeft).toBeLessThan(24)
 })

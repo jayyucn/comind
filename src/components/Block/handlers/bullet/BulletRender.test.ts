@@ -339,3 +339,41 @@ describe('BulletRender 列表项', () => {
     wrapper.unmount()
   })
 })
+
+describe('BulletRender 段落样式标题（1–6 级）', () => {
+  function seed(content: string) {
+    const store = useBlockStore()
+    store.blocks = [
+      { id: 'b1', pageId: 'p1', parentId: null, pos: 0, content, format: {}, type: 'text', createdAt: 0, updatedAt: 0 },
+    ]
+    return mount(BulletRender, { props: { content, blockId: 'b1' } })
+  }
+
+  // 回归：headingTag 曾只认 h1–h3，而 h4–h6 的前缀同样被 parseParagraphStyle 吃掉
+  // （prefixLength > 0 ⇒ normalContent 返回空串），渲染态整行空白，编辑态却按级放大。
+  for (const level of [1, 2, 3, 4, 5, 6]) {
+    test(`h${level}：出 h${level} 元素，正文不含前缀`, async () => {
+      const content = `${'#'.repeat(level)} 标题${level}`
+      const wrapper = seed(content)
+      await flushPromises()
+      const heading = wrapper.find(`h${level}`)
+      expect(heading.exists()).toBe(true)
+      expect(heading.text()).toBe(`标题${level}`)
+      wrapper.unmount()
+    })
+  }
+
+  test('模板遗留 format.type=heading（正文无前缀）不放大：与编辑态同口径', async () => {
+    const store = useBlockStore()
+    store.blocks = [
+      { id: 'b1', pageId: 'p1', parentId: null, pos: 0, content: '原标题', format: {}, type: 'text', createdAt: 0, updatedAt: 0 },
+    ]
+    const wrapper = mount(BulletRender, {
+      props: { content: '原标题', blockId: 'b1', blockFormat: { type: 'heading', level: 2 } },
+    })
+    await flushPromises()
+    expect(wrapper.find('h2').exists()).toBe(false)
+    expect(wrapper.text()).toContain('原标题')
+    wrapper.unmount()
+  })
+})

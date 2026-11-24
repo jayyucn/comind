@@ -104,6 +104,34 @@ test.describe('表格块两态视觉对齐', () => {
     expect(sizes!.input).toBeGreaterThan(60)
   })
 
+  test('空表格两态行高一致（新建表、不输入任何文字）', async ({ page }) => {
+    // 回归：编辑态的空 contenteditable 天生撑一个 caret 行盒（21 + 12 = 33），
+    // 渲染态的空 div 内容高 0，只靠 min-height 撑。两态曾各写 `min-height: 30px`，
+    // 于是空表每行渲染态短 3px —— 新建表不输字、点进点出就能看到整表高度跳。
+    test.setTimeout(90000)
+    await page.goto('/')
+    await page.waitForLoadState('networkidle')
+    await page.waitForTimeout(800)
+    await createTable(page)
+
+    const rows = [0, 1, 2]
+    const editing = []
+    for (const row of rows) editing.push(await cellHeight(page, row, 0))
+
+    await page.keyboard.press('Escape')
+    await page.waitForTimeout(600)
+    await expect(page.locator('.table-block.is-readonly')).toBeVisible()
+
+    const rendering = []
+    for (const row of rows) rendering.push(await cellHeight(page, row, 0))
+
+    for (let i = 0; i < rows.length; i++) {
+      expect(Math.abs(rendering[i] - editing[i])).toBeLessThanOrEqual(1)
+      // 空行也必须占满一整行（不再塌到 30px）
+      expect(rendering[i]).toBeGreaterThanOrEqual(33)
+    }
+  })
+
   test('空表头格在两态显示同一占位', async ({ page }) => {
     await page.goto('/')
     await page.waitForLoadState('networkidle')

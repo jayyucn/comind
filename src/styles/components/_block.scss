@@ -525,8 +525,15 @@ $callout-tones: (
 }
 
 .block-list-marker {
-  flex: 0 0 auto;
-  min-width: 14px;
+  // 列宽**锁死** 14px（不是 min-width）：编辑态那一列是固定 22px 的内缩
+  // （段落 padding-left = 14 + gap 8），若这里让内容撑宽（`10.` ≈ 20px），
+  // 正文起点会跟着右移 6px，进出编辑时整行字左右跳。超宽序号让它向左溢出，
+  // 与编辑态伪元素的溢出方向、量都一致。
+  flex: 0 0 14px;
+  width: 14px;
+  // flex item 的 `min-width: auto` 会把宽度撑到 min-content（`10.` ≈ 20px），
+  // 锁列宽必须一并置 0，否则上面两条白写
+  min-width: 0;
   color: var(--text-tertiary);
   // 等宽数字：`9.` → `10.` 时标记列不抖，正文起点不动
   font-variant-numeric: tabular-nums;
