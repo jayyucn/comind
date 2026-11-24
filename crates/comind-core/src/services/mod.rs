@@ -4,6 +4,7 @@ pub mod link_service;
 pub mod page_service;
 pub mod field_value_service;
 pub mod tag_service;
+pub mod inline_literal;
 pub mod book_service;
 pub mod relationship_type_service;
 pub mod template_service;

@@ -88,11 +88,21 @@ impl BlockService {
             deleted_at: None,
             // 新建块同样派生 tags。新建 = 提交动作（粘贴/功能区分块），
             // 但 save_blocks 打字落库的新块会显式传 false。
-            tags: TagService::resolve_tag_ids_for_content(storage, content, create_missing_tags)?,
+            tags: TagService::resolve_tag_ids_for_content_with_format(
+                storage,
+                content,
+                Some(format),
+                create_missing_tags,
+            )?,
         };
 
         let block = repository::BlockRepository::create(storage.blocks(), &block)?;
-        DateRefService::sync_date_refs_for_block(storage, &block.id, &block.content)?;
+        DateRefService::sync_date_refs_for_block_with_format(
+            storage,
+            &block.id,
+            &block.content,
+            Some(block.format.as_str()),
+        )?;
         // S3: synchronise derived links & field values from content
         // 建页门控与建签门控同源：`create_missing_tags == true` 即提交时点，
         // 此时 `[[X]]` 的目标页缺失就地建页，反链与图谱才不会有断边。
@@ -100,11 +110,17 @@ impl BlockService {
             storage,
             &block.id,
             &block.content,
+            Some(block.format.as_str()),
             create_missing_tags,
         ) {
             eprintln!("[BlockService::create] sync_links_for_block failed for block {}: {}", block.id, e);
         }
-        if let Err(e) = ContentParseService::sync_field_values_for_block(storage, &block.id, &block.content) {
+        if let Err(e) = ContentParseService::sync_field_values_for_block(
+            storage,
+            &block.id,
+            &block.content,
+            Some(block.format.as_str()),
+        ) {
             eprintln!("[BlockService::create] sync_field_values_for_block failed for block {}: {}", block.id, e);
         }
         // content 联动：新建块同样按内容派生 tags，并为其新获得的标签自动填默认值
@@ -156,7 +172,12 @@ impl BlockService {
         // 见 TagService —— 打字中间态不建 `#f`、`#fo` 垃圾标签）。
         // 摘标 = 从 content 删字；FieldValue 保留不动（grill 决策 #7）。
         let old_tags = block.tags.clone();
-        block.tags = TagService::resolve_tag_ids_for_content(storage, &block.content, create_missing_tags)?;
+        block.tags = TagService::resolve_tag_ids_for_content_with_format(
+            storage,
+            &block.content,
+            Some(block.format.as_str()),
+            create_missing_tags,
+        )?;
         // 仅对新获得 tag 打默认（ADR-0050 D13），差集保证不冲掉手写值。
         let new_tag_ids: Vec<String> = block
             .tags
@@ -174,7 +195,12 @@ impl BlockService {
                 block.id, e
             );
         }
-        DateRefService::sync_date_refs_for_block(storage, &block.id, &block.content)?;
+        DateRefService::sync_date_refs_for_block_with_format(
+            storage,
+            &block.id,
+            &block.content,
+            Some(block.format.as_str()),
+        )?;
         // 方案 A：非 recurring 通知随 block 改时间原地改期（仅当 iso 真的变化）
         if content.is_some() {
             DateRefService::reschedule_notifications_on_change(
@@ -189,11 +215,17 @@ impl BlockService {
             storage,
             &block.id,
             &block.content,
+            Some(block.format.as_str()),
             create_missing_tags,
         ) {
             eprintln!("[BlockService::update] sync_links_for_block failed for block {}: {}", block.id, e);
         }
-        if let Err(e) = ContentParseService::sync_field_values_for_block(storage, &block.id, &block.content) {
+        if let Err(e) = ContentParseService::sync_field_values_for_block(
+            storage,
+            &block.id,
+            &block.content,
+            Some(block.format.as_str()),
+        ) {
             eprintln!("[BlockService::update] sync_field_values_for_block failed for block {}: {}", block.id, e);
         }
         Ok(block)
@@ -239,7 +271,7 @@ impl BlockService {
         storage.notifications().delete_by_block_id(id)?;
         // Clean up derived links; field values are explicitly deleted below (NOT via
         // sync_field_values_for_block, which now only upserts content-derived values).
-        if let Err(e) = ContentParseService::sync_links_for_block(storage, id, "", false) {
+        if let Err(e) = ContentParseService::sync_links_for_block(storage, id, "", None, false) {
             eprintln!("[BlockService::delete] sync_links_for_block failed for block {}: {}", id, e);
         }
         FieldValueService::delete_by_block_id(storage, id)?;

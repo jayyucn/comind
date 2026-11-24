@@ -173,13 +173,17 @@ fn build_segments(
     tag_cache: &HashMap<String, (String, bool, String)>,
 ) -> Result<Vec<RenderSegment>, Box<dyn Error>> {
     let content = &block.content;
+    // 行内代码（`format.inlineMarks` 的 `code` 区间）是字面文本：掩成等长空格后再抽取
+    // `@日期` / `#tag` / `[[链接]]`，代码段里的这些语法不出 chip。等长保证 byte_start /
+    // byte_end 与原文一一对应，后面的字节→UTF-16 换算照旧。
+    let visible = crate::services::inline_literal::visible_text(content, Some(&block.format));
     let mut anchors: Vec<(usize, RenderSegment)> = Vec::new();
 
     // --- 1. Date refs ---
-    let date_refs = DateRefService::extract_date_refs(content);
+    let date_refs = DateRefService::extract_date_refs(visible.as_ref());
     for dr in &date_refs {
         let pattern = format!("@{}", dr.iso);
-        if let Some(start) = content.find(&pattern) {
+        if let Some(start) = visible.find(&pattern) {
             // Extend to cover optional whitespace + emoji (📅/⏰) + |params
             let bytes = content.as_bytes();
             let mut end = start + pattern.len();
@@ -255,9 +259,9 @@ fn build_segments(
 
         // Search for the link pattern in content
         let (start, end) = if let Some(rt) = &link.relationship_type {
-            search_content(content, rt, &target_title, display)
+            search_content(visible.as_ref(), rt, &target_title, display)
         } else {
-            search_plain_link(content, &target_title, display)
+            search_plain_link(visible.as_ref(), &target_title, display)
         };
 
         if let (Some(s), Some(e)) = (start, end) {
@@ -288,7 +292,7 @@ fn build_segments(
     }
 
     // --- 3. Inline tags `#foo`（grill 决策 #4）---
-    for (byte_start, byte_end, title) in TagService::extract_tag_spans(content) {
+    for (byte_start, byte_end, title) in TagService::extract_tag_spans(visible.as_ref()) {
         // 与 dateRef 同款：UTF-16 索引（JS slice 语义）
         let char_start = byte_to_utf16_idx(content, byte_start);
         let char_end = byte_to_utf16_idx(content, byte_end);

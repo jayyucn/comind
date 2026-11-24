@@ -41,6 +41,8 @@ function findDateRefTrigger(doc: Node, pos: number): {
 
   doc.descendants((node, nodePos: number) => {
     if (!node.isText) return
+    // 行内代码里的 `@` 是字面文本（`@Component` 这类），不弹日期菜单
+    if (node.marks?.some(mark => mark.type?.name === 'code')) return
     const text = node.text || ''
     const localPos = pos - nodePos
     if (localPos < 0 || localPos > text.length) return

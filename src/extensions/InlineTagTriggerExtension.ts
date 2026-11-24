@@ -62,6 +62,8 @@ export function findTagAtCursor(doc: Node, pos: number): TagAtCursorResult {
 
   doc.descendants((node, nodePos: number) => {
     if (!node.isText || result.found) return
+    // 行内代码里的 `#` 是字面文本：不弹标签菜单（与 InlineTagExtension 的装饰口径一致）
+    if (node.marks?.some(mark => mark.type?.name === 'code')) return
 
     const text = node.text || ''
     // 从后往前找最近的 `#`，且 `#` 前字符不在排除集

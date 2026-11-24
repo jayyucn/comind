@@ -100,6 +100,8 @@ function scanWikiLinks(doc: Node): { typed: TypedParenMatch[]; plain: PlainLinkM
 
   doc.descendants((node, pos) => {
     if (!node.isText) return
+    // 行内代码里的 `[[x]]` 是字面文本，不做链接装饰
+    if (node.marks?.some(mark => mark.type?.name === 'code')) return
     const text = node.text || ''
 
     // 编辑态 typed link：((type))[[X]] 或 ((type))[[X|alias]]

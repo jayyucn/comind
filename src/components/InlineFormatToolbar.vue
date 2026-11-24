@@ -71,6 +71,7 @@ const state = computed(() => {
       italic: attrs.italic === true,
       underline: attrs.underline === true,
       strike: attrs.strike === true,
+      code: attrs.code === true,
       color: attrs.color ?? '',
       background: attrs.background ?? '',
       focused: true,
@@ -89,6 +90,7 @@ const state = computed(() => {
     italic: editor.isActive('italic'),
     underline: editor.isActive('underline'),
     strike: editor.isActive('strike'),
+    code: editor.isActive('code'),
     color: (editor.getAttributes('inlineTextColor').color as string | null) ?? '',
     background: (editor.getAttributes('inlineBackgroundColor').color as string | null) ?? '',
     focused: editor.isFocused,
@@ -185,7 +187,7 @@ watch(() => props.blockAlign, () => {
   })
 })
 
-function toggleMark(name: 'bold' | 'italic' | 'underline' | 'strike') {
+function toggleMark(name: 'bold' | 'italic' | 'underline' | 'strike' | 'code') {
   if (props.range || props.detached) {
     emit('apply-range', name, null)
     return

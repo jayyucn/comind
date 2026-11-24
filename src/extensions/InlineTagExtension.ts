@@ -71,6 +71,9 @@ function scanInlineTags(doc: Node): InlineTagMatch[] {
   const matches: InlineTagMatch[] = []
   doc.descendants((node, pos) => {
     if (!node.isText) return
+    // 行内代码里的 `#tag` 是字面文本：不装饰成胶囊，也不参与原子单元语义
+    // （markdown 语义；渲染态由 Rust 侧 mask 同步保证）
+    if (node.marks?.some(mark => mark.type?.name === 'code')) return
     const text = node.text || ''
     const tagRegex = new RegExp(TAG_TRIGGER_SOURCE, 'gu')
     let match: RegExpExecArray | null

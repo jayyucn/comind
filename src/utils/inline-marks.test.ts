@@ -158,6 +158,22 @@ describe('inlineMarksToHtml / wrapInlineHtml', () => {
       '<span data-inline-bg="--tag-color-6" style="background-color: color-mix(in srgb, var(--tag-color-6) 28%, transparent); border-radius: 2px">x</span>',
     )
   })
+
+  it('行内代码输出 <code>，且包在字重/字色外层', () => {
+    expect(wrapInlineHtml('x', { code: true })).toBe('<code>x</code>')
+    expect(wrapInlineHtml('x', { code: true, bold: true })).toBe('<code><strong>x</strong></code>')
+    expect(inlineMarksToHtml('a b', [{ start: 0, end: 3, code: true }])).toBe('<code>a b</code>')
+  })
+
+  it('code 与其它格式共存时各自保留（归一化不吞键）', () => {
+    expect(setInlineMarkRange([{ start: 0, end: 4, code: true }], 1, 2, { bold: true }, 4)).toEqual([
+      { start: 0, end: 1, code: true },
+      { start: 1, end: 2, bold: true, code: true },
+      { start: 2, end: 4, code: true },
+    ])
+    expect(clearInlineMarkRange([{ start: 0, end: 3, code: true }], 0, 3, ['code'], 3)).toEqual([])
+    expect(rangeHasAttr([{ start: 0, end: 3, code: true }], 0, 3, 'code', 3)).toBe(true)
+  })
 })
 
 describe('区间级格式读写（跨块选区工具条）', () => {

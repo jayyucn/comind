@@ -252,7 +252,7 @@ function cellHtml(row: number, col: number): string {
  *
  * contenteditable 是格式的唯一真源：用户输入、原生 Ctrl+B、我们自己的重写都会落到 DOM 上，
  * 再从这里读回区间存进 `cellMarks`。识别口径与 `inlineMarksToHtml` 的产出严格对称
- * （`strong/b`、`em/i`、`u`、`s/strike/del`、`data-inline-color`、`data-inline-bg`）。
+ * （`strong/b`、`em/i`、`u`、`s/strike/del`、`code`、`data-inline-color`、`data-inline-bg`）。
  */
 function readMarksFromDom(el: HTMLElement): InlineMarkRange[] {
   const out: InlineMarkRange[] = []
@@ -284,6 +284,7 @@ function attrsFromAncestors(node: HTMLElement | null, root: HTMLElement): Inline
     else if (tag === 'EM' || tag === 'I') attrs.italic = true
     else if (tag === 'U') attrs.underline = true
     else if (tag === 'S' || tag === 'STRIKE' || tag === 'DEL') attrs.strike = true
+    else if (tag === 'CODE') attrs.code = true
     const color = current.dataset?.inlineColor
     if (color) attrs.color = color
     const background = current.dataset?.inlineBg
@@ -298,6 +299,7 @@ function sameMarkAttrs(a: InlineMarkAttrs, b: InlineMarkAttrs): boolean {
     && a.italic === b.italic
     && a.underline === b.underline
     && a.strike === b.strike
+    && a.code === b.code
     && a.color === b.color
     && a.background === b.background
 }
@@ -805,7 +807,7 @@ function captureCellTextSelection() {
   const text = rows.value[row]?.[col] ?? ''
   const marks = normalizeInlineMarks(readMarksFromDom(el), text.length)
   const format: InlineMarkAttrs = {}
-  for (const key of ['bold', 'italic', 'underline', 'strike'] as const) {
+  for (const key of ['bold', 'italic', 'underline', 'strike', 'code'] as const) {
     if (rangeHasAttr(marks, start, end, key, text.length)) format[key] = true
   }
   const color = rangeColorToken(marks, start, end, 'color', text.length)
@@ -1290,7 +1292,7 @@ const menuFormat = computed<InlineMarkAttrs>(() => {
   const cells = rangeCells.value
   if (!cells.length) return out
 
-  for (const key of ['bold', 'italic', 'underline', 'strike'] as const) {
+  for (const key of ['bold', 'italic', 'underline', 'strike', 'code'] as const) {
     const all = cells.every(({ row, col }) => {
       const text = rows.value[row]?.[col] ?? ''
       if (!text.length) return true

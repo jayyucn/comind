@@ -118,19 +118,29 @@ function insertHeadingAtLineStart(editor: Editor, level: number) {
 
 /**
  * 插入代码块
+ *
+ * 切类型前必须以**编辑器当前正文**显式落库：打字走 `Editor.vue` 的 300ms 防抖保存，
+ * 切换到 code 会立刻卸载那个 TipTap 编辑器（`onBeforeUnmount` → `cancelDebouncedSave`），
+ * 刚被 `deleteRange` 删掉 `/code` 的正文随之丢弃，store 里仍是命令原文 ——
+ * 代码块（`CodeMirrorEditor`）以 `props.content` 初始化，就会把 `/code` 吃进代码块。
  */
-function insertCodeBlock({ editor, range, blockId }: CommandProps) {
+async function insertCodeBlock({ editor, range, blockId }: CommandProps) {
   // 删除斜杠命令文本
   editor.chain()
     .deleteRange(range)
     .focus()
     .run()
-  
-  // 切换到 code block 类型
+
+  if (!blockId) return
+
   const blockStore = useBlockStore()
-  if (blockId) {
-    blockStore.updateBlockType(blockId, 'code')
+  const live = editor.getText()
+  if (blockStore.getBlock(blockId)?.content !== live) {
+    await blockStore.updateBlockContent(blockId, live)
   }
+
+  // 切换到 code block 类型
+  await blockStore.updateBlockType(blockId, 'code')
 }
 
 /**

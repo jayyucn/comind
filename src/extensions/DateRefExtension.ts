@@ -38,6 +38,8 @@ function scanDateRefMatches(doc: Node): DateRefMatch[] {
   const matches: DateRefMatch[] = []
   doc.descendants((node, pos: number) => {
     if (!node.isText) return
+    // 行内代码里的 `@2026-01-01` 是字面文本，不做日期装饰
+    if (node.marks?.some(mark => mark.type?.name === 'code')) return
     const text = node.text || ''
     const re = new RegExp(DATE_REF_AT_REGEX.source, 'g')
     let m: RegExpExecArray | null

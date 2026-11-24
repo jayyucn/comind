@@ -5,6 +5,7 @@ use std::sync::OnceLock;
 
 use crate::{
     storage::{repository, StorageAdapter},
+    services::inline_literal,
     types::{FieldValue, Tag, TagCreateOptions, TagUpdateOptions},
 };
 use uuid::Uuid;
@@ -197,9 +198,24 @@ impl TagService {
         content: &str,
         create_missing: bool,
     ) -> Result<Vec<String>, Box<dyn Error>> {
+        Self::resolve_tag_ids_for_content_with_format(storage, content, None, create_missing)
+    }
+
+    /// 带 `format` 的版本：`format.inlineMarks` 中 `code: true` 的区间是**行内代码**，
+    /// 其中的 `#foo` 是要原样显示的文字，不打标（详见 `inline_literal`）。
+    ///
+    /// 无 format 的 [`Self::resolve_tag_ids_for_content`] 是对它的委托，语义不变。
+    pub fn resolve_tag_ids_for_content_with_format(
+        storage: &mut dyn StorageAdapter,
+        content: &str,
+        format: Option<&str>,
+        create_missing: bool,
+    ) -> Result<Vec<String>, Box<dyn Error>> {
         let mut ids: Vec<String> = Vec::new();
         let mut seen_titles: HashSet<String> = HashSet::new();
-        for title in Self::extract_tags(content) {
+        // 行内代码段掩成空格后再抽 tag：`#` 变空格 ⇒ 正则不命中，坐标也与原文一致
+        let visible = inline_literal::visible_text(content, format);
+        for title in Self::extract_tags(visible.as_ref()) {
             // 同一 content 内重复 #tag → 只记一次（Block.tags 不存重复 id）
             if !seen_titles.insert(title.clone()) {
                 continue;
@@ -450,6 +466,59 @@ mod tests {
         let ids4 = TagService::resolve_tag_ids_for_content(&mut storage, "#任", true).unwrap();
         assert_eq!(ids4.len(), 1);
         assert_ne!(ids4[0], "sys-tag-system-task");
+    }
+
+    /// 行内代码（`format.inlineMarks` 的 `code` 区间）里的 `#foo` 是字面文本，
+    /// 不打标、不建签；代码外的 `#bar` 照旧。
+    #[test]
+    fn resolve_skips_hashtags_inside_inline_code() {
+        use crate::storage::repository::TagRepository;
+
+        let mut storage = crate::storage::sqlite::SQLiteAdapter::open_in_memory().unwrap();
+        let content = "看 `#不是标签` 和 #真标签";
+        let start = content.find('`').unwrap();
+        let end = content.rfind('`').unwrap() + 1;
+        // inlineMarks 的偏移是 UTF-16 码元（前端口径），不是字节
+        let utf16 = |byte_idx: usize| -> usize {
+            content[..byte_idx].chars().map(|c| c.len_utf16()).sum()
+        };
+        let format = format!(
+            r#"{{"inlineMarks":[{{"start":{},"end":{},"code":true}}]}}"#,
+            utf16(start),
+            utf16(end),
+        );
+
+        let ids = TagService::resolve_tag_ids_for_content_with_format(
+            &mut storage,
+            content,
+            Some(&format),
+            true,
+        )
+        .unwrap();
+
+        let titles: Vec<String> = ids
+            .iter()
+            .map(|id| TagRepository::get_by_id(storage.tags(), id).unwrap().title)
+            .collect();
+        assert_eq!(titles, vec!["真标签".to_string()]);
+        // 代码内的名字连行都不该建
+        assert!(TagRepository::get_by_title(storage.tags(), "不是标签")
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    fn resolve_without_format_keeps_old_behaviour() {
+        let mut storage = crate::storage::sqlite::SQLiteAdapter::open_in_memory().unwrap();
+        // 无 format ⇒ 不知道哪段是行内代码，按老口径把两个 `#xxx` 都算上
+        let ids = TagService::resolve_tag_ids_for_content_with_format(
+            &mut storage,
+            "看 `#不是标签` 和 #真标签",
+            None,
+            true,
+        )
+        .unwrap();
+        assert_eq!(ids.len(), 2);
     }
 
     #[test]

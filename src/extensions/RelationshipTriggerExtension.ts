@@ -51,6 +51,12 @@ export function findRelationshipAtCaret(
   doc: Node,
   pos: number
 ): RelationshipAtCaretResult {
+  // 行内代码里的 `((` 是字面文本，不弹关系菜单
+  const caretMarks = doc.resolve?.(pos)?.marks?.() ?? []
+  if (caretMarks.some(mark => mark.type?.name === 'code')) {
+    return { found: false, range: null, relationshipType: '' }
+  }
+
   // 用 doc.textBetween 取 cursor 前的纯文本（不包含 block 边界）
   const text = doc.textBetween(0, pos, '\n', '\n')
 

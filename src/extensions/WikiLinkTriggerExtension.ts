@@ -60,6 +60,8 @@ export function findWikiLinkAtCursor(
 
   doc.descendants((node, nodePos: number) => {
     if (!node.isText || foundMatch) return
+    // 行内代码里的 `[[` 是字面文本：不弹页面补全菜单
+    if (node.marks?.some(mark => mark.type?.name === 'code')) return
 
     const text = node.text || ''
     let match

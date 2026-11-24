@@ -16,6 +16,8 @@ export interface InlineMarkAttrs {
   italic?: true
   underline?: true
   strike?: true
+  /** 行内代码（markdown 单反引号）：等宽 + 弱底，类似 GitHub 渲染 */
+  code?: true
   /** 文字色：调色板 token 名，如 `--tag-color-2` */
   color?: string
   /** 背景色：调色板 token 名 */
@@ -40,7 +42,7 @@ export interface OffsetSpan {
 /** 调色板选项（与标签共用同一份色板，顺序即工具条展示顺序）。 */
 export const INLINE_COLORS = TAG_COLORS
 
-const ATTR_KEYS = ['bold', 'italic', 'underline', 'strike', 'color', 'background'] as const
+const ATTR_KEYS = ['bold', 'italic', 'underline', 'strike', 'code', 'color', 'background'] as const
 
 function pickAttrs(source: InlineMarkAttrs): InlineMarkAttrs | null {
   const attrs: InlineMarkAttrs = {}
@@ -144,10 +146,10 @@ export function sliceInlineMarks(marks: InlineMarkRange[], from: number, to: num
 }
 
 /** 行内格式键（工具条动作口径） */
-export type InlineMarkKey = 'bold' | 'italic' | 'underline' | 'strike' | 'color' | 'background'
+export type InlineMarkKey = 'bold' | 'italic' | 'underline' | 'strike' | 'code' | 'color' | 'background'
 
 /** 布尔型格式键 */
-export type InlineBooleanMarkKey = 'bold' | 'italic' | 'underline' | 'strike'
+export type InlineBooleanMarkKey = 'bold' | 'italic' | 'underline' | 'strike' | 'code'
 
 /** [from, to) 是否被满足 predicate 的区间**完整**覆盖（不完整或为空 → false）。 */
 function coversRange(
@@ -322,6 +324,8 @@ export function mergeMarkAttrs(marks: InlineMarkRange[]): InlineMarkAttrs | null
 /**
  * 用格式包裹一段**已渲染/已转义**的 HTML。
  * 色值在此处再次白名单校验；非法 token 不会进入 style 属性。
+ *
+ * `code` 打在最外层：等宽与弱底由 `<code>` 承担，内部的字重/字色/背景仍各自生效。
  */
 export function wrapInlineHtml(html: string, attrs: InlineMarkAttrs): string {
   let out = html
@@ -335,6 +339,7 @@ export function wrapInlineHtml(html: string, attrs: InlineMarkAttrs): string {
   if (isTagColorToken(attrs.background)) {
     out = `<span data-inline-bg="${attrs.background}" style="background-color: color-mix(in srgb, var(${attrs.background}) 28%, transparent); border-radius: 2px">${out}</span>`
   }
+  if (attrs.code) out = `<code>${out}</code>`
   return out
 }
 

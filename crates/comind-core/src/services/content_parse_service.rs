@@ -5,6 +5,7 @@ use std::error::Error;
 use std::sync::OnceLock;
 
 use crate::storage::StorageAdapter;
+use crate::services::inline_literal;
 use crate::services::LinkService;
 use crate::services::FieldValueService;
 
@@ -274,9 +275,12 @@ impl ContentParseService {
         storage: &mut dyn StorageAdapter,
         block_id: &str,
         content: &str,
+        format: Option<&str>,
         create_missing_pages: bool,
     ) -> Result<Vec<crate::types::Link>, Box<dyn Error>> {
-        let drafts = extract_links_from_content(content);
+        // 行内代码里的 `[[x]]` 是字面文本：掩成空格后不再建链/建页
+        let visible = inline_literal::visible_text(content, format);
+        let drafts = extract_links_from_content(visible.as_ref());
         let internal_drafts: Vec<&LinkDraft> =
             drafts.iter().filter(|d| !d.is_external).collect();
 
@@ -352,8 +356,11 @@ impl ContentParseService {
         storage: &mut dyn StorageAdapter,
         block_id: &str,
         content: &str,
+        format: Option<&str>,
     ) -> Result<Vec<crate::types::FieldValue>, Box<dyn Error>> {
-        let drafts = extract_field_values_from_content(content);
+        // 行内代码里的 `key:: value` 是字面文本，不写字段值
+        let visible = inline_literal::visible_text(content, format);
+        let drafts = extract_field_values_from_content(visible.as_ref());
 
         // Get existing field values (only active ones: deleted_at IS NULL)
         let existing = FieldValueService::get_by_block_id(storage, block_id)?;

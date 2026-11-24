@@ -3,7 +3,7 @@
  * 选区格式按钮行：正文行内工具条与表格选区浮层**共用**的那一段。
  *
  * 两个入口的差异只允许出现在公共段**之后**（表格还要接合并 / 复制 / 删行列），
- * 公共段（对齐 + B/I/U/S/A）无论选区是正文文字、格内文字还是格矩形，
+ * 公共段（对齐 + B/I/U/S/`<>`/A）无论选区是正文文字、格内文字还是格矩形，
  * 都必须同序、同形、同尺寸 —— 否则同一套东西在两个入口长得不一样，就是割裂感。
  * 因此顺序、字形、尺寸、hover/激活态、二级箭头的形状全部收口到这里，
  * 宿主只负责「这批选区是什么格式、写回到哪」。
@@ -13,7 +13,7 @@
  * 它们的样式由本组件的 `:slotted()` 提供（插槽内容按 CSS 归属算在宿主作用域，
  * 普通 scoped 选择器够不到，`:slotted()` 正是为此存在）。
  */
-import { ChevronDown } from 'lucide-vue-next'
+import { ChevronDown, Code } from 'lucide-vue-next'
 import { computed } from 'vue'
 
 import { BLOCK_ALIGN_OPTIONS, type BlockAlign } from '../../utils/block-align'
@@ -30,6 +30,8 @@ interface MarkView {
   italic?: boolean
   underline?: boolean
   strike?: boolean
+  /** 行内代码（`` `x` ``）：激活态决定按钮是否高亮，点一下就是加/取消 */
+  code?: boolean
   color?: string | null
   background?: string | null
 }
@@ -132,6 +134,19 @@ function anchorOf(e: MouseEvent): HTMLElement {
     @click="emit('apply-mark', 'strike', null)"
   >
     <s>S</s>
+  </button>
+  <button
+    type="button"
+    class="sel-btn"
+    :class="{ 'is-on': props.format?.code }"
+    title="行内代码（再点一次取消）"
+    aria-label="行内代码"
+    @click="emit('apply-mark', 'code', null)"
+  >
+    <Code
+      :size="14"
+      :stroke-width="2"
+    />
   </button>
   <button
     type="button"

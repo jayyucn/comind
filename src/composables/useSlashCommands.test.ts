@@ -453,6 +453,91 @@ describe('useSlashCommands - executeTemplateCommand', () => {
   })
 })
 
+// ─── /code 切换代码块 ───────────────────────────────────────────────────────────
+
+/**
+ * 回归：`/code` 回车后命令文本不能被吃进代码块。
+ *
+ * 打字走 `Editor.vue` 的 300ms 防抖保存，切类型会卸载编辑器并取消该防抖，
+ * 若不在切换前把编辑器正文显式落库，store 里仍是 `/code` ——
+ * CodeMirrorEditor 用 `props.content` 初始化，代码块里就会显示 `/code`。
+ */
+describe('useSlashCommands - /code 切换代码块', () => {
+  function makeEditor(textAfterDelete: string) {
+    const chain = {
+      deleteRange: vi.fn().mockReturnThis(),
+      focus: vi.fn().mockReturnThis(),
+      run: vi.fn(),
+    }
+    return {
+      chain: vi.fn(() => chain),
+      getText: vi.fn(() => textAfterDelete),
+    }
+  }
+
+  const codeCommand = commands.find(c => c.id === 'code')!
+
+  it('切类型前把编辑器当前正文写回 store', async () => {
+    const updateBlockContent = vi.fn().mockResolvedValue(undefined)
+    const updateBlockType = vi.fn().mockResolvedValue(undefined)
+    vi.mocked(useBlockStore).mockReturnValue({
+      getBlock: vi.fn(() => ({ id: 'block-1', content: '/code' })),
+      updateBlockContent,
+      updateBlockType,
+    } as any)
+
+    const editor = makeEditor('')
+    await (codeCommand.action as any)({
+      editor,
+      range: { from: 1, to: 1 },
+      blockId: 'block-1',
+    })
+
+    expect(updateBlockContent).toHaveBeenCalledWith('block-1', '')
+    expect(updateBlockType).toHaveBeenCalledWith('block-1', 'code')
+    // 顺序：先落正文，再切类型（切类型会销毁那个未保存的编辑器）
+    expect(updateBlockContent.mock.invocationCallOrder[0])
+      .toBeLessThan(updateBlockType.mock.invocationCallOrder[0])
+  })
+
+  it('行内残留正文按编辑器当前内容落库（不只清空）', async () => {
+    const updateBlockContent = vi.fn().mockResolvedValue(undefined)
+    const updateBlockType = vi.fn().mockResolvedValue(undefined)
+    vi.mocked(useBlockStore).mockReturnValue({
+      getBlock: vi.fn(() => ({ id: 'block-1', content: '/code const a = 1' })),
+      updateBlockContent,
+      updateBlockType,
+    } as any)
+
+    await (codeCommand.action as any)({
+      editor: makeEditor('const a = 1'),
+      range: { from: 1, to: 1 },
+      blockId: 'block-1',
+    })
+
+    expect(updateBlockContent).toHaveBeenCalledWith('block-1', 'const a = 1')
+  })
+
+  it('正文与 store 一致时不做多余写入', async () => {
+    const updateBlockContent = vi.fn().mockResolvedValue(undefined)
+    const updateBlockType = vi.fn().mockResolvedValue(undefined)
+    vi.mocked(useBlockStore).mockReturnValue({
+      getBlock: vi.fn(() => ({ id: 'block-1', content: '' })),
+      updateBlockContent,
+      updateBlockType,
+    } as any)
+
+    await (codeCommand.action as any)({
+      editor: makeEditor(''),
+      range: { from: 1, to: 1 },
+      blockId: 'block-1',
+    })
+
+    expect(updateBlockContent).not.toHaveBeenCalled()
+    expect(updateBlockType).toHaveBeenCalledWith('block-1', 'code')
+  })
+})
+
 // ─── filterCommands / groupCommands / parseCommandInput 测试 ─────────────────────────────
 
 describe('filterCommands', () => {

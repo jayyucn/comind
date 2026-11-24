@@ -276,7 +276,10 @@ function renderTextWithMarks(
     const to = ordered[i + 1]
     if (to <= from) continue
     const attrs = mergeMarkAttrs(relevant.filter(mark => mark.start <= from && mark.end >= to))
-    const piece = renderTextSegmentWithTags(text.slice(from - start, to - start))
+    const rawSlice = text.slice(from - start, to - start)
+    // 行内代码是字面文本：段内的 `#tag` / `[[x]]` 不再 chip 化（Rust 侧同步 mask 过，
+    // 这里兜住旧数据与 links 表残留）
+    const piece = attrs?.code ? escapeHtmlEntities(rawSlice) : renderTextSegmentWithTags(rawSlice)
     html += attrs ? wrapInlineHtml(piece, attrs) : piece
   }
   return html

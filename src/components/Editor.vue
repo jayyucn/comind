@@ -16,6 +16,7 @@ import type { DateRefClickPayload } from '../extensions/DateRefExtension'
 import { DateRefExtension } from '../extensions/DateRefExtension'
 import { DateRefTriggerExtension } from '../extensions/DateRefTriggerExtension'
 import EnterAsBlockExtension from '../extensions/EnterAsBlockExtension'
+import InlineCodeSpaceExitExtension from '../extensions/InlineCodeSpaceExitExtension'
 import { InlineBackgroundColor, InlineTextColor } from '../extensions/InlineColorMarks'
 import { InlineTagExtension } from '../extensions/InlineTagExtension'
 import { closeTagMenuByEditor, findTagAtCursor, InlineTagTriggerExtension, notifyTagMenuSelect } from '../extensions/InlineTagTriggerExtension'
@@ -192,6 +193,8 @@ const editor = shallowRef(useEditor({
     ParagraphStylePreviewExtension,
     InlineTextColor,
     InlineBackgroundColor,
+    // 行内代码末尾敲空格 → 跳出代码（markdown 习惯）
+    InlineCodeSpaceExitExtension,
     DateRefExtension,
     DateRefTriggerExtension,
   ],

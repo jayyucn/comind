@@ -30,6 +30,10 @@
   --table-strip-bg: #{$color-stone-200};
   --table-strip-active-bg: #{$color-stone-300};
 
+  // 行内代码底（`code`）：半透黑压在白底上；暗色侧必须比 --bg-hover 明显，
+  // 否则块 hover 时行内代码的底被吞掉（弱底 ΔE 陷阱）。
+  --code-bg: rgba(0, 0, 0, 0.08);
+
   // 文字层级（适用于浅色背景）
   --text-primary: #{$color-stone-900};
   --text-secondary: #{$color-stone-600};
@@ -257,6 +261,9 @@
   // 条基座压在 --bg-base 上要能看见，但不能亮到抢焦点；悬停段再抬一档
   --table-strip-bg: #2A2A2E;
   --table-strip-active-bg: #4A4A52;
+
+  // 行内代码底：比 --bg-hover(#2E2E32) 再亮一档，块 hover 时不被吞
+  --code-bg: rgba(255, 255, 255, 0.14);
 
   --text-primary: #E4E4E7;
   --text-secondary: #A1A1AA;

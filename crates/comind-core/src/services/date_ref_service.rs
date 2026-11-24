@@ -75,9 +75,21 @@ impl DateRefService {
         block_id: &str,
         content: &str,
     ) -> Result<(), Box<dyn Error>> {
+        Self::sync_date_refs_for_block_with_format(storage, block_id, content, None)
+    }
+
+    /// 带 `format` 的版本：`format.inlineMarks` 中 `code: true` 的区间是**行内代码**，
+    /// 其中的 `@2026-01-01` 是字面文本，不建日期引用（不落提醒、不出 chip）。
+    pub fn sync_date_refs_for_block_with_format(
+        storage: &mut dyn StorageAdapter,
+        block_id: &str,
+        content: &str,
+        format: Option<&str>,
+    ) -> Result<(), Box<dyn Error>> {
         storage.date_refs().delete_by_block_id(block_id)?;
-        if !content.is_empty() {
-            let refs: Vec<DateRef> = Self::extract_date_refs(content)
+        let visible = crate::services::inline_literal::visible_text(content, format);
+        if !visible.is_empty() {
+            let refs: Vec<DateRef> = Self::extract_date_refs(visible.as_ref())
                 .into_iter()
                 .map(|mut r| {
                     r.block_id = block_id.to_string();
@@ -138,7 +150,13 @@ impl DateRefService {
         for page in pages {
             let blocks = storage.blocks().get_by_page_id(&page.id)?;
             for b in blocks {
-                Self::sync_date_refs_for_block(storage, &b.id, &b.content)?;
+                // 回填也走 format：行内代码里的 `@日期` 是字面文本，不当日期引用
+                Self::sync_date_refs_for_block_with_format(
+                    storage,
+                    &b.id,
+                    &b.content,
+                    Some(b.format.as_str()),
+                )?;
                 synced += 1;
             }
         }

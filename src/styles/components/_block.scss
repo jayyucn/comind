@@ -550,6 +550,17 @@ $callout-tones: (
   border-radius: $radius-sm;
 }
 
+// 行内代码（markdown 单反引号语义，GitHub 风格）：等宽 + 弱底 + 小圆角。
+// 编辑态同款规则在 Editor.vue 的 scoped style（`:deep(.tiptap) code`）——
+// 两处数值必须一致，否则进出编辑时文字宽度与行高会跳。
+.block-text code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  padding: 0.12em 0.35em;
+  border-radius: 4px;
+  background: var(--code-bg);
+}
+
 // Heading styles - 渲染态样式
 // 编辑态样式在 Editor.vue 的 scoped style 中定义（需要 :deep() 穿透）
 // 注意：全局 SCSS 中不能使用 ::deep()，会导致整个规则被浏览器丢弃
