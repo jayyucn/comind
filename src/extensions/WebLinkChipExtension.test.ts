@@ -105,7 +105,11 @@ describe('WebLinkChipExtension — 编辑态只露别名（ADR-0067）', () => {
       expect(chip?.dataset.chipTitle).toBe('飞书')
       const hidden = editor.view.dom.querySelectorAll('.pm-prefix-hidden')
       expect(Array.from(hidden).map(el => el.textContent).join('')).toBe('[](https://a.com)')
-      expect(Array.from(hidden).every(el => el.getAttribute('contenteditable') === 'false')).toBe(true)
+      // 前缀不可编辑（光标钻不进 `[`）；尾巴**必须**可编辑，否则 chip 之后没有插入符位
+      expect(editor.view.dom.querySelector('p > .pm-prefix-hidden')?.getAttribute('contenteditable'))
+        .toBe('false')
+      const tail = Array.from(hidden).at(-1)
+      expect(tail?.getAttribute('contenteditable')).toBeNull()
       expect(editor.getText()).toBe('看 [飞书](https://a.com) 吧')
     })
   })
@@ -123,6 +127,53 @@ describe('WebLinkChipExtension — 编辑态只露别名（ADR-0067）', () => {
       expect(editor.view.dom.querySelector('.web-link-chip')).toBeNull()
       expect(editor.getText()).toBe('[飞书](https://a.com)')
     }, true)
+  })
+})
+
+describe('WebLinkChipExtension — chip 之后的插入符位', () => {
+  it('标题视图：光标停在 chip.to 按退格，删的是别名最后一个字，隐藏 URL 不动', () => {
+    withEditor('[飞书](https://a.com)', (editor) => {
+      const chip = scanWebLinkChipsInDoc(editor.state.doc)[0]
+      expect(keydown(editor, 'Backspace', chip.to)).toBe(true)
+      expect(editor.getText()).toBe('[飞](https://a.com)')
+      const next = scanWebLinkChipsInDoc(editor.state.doc)[0]
+      expect(next).toMatchObject({ title: '飞', url: 'https://a.com' })
+      // 光标留在「链接之后」那一格（字面缩了一个字，chip.to 跟着左移）
+      expect(editor.state.selection.from).toBe(next.to)
+    })
+  })
+
+  it('链接视图：光标停在 chip.to 按退格，两截一起改，字面不会缺个 `)`', () => {
+    withEditor('[https://a.com](https://a.com)', (editor) => {
+      const chip = scanWebLinkChipsInDoc(editor.state.doc)[0]
+      expect(keydown(editor, 'Backspace', chip.to)).toBe(true)
+      expect(editor.getText()).toBe('[https://a.co](https://a.co)')
+      expect(scanWebLinkChipsInDoc(editor.state.doc)).toHaveLength(1)
+    })
+  })
+
+  it('光标落进隐藏尾巴内部时打字：写到字面之后，网址一个字不改', () => {
+    withEditor('[https://a.com](https://a.com)', (editor) => {
+      const chip = scanWebLinkChipsInDoc(editor.state.doc)[0]
+      const insideTail = chip.titleTo + 2
+      expect(textInput(editor, insideTail, insideTail, '尾')).toBe(true)
+      expect(editor.getText()).toBe('[https://a.com](https://a.com)尾')
+      expect(scanWebLinkChipsInDoc(editor.state.doc)[0]).toMatchObject({
+        title: 'https://a.com',
+        url: 'https://a.com',
+      })
+    })
+  })
+
+  it('光标停在 chip.to（链接之后）打字：字落在字面之后，不去改网址', () => {
+    withEditor('[https://a.com](https://a.com)后', (editor) => {
+      const chip = scanWebLinkChipsInDoc(editor.state.doc)[0]
+      // 放行 ProseMirror 默认插入（chip.to 是真实位置）
+      expect(textInput(editor, chip.to, chip.to, 'Z')).toBe(false)
+      const tr = editor.state.tr.insertText('Z', chip.to)
+      editor.view.dispatch(tr)
+      expect(editor.getText()).toBe('[https://a.com](https://a.com)Z后')
+    })
   })
 })
 

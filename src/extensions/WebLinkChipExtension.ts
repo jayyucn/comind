@@ -6,9 +6,12 @@
  * 前缀同一套 CSS），只在屏幕上露出别名，两态视觉一致。文档一个字都不改 —— 保存、
  * 撤销栈与 inlineMarks 偏移仍以完整字面为准。
  *
- * 隐藏区加 `contenteditable=false`：光标钻不进 `(url)`。但 ProseMirror 的退格/Delete
- * 走自己的 keymap，不受浏览器 contenteditable 限制，所以另有最小键盘护栏：
- * 方向键跨过隐藏区；退格/Delete 只作用于可见别名一个字，别名删空则整段 chip 消失。
+ * 隐藏区只给前缀 `[` 加 `contenteditable=false`：光标钻不进 `(` 那一侧。尾巴 `](url)`
+ * **不能**加 —— 零宽 inline-block 且不可编辑的尾巴之后，Chromium 摆不出插入符：光标停在
+ * chip 之后（退格删掉链接后面的字、→ 跨过 chip）时，插入符会被甩到 chip 左边，接着打的字
+ * 还会插到链接前面（2026-11-26 实测）。尾巴可编辑后 `chip.to` 就是合法插入位，代价是默认
+ * 退格会啃掉隐藏的 `)`，所以另有最小键盘护栏：方向键跨过隐藏区；退格/Delete 只作用于可见
+ * 别名一个字（停在 `chip.to` 时算「别名最后一个字」），别名删空则整段 chip 消失。
  *
  * 键入裸网址即时成 chip（`[url](url)`，链接视图）：见 `planBareUrlWrap`。包完之后光标
  * 落在别名末尾，后续字符由下面的链接视图分支继续同步两截，所以逐字包裹不会重复触发。
@@ -17,8 +20,9 @@
  * 只留用户输入。但在别名末尾打空格/标点不是「改网址」，那是接着写正文 —— 字符落到
  * chip 右侧，链接保留。标题视图只改别名，URL 交给 ProseMirror 默认逐字编辑。
  *
- * 例外：chip 正好在块尾时，别名末尾就是唯一可见的行尾（`](url)` 之后没有合法光标位），
- * 那时打的字一律算正文（见 `titleChipAtBlockTail`），否则用户永远写不出 chip 之后的字。
+ * 例外：chip 正好在块尾时，别名末尾就是这一行的最后一个可见字符（尾巴零宽），
+ * 那时在别名末尾打的字一律算正文（见 `titleChipAtBlockTail`），否则用户永远写不出
+ * chip 之后的字。想改别名末尾的字，先按 → 走到 `chip.to` 再改。
  */
 import { Extension } from '@tiptap/core'
 import type { Node as PMNode } from '@tiptap/pm/model'
@@ -187,9 +191,9 @@ function selectedAliasWouldEmpty(sel: { from: number; to: number }, chip: WebLin
 /**
  * 行尾光标：块尾恰好是 chip 时收到别名末尾。
  *
- * `chip.to` 落在隐藏区 `](url)` 的末尾，Chromium 不允许插入符停在 contenteditable=false
- * 的文本里，会把整个插入符弹回块首（表现为「按 End 后光标跳到开头，打的字插到链接前面」）。
- * 可见行尾其实就是别名末尾。
+ * End 的语义是「本行最后一个可见字符之后」——chip 在块尾时那就是别名末尾（`](url)` 零宽，
+ * 右边没有字）。落在 `chip.to` 会把光标放到「链接之后」那一格，接着打字虽然也在外面，
+ * 但和「行尾」不是一回事，且链接视图下会去改网址。
  */
 function visibleLineEnd(state: EditorState, chips: WebLinkChipMatch[]): number {
   const blockEnd = state.selection.$from.end()
@@ -207,8 +211,8 @@ function visibleLineStart(state: EditorState, chips: WebLinkChipMatch[]): number
 /**
  * chip 是否正好是所在文本块的末尾。
  *
- * 这是「别名末尾 = 可见行尾」的唯一条件：后面还有字时，插入符可以停在 `chip.to`
- * 这个真实位置，打的字天然落在字面外；只有块尾才无处可去。
+ * 这是「别名末尾 = 可见行尾」的条件：后面还有字时，可见行尾在后面的字上；
+ * 只有 chip 收尾时，别名末尾才是这一行的最后一个可见字符。
  */
 function chipEndsBlock(doc: PMNode, chip: WebLinkChipMatch): boolean {
   const $to = doc.resolve(chip.to)
@@ -218,13 +222,11 @@ function chipEndsBlock(doc: PMNode, chip: WebLinkChipMatch): boolean {
 /**
  * 标题视图 + chip 在块尾：别名末尾打的字属于**正文**，落到字面之后。
  *
- * 块尾没有「chip 右侧」的光标位——`](url)` 是 `contenteditable=false` 的零宽文本，
- * Chromium 不接受停在它之后（会整个弹回块首），ProseMirror 也只能把 0 尺寸 widget
- * 摆在那里，插入符照样落不进去（2026-11-26 实测）。所以别名末尾就是唯一可见的行尾，
- * 不接管的话每个字符都被吃进别名，用户再也写不出 chip 之后的正文。
+ * 块尾 chip 的别名末尾就是可见行尾（隐藏尾巴零宽，右边没有字），不接管的话每个字符都被
+ * 吃进别名，用户再也写不出 chip 之后的正文。
  *
- * 代价：块尾 chip 的别名末尾不能再直接改字。改标题走悬浮条「编辑链接」，或在别名
- * 中间点一下。块中间的 chip 不受影响（那里 `chip.to` 是合法光标位，打字本来就在外面）。
+ * 代价：块尾 chip 的别名末尾不能再直接改字（那里的键入算正文）。改标题走悬浮条
+ * 「编辑链接」，或在别名中间点一下；`chip.to` 那一格打字同样算正文。
  */
 function titleChipAtBlockTail(
   doc: PMNode,
@@ -266,9 +268,13 @@ export const WebLinkChipExtension = Extension.create({
                   class: 'pm-prefix-hidden',
                   contenteditable: 'false',
                 }),
+                /**
+                 * 尾巴（`](url)`）**不加** `contenteditable=false`：不可编辑的零宽 inline-block
+                 * 之后 Chromium 摆不出插入符（会甩回 chip 左边），而 `chip.to` 正是「链接之后」
+                 * 唯一能落光标的那一格。隐藏靠零宽 CSS，不靠 contenteditable。
+                 */
                 Decoration.inline(chip.titleTo, chip.to, {
                   class: 'pm-prefix-hidden',
-                  contenteditable: 'false',
                 }),
               )
             }
@@ -345,6 +351,25 @@ export const WebLinkChipExtension = Extension.create({
               const chip = chipOf(selection.from)
               if (!chip) return false
               const pos = selection.from
+              /**
+               * 光标停在 `chip.to`（链接之后的那一格）：插入符左边是隐藏的 `)`。
+               * 放行默认退格会把网址啃掉一个字符（`[u](https://a.co` 这种字面就废了），
+               * 所以按「删可见的最后一个字」处理，与在别名末尾退格同语义。
+               */
+              if (pos === chip.to) {
+                if (chip.title.length === 1) {
+                  replaceChipLiteral(view, chip, '')
+                  return true
+                }
+                if (chip.title === chip.url) {
+                  const nextAlias = chip.title.slice(0, -1)
+                  deleteInLinkView(view, chip, nextAlias, nextAlias.length)
+                  return true
+                }
+                // 标题视图：只掉别名最后一个字，隐藏 URL 不动
+                view.dispatch(view.state.tr.delete(chip.titleTo - 1, chip.titleTo))
+                return true
+              }
               if (pos === chip.titleTo && chip.title.length === 1) {
                 replaceChipLiteral(view, chip, '')
                 return true
@@ -424,6 +449,15 @@ export const WebLinkChipExtension = Extension.create({
               // 块尾 chip：字符落到字面之后，链接与别名原样保留
               const tr = view.state.tr.insertText(text, tail.to)
               tr.setSelection(TextSelection.create(tr.doc, tail.to + text.length))
+              view.dispatch(tr)
+              return true
+            }
+            // 光标真落进隐藏尾巴内部（`](url)` 的字缝里）：那里不该有插入点，
+            // 把字写到字面之后，别去改网址
+            const inTail = chips.find(c => from === to && from > c.titleTo && from < c.to)
+            if (inTail) {
+              const tr = view.state.tr.insertText(text, inTail.to)
+              tr.setSelection(TextSelection.create(tr.doc, inTail.to + text.length))
               view.dispatch(tr)
               return true
             }

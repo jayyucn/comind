@@ -33,6 +33,87 @@ async function state(page: Page) {
   }))
 }
 
+/** 插入符横向位置 vs 芯片可见右边缘：差得远 = 插入符被甩到了 chip 左边 */
+async function caretOffsetFromChipEnd(page: Page) {
+  return page.evaluate(() => {
+    const sel = window.getSelection()
+    const caret = sel?.rangeCount ? sel.getRangeAt(0).getClientRects()[0] : null
+    const chip = document.querySelector('.web-link-chip:not(.pm-prefix-hidden)')
+    const box = chip?.getBoundingClientRect()
+    if (!caret || !box) return null
+    return Math.round(caret.left - box.right)
+  })
+}
+
+test('链接之后退格删光正文：插入符留在链接末尾，既不回跳也不吞网址', async ({ page }) => {
+  await boot(page)
+  await page.keyboard.type('https://www.doubao.com', { delay: 30 })
+  await wait(300)
+  await page.keyboard.type(' 测试内容', { delay: 30 })
+  await wait(400)
+
+  // 一路退到链接之后的那个插入位（含空格一起删掉）
+  for (let i = 0; i < 5; i++) {
+    await page.keyboard.press('Backspace')
+    await wait(150)
+  }
+  const editing = await state(page)
+  expect(editing.texts[0]).toBe('[https://www.doubao.com](https://www.doubao.com)')
+  // 曾经这里插入符被甩到 chip 左边（视觉上「光标消失」），接着打的字插进链接前面
+  expect(await caretOffsetFromChipEnd(page)).toBeGreaterThanOrEqual(-2)
+
+  await page.keyboard.type('Z', { delay: 40 })
+  await wait(400)
+  expect((await state(page)).texts[0]).toBe(
+    '[https://www.doubao.com](https://www.doubao.com)Z',
+  )
+})
+
+test('标题视图：退格删光链接后面的正文，插入符仍停在链接末尾', async ({ page }) => {
+  await boot(page)
+  await page.keyboard.insertText('[飞书文档](https://www.feishu.cn/docx/abc)')
+  await wait(400)
+  await page.keyboard.press('Escape')
+  await wait(400)
+
+  await page.locator('.block').first().click()
+  await wait(500)
+  await page.keyboard.press('End')
+  await wait(150)
+  await page.keyboard.type('后记', { delay: 30 })
+  await wait(400)
+  for (let i = 0; i < 2; i++) {
+    await page.keyboard.press('Backspace')
+    await wait(150)
+  }
+
+  const editing = await state(page)
+  expect(editing.texts[0]).toBe('[飞书文档](https://www.feishu.cn/docx/abc)')
+  expect(editing.chips).toEqual(['飞书文档'])
+  expect(await caretOffsetFromChipEnd(page)).toBeGreaterThanOrEqual(-2)
+})
+
+test('删除链接后面的空格：插入符停在链接末尾，再打的字落在后文之前', async ({ page }) => {
+  await boot(page)
+  await page.keyboard.type('https://a.com', { delay: 30 })
+  await wait(300)
+  await page.keyboard.type(' xy', { delay: 30 })
+  await wait(400)
+  // 左移两次把光标放到空格左侧，再退格删掉空格
+  await page.keyboard.press('ArrowLeft')
+  await page.keyboard.press('ArrowLeft')
+  await wait(200)
+  await page.keyboard.press('Backspace')
+  await wait(350)
+
+  expect((await state(page)).texts[0]).toBe('[https://a.com](https://a.com)xy')
+  expect(await caretOffsetFromChipEnd(page)).toBeGreaterThanOrEqual(-2)
+
+  await page.keyboard.type('Z', { delay: 40 })
+  await wait(400)
+  expect((await state(page)).texts[0]).toBe('[https://a.com](https://a.com)Zxy')
+})
+
 test('键入网址即成 chip：不弹斜杠菜单，Esc 能退出，读态仍是 chip', async ({ page }) => {
   await boot(page)
   await page.keyboard.type('https://www.doubao.com', { delay: 30 })
