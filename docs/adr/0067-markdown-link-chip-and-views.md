@@ -66,7 +66,7 @@ chip → 卡片/预览：原 text 块拆成「前文本块 + web-link 块 + 后�
 
 ### D7 元数据与资源策略不变
 
-抓取通道（Rust `fetch_web_link_metadata`）、本地 asset 化（favicon/封面）、抓取失败降级、全局开关、预览 iframe 的 CSP 与 sandbox 策略全部沿用 ADR-0066 D3/D7/D8/D12。
+抓取通道（Rust `fetch_web_link_metadata`）、本地 asset 化（favicon/封面）、抓取失败降级、全局开关、预览 iframe 的 CSP 策略全部沿用 ADR-0066 D3/D7/D8/D12；sandbox 策略按 D11 调整。
 
 ### D8 编辑态与读态同形：装饰隐藏语法字符，不改真源
 
@@ -98,6 +98,14 @@ chip → 卡片/预览：原 text 块拆成「前文本块 + web-link 块 + 后�
 
 同一套判定还要求斜杠命令把 `https:` / `https:/` 这类中间态也算作「正在写网址」：否则 `https://` 里的斜杠会打开斜杠命令面板，而这个面板是模态层，会 `preventDefault` 掉 Esc，块再也退不出编辑态。
 
+### D11 预览 iframe：跨源补 `allow-same-origin`
+
+预览视图的 sandbox 基础项仍是 `allow-scripts allow-popups allow-forms`，但对**跨源**地址追加 `allow-same-origin`。规则做成纯函数 `previewSandboxFor(target, pageOrigin)`，解析不出 origin 时按同源处理。
+
+理由：缺 `allow-same-origin` 时 iframe 处于 opaque origin，页面脚本读 `localStorage` 抛 `SecurityError: The document is sandboxed and lacks the 'allow-same-origin' flag`，`indexedDB.open` 同样被拒。首屏依赖存储的站点（豆包等）因此直接白屏、控制台满屏红；补上后正常渲染。跨源隔离并不因此失效——父文档仍读不到 iframe 的 DOM 与 location。
+
+反过来，同源地址必须继续不加：`allow-scripts` + `allow-same-origin` 的组合能让页面脚本访问父文档、甚至摘掉自己的 sandbox。笔记里贴本站地址做预览时宁可能白屏，也不交出父文档。
+
 ## 已否决的替代方案
 | 方案 | 否决理由 |
 |---|---|
@@ -124,6 +132,7 @@ chip → 卡片/预览：原 text 块拆成「前文本块 + web-link 块 + 后�
 | `src/composables/useContentRenderer.ts` | 外链 chip 只渲染标题，暴露 data 属性 |
 | `src/services/render-text.ts` | 可见文本改用 `display_text` |
 | `src/utils/web-link-chip.ts` | 新增：chip 字面读写单源 |
+| `src/utils/web-link.ts` | 新增 `previewSandboxFor`：预览 iframe 按源决定是否补 `allow-same-origin` |
 | `src/services/web-link-split.ts` | 新增：拆建计划纯函数 |
 | `src/services/web-link-actions.ts` | 新增：编辑/移除/复制/拆建/alias 填充动作 |
 | `src/composables/useWebLinkChipToolbar.ts` | 新增：悬浮条全局状态 |
@@ -144,6 +153,7 @@ chip → 卡片/预览：原 text 块拆成「前文本块 + web-link 块 + 后�
 2. 菜单写入 chip 字面时方括号替换为全角替身；手动键入方括号仍可能破坏字面语法，导致 chip 拆解。编辑态的键盘护栏覆盖常见方向键/退格/删除与直接输入，IME 组合输入、跨 chip 拖拽选区尚未覆盖。
 3. alias 自动填充只在仍是域名占位时发生，alias 被改过即锁定——永不自动更新到网页新标题；chip 切到链接视图时手写别名会被 URL 覆盖（撤销可找回）。
 4. `external_link` 段是新增解析路径，与字段值的 mini-markdown 渲染并存两套实现。
+5. 预览只覆盖「跨源正常、同源白屏」这一侧：贴本站地址做预览仍会因严格 sandbox 而无法读存储。若将来要在预览里打开本站页面，需要另设白名单而不是放开全域 `allow-same-origin`。
 
 ### 未做
 

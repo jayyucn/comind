@@ -6,7 +6,7 @@
  * - 链接视图：显示 URL，点击可原地改址（不激活块编辑器，见 handler 的 mousedown 拦截）；
  * - 标题视图：显示网页标题，图标 16px 内联；
  * - 卡片视图：有封面出大图卡，无封面出窄卡（D6）；抓不到元数据时域名兜底 + 明确失败文案；
- * - 预览视图：iframe 内嵌（sandbox 无 allow-same-origin），可拖拽改高并持久化。
+ * - 预览视图：iframe 内嵌（跨源补 allow-same-origin，见 `previewSandbox`），可拖拽改高并持久化。
  *
  * 切换入口两处：块上悬停浮出的「显示为」面板（Teleport 到 body），以及块入口菜单的同组项。
  */
@@ -23,6 +23,7 @@ import {
   DEFAULT_PREVIEW_HEIGHT,
   domainOf,
   patchWebLink,
+  previewSandboxFor,
   readWebLink,
   WEB_LINK_ERROR_TEXT,
   webLinkSummary,
@@ -216,6 +217,15 @@ function openExternal(): void {
 const showCard = computed(() => view.value === 'card')
 const showWideCard = computed(() => showCard.value && !!coverSrc.value)
 
+/**
+ * 预览 iframe 的沙箱策略，规则与理由见 `previewSandboxFor`（ADR-0067 D11）。
+ *
+ * 跨源补 `allow-same-origin`：缺了它 iframe 是 opaque origin，页面读存储就抛 SecurityError，
+ * 豆包这类首屏依赖存储的站点直接白屏、控制台满屏红。同源保守不加 —— 那种组合下页面脚本
+ * 能摸到父文档、甚至摘掉自己的 sandbox。
+ */
+const previewSandbox = computed(() => previewSandboxFor(url.value, window.location.origin))
+
 // 刚落地的链接块自动浮出一次悬浮条（ADR-0067 D5：悬浮条是唯一入口）
 watch(
   panelRevealFor,
@@ -391,7 +401,7 @@ defineExpose({
         class="wl-preview-frame"
         :src="url"
         :style="{ height: `${previewHeight}px` }"
-        sandbox="allow-scripts allow-popups allow-forms"
+        :sandbox="previewSandbox"
         referrerpolicy="no-referrer"
         loading="lazy"
         title="网页预览"

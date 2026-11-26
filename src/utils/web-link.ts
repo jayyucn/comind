@@ -104,6 +104,27 @@ export function clampPreviewHeight(height: number): number {
 }
 
 /**
+ * 预览 iframe 的 sandbox 属性值（ADR-0067 D11）。
+ *
+ * 跨源页面必须给 `allow-same-origin`：缺了它 iframe 是 opaque origin，页面脚本一读
+ * `localStorage` / `indexedDB` 就抛 `SecurityError`（Chrome 文案：The document is sandboxed
+ * and lacks the 'allow-same-origin' flag），豆包这类首屏依赖存储的站点直接白屏。
+ * 加了之后跨源隔离照旧 —— 父文档仍读不到它的 DOM，只是恢复它自己的 origin。
+ *
+ * 但 `allow-scripts` + `allow-same-origin` 在 iframe 与父文档**同源**时，能让页面脚本摸到
+ * 父文档、甚至摘掉自己的 sandbox。所以只对跨源地址补这一项；同源地址（贴了本站链接）
+ * 保持严格 sandbox。解析不出 origin 时按同源处理。
+ */
+export function previewSandboxFor(target: string, pageOrigin: string): string {
+  const base = 'allow-scripts allow-popups allow-forms'
+  try {
+    return new URL(target).origin === pageOrigin ? base : `${base} allow-same-origin`
+  } catch {
+    return base
+  }
+}
+
+/**
  * 整段文本恰为一个可识别的 http(s) URL 时返回归一后的地址，否则 null。
  *
  * 判定口径是「整块内容就是一个网址」——含空白、换行、前后缀文字的都不算；

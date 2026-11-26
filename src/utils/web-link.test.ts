@@ -7,11 +7,29 @@ import {
   clampPreviewHeight,
   domainOf,
   patchWebLink,
+  previewSandboxFor,
   readWebLink,
   webLinkMarkdown,
   webLinkTitle,
   webLinkUrlOf,
 } from './web-link'
+
+describe('previewSandboxFor', () => {
+  it('跨源页面补 allow-same-origin：否则读存储抛 SecurityError，SPA 白屏', () => {
+    expect(previewSandboxFor('https://www.doubao.com', 'http://localhost:5173'))
+      .toBe('allow-scripts allow-popups allow-forms allow-same-origin')
+  })
+
+  it('同源页面不加：allow-scripts + allow-same-origin 能让页面摸到父文档', () => {
+    expect(previewSandboxFor('http://localhost:5173/page/x', 'http://localhost:5173'))
+      .toBe('allow-scripts allow-popups allow-forms')
+  })
+
+  it('解析不出 origin 时按同源处理，保持严格 sandbox', () => {
+    expect(previewSandboxFor('not a url', 'http://localhost:5173'))
+      .toBe('allow-scripts allow-popups allow-forms')
+  })
+})
 
 describe('webLinkUrlOf', () => {
   it('整段就是一个 http(s) 网址时归一返回', () => {
