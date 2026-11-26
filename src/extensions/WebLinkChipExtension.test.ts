@@ -70,6 +70,17 @@ function textInput(editor: Editor, from: number, to: number, text: string) {
   return handler!(editor.view, from, to, text)
 }
 
+/** 触发插件登记的 DOM 事件钩子（IME 合成开/关） */
+function domEvent(editor: Editor, type: 'compositionstart' | 'compositionend') {
+  const plugin = editor.state.plugins.find(p => p.key.startsWith('webLinkChip'))
+  const handlers = plugin!.spec.props.handleDOMEvents as
+    | Record<string, (view: EditorView, event: Event) => boolean>
+    | undefined
+  const handler = handlers?.[type]
+  expect(handler, `handleDOMEvents.${type} 未挂载`).toBeTypeOf('function')
+  return handler!(editor.view, new Event(type))
+}
+
 /**
  * 逐字键入：handler 未拦截时由这里插入（等价 ProseMirror 默认路径）。
  * 光标若被护栏算错一位，后续字符就会插到字面外面——只断言最终文本发现不了。
@@ -246,6 +257,85 @@ describe('WebLinkChipExtension — 链接视图改写语义', () => {
       editor.commands.deleteRange({ from: chip.titleTo - 1, to: chip.titleTo })
       expect(editor.getText()).toBe('[飞](https://a.com)')
       expect(scanWebLinkChipsInDoc(editor.state.doc)[0]).toMatchObject({ title: '飞', url: 'https://a.com' })
+    })
+  })
+})
+
+describe('WebLinkChipExtension — 块尾 chip 之后接着写正文', () => {
+  it('标题视图 + 块尾 chip：别名末尾打的字落到字面之后，标题不变', () => {
+    withEditor('[飞书](https://a.com)', (editor) => {
+      const chip = scanWebLinkChipsInDoc(editor.state.doc)[0]
+      expect(textInput(editor, chip.titleTo, chip.titleTo, '尾')).toBe(true)
+      expect(editor.getText()).toBe('[飞书](https://a.com)尾')
+      expect(scanWebLinkChipsInDoc(editor.state.doc)[0]).toMatchObject({
+        title: '飞书',
+        url: 'https://a.com',
+      })
+      // 光标留在正文末尾，继续打字不会又跑回别名里
+      expect(editor.state.selection.from).toBe(chip.to + 1)
+    })
+  })
+
+  it('标题视图 + 块尾 chip：空格与中文标点同样落到字面之后', () => {
+    withEditor('[飞书](https://a.com)', (editor) => {
+      const chip = scanWebLinkChipsInDoc(editor.state.doc)[0]
+      expect(textInput(editor, chip.titleTo, chip.titleTo, '，')).toBe(true)
+      expect(editor.getText()).toBe('[飞书](https://a.com)，')
+    })
+  })
+
+  it('标题视图 + chip 之后还有文字：别名末尾仍按默认改别名', () => {
+    withEditor('[飞书](https://a.com)后', (editor) => {
+      const chip = scanWebLinkChipsInDoc(editor.state.doc)[0]
+      // 返回 false = 放行 ProseMirror 默认插入（落在别名末尾）
+      expect(textInput(editor, chip.titleTo, chip.titleTo, '尾')).toBe(false)
+      const tr = editor.state.tr.insertText('尾', chip.titleTo)
+      editor.view.dispatch(tr)
+      expect(editor.getText()).toBe('[飞书尾](https://a.com)后')
+    })
+  })
+
+  it('标题视图 + 块尾 chip：合成提交后把增长的那截搬回正文', async () => {
+    const editor = createEditor('[飞书](https://a.com)')
+    try {
+      const chip = scanWebLinkChipsInDoc(editor.state.doc)[0]
+      editor.commands.setTextSelection(chip.titleTo)
+      domEvent(editor, 'compositionstart')
+      // ProseMirror 边合成边同步：预编辑文本直接落进别名，不经过 handleTextInput
+      editor.view.dispatch(editor.state.tr.insertText('尾', chip.titleTo))
+      expect(editor.getText()).toBe('[飞书尾](https://a.com)')
+      domEvent(editor, 'compositionend')
+      // 收尾排在 ProseMirror 自己的 flush 之后
+      await new Promise(resolve => setTimeout(resolve, 20))
+      expect(editor.getText()).toBe('[飞书](https://a.com)尾')
+      const next = scanWebLinkChipsInDoc(editor.state.doc)[0]
+      expect(next).toMatchObject({ title: '飞书' })
+      await new Promise(resolve => setTimeout(resolve, 20))
+    } finally {
+      const element = editor.view.dom.parentElement
+      editor.destroy()
+      element?.remove()
+    }
+  })
+
+  it('合成中间态不搬：合成中落进别名的字留着等提交覆盖', () => {
+    withEditor('[飞书](https://a.com)', (editor) => {
+      const chip = scanWebLinkChipsInDoc(editor.state.doc)[0]
+      editor.commands.setTextSelection(chip.titleTo)
+      domEvent(editor, 'compositionstart')
+      // 拼音中间态：还在合成里，不能当成正文搬出去
+      editor.view.dispatch(editor.state.tr.insertText('wei', chip.titleTo))
+      expect(editor.getText()).toBe('[飞书wei](https://a.com)')
+    })
+  })
+
+  it('光标不在块尾别名末尾时，改别名不受 appendTransaction 干扰', () => {
+    withEditor('[飞书](https://a.com)', (editor) => {
+      const chip = scanWebLinkChipsInDoc(editor.state.doc)[0]
+      // 光标在块首（不是 chip 末尾）：这次插入是真在改标题
+      editor.commands.setTextSelection(chip.titleFrom + 1)
+      editor.view.dispatch(editor.state.tr.insertText('书', chip.titleFrom + 1))
+      expect(editor.getText()).toBe('[飞书书](https://a.com)')
     })
   })
 })

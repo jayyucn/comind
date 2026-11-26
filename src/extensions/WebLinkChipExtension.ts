@@ -16,6 +16,9 @@
  * 链接视图（别名 = URL）直接打字会同步改两截字面；一旦不再是网址就拆掉隐藏 URL、
  * 只留用户输入。但在别名末尾打空格/标点不是「改网址」，那是接着写正文 —— 字符落到
  * chip 右侧，链接保留。标题视图只改别名，URL 交给 ProseMirror 默认逐字编辑。
+ *
+ * 例外：chip 正好在块尾时，别名末尾就是唯一可见的行尾（`](url)` 之后没有合法光标位），
+ * 那时打的字一律算正文（见 `titleChipAtBlockTail`），否则用户永远写不出 chip 之后的字。
  */
 import { Extension } from '@tiptap/core'
 import type { Node as PMNode } from '@tiptap/pm/model'
@@ -201,12 +204,49 @@ function visibleLineStart(state: EditorState, chips: WebLinkChipMatch[]): number
   return first && first.from <= blockStart ? first.titleFrom : blockStart
 }
 
+/**
+ * chip 是否正好是所在文本块的末尾。
+ *
+ * 这是「别名末尾 = 可见行尾」的唯一条件：后面还有字时，插入符可以停在 `chip.to`
+ * 这个真实位置，打的字天然落在字面外；只有块尾才无处可去。
+ */
+function chipEndsBlock(doc: PMNode, chip: WebLinkChipMatch): boolean {
+  const $to = doc.resolve(chip.to)
+  return $to.parentOffset === $to.parent.content.size
+}
+
+/**
+ * 标题视图 + chip 在块尾：别名末尾打的字属于**正文**，落到字面之后。
+ *
+ * 块尾没有「chip 右侧」的光标位——`](url)` 是 `contenteditable=false` 的零宽文本，
+ * Chromium 不接受停在它之后（会整个弹回块首），ProseMirror 也只能把 0 尺寸 widget
+ * 摆在那里，插入符照样落不进去（2026-11-26 实测）。所以别名末尾就是唯一可见的行尾，
+ * 不接管的话每个字符都被吃进别名，用户再也写不出 chip 之后的正文。
+ *
+ * 代价：块尾 chip 的别名末尾不能再直接改字。改标题走悬浮条「编辑链接」，或在别名
+ * 中间点一下。块中间的 chip 不受影响（那里 `chip.to` 是合法光标位，打字本来就在外面）。
+ */
+function titleChipAtBlockTail(
+  doc: PMNode,
+  chips: WebLinkChipMatch[],
+  pos: number,
+): WebLinkChipMatch | null {
+  return chips.find(c =>
+    c.title !== c.url && c.titleTo === pos && chipEndsBlock(doc, c),
+  ) ?? null
+}
+
 const WEB_LINK_CHIP_KEY = new PluginKey('webLinkChip')
 
 export const WebLinkChipExtension = Extension.create({
   name: 'webLinkChip',
 
   addProseMirrorPlugins() {
+    /** IME 合成进行中：合成中间态（拼音/候选）会逐次进 DOM，不能跟着往外搬 */
+    let composingAtTail = false
+    /** 合成起手停在块尾别名末尾时记下别名原文，提交后据此把增长的那截搬回正文 */
+    let composedTail: { from: number; url: string; title: string } | null = null
+
     return [
       new Plugin({
         key: WEB_LINK_CHIP_KEY,
@@ -377,6 +417,16 @@ export const WebLinkChipExtension = Extension.create({
 
           handleTextInput(view, from, to, text) {
             const chips = scanWebLinkChipsInDoc(view.state.doc)
+            const tail = !composingAtTail && from === to
+              ? titleChipAtBlockTail(view.state.doc, chips, from)
+              : null
+            if (tail && text) {
+              // 块尾 chip：字符落到字面之后，链接与别名原样保留
+              const tr = view.state.tr.insertText(text, tail.to)
+              tr.setSelection(TextSelection.create(tr.doc, tail.to + text.length))
+              view.dispatch(tr)
+              return true
+            }
             const chip = chips.find(
               c => c.title === c.url && from >= c.titleFrom && to <= c.titleTo,
             )
@@ -414,6 +464,60 @@ export const WebLinkChipExtension = Extension.create({
             tr.setSelection(TextSelection.create(tr.doc, wrap.start + 1 + wrap.url.length))
             view.dispatch(tr)
             return true
+          },
+
+          handleDOMEvents: {
+            compositionstart(view) {
+              composingAtTail = false
+              composedTail = null
+              const sel = view.state.selection
+              if (!sel.empty) return false
+              const tail = titleChipAtBlockTail(
+                view.state.doc,
+                scanWebLinkChipsInDoc(view.state.doc),
+                sel.from,
+              )
+              if (tail) {
+                composingAtTail = true
+                composedTail = { from: tail.from, url: tail.url, title: tail.title }
+              }
+              return false
+            },
+            /**
+             * IME 合成绕过 `handleTextInput`：ProseMirror 边合成边把预编辑文本同步进文档，
+             * 块尾 chip 的别名照样被撑长。合成结束后把多出来那一截搬回正文，语义与键入一致。
+             *
+             * 合成中间态（拼音、候选）一律不搬——否则每敲一个字母就搬出去一段碎片。
+             * 收尾用 setTimeout 排在 ProseMirror 自己的 flush 之后（微任务先于宏任务），
+             * 那时文档才是最终态。
+             */
+            compositionend(view) {
+              composingAtTail = false
+              const pending = composedTail
+              composedTail = null
+              if (!pending) return false
+              setTimeout(() => {
+                if (view.isDestroyed) return
+                const chips = scanWebLinkChipsInDoc(view.state.doc)
+                const next = chips.find(c => c.from === pending.from && c.url === pending.url)
+                if (!next || next.title.length <= pending.title.length) return
+                if (!next.title.startsWith(pending.title)) return
+                // 合成把别名整段改写了，按新别名重建字面，增长的那一截落到正文
+                const grown = next.title.slice(pending.title.length)
+                const literal = chipLiteral(pending.title, next.url)
+                const marks = view.state.doc.resolve(next.titleFrom).marks()
+                const tr = view.state.tr.replaceWith(
+                  next.from,
+                  next.to,
+                  view.state.schema.text(literal, marks),
+                )
+                const at = next.from + literal.length
+                tr.insertText(grown, at)
+                tr.setSelection(TextSelection.create(tr.doc, at + grown.length))
+                view.dispatch(tr)
+              }, 0)
+              return false
+            },
           },
 
           handleClick(view, pos, event) {

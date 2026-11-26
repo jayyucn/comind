@@ -85,6 +85,60 @@ test('句中的网址只包自己，前后文字与中文标点都不动', async
   expect(read.chips).toEqual(['https://a.com/x'])
 })
 
+test('标题视图块尾 chip：接着打的字落到链接右侧，不再被吃进别名', async ({ page }) => {
+  await boot(page)
+  await page.keyboard.insertText('[飞书文档](https://www.feishu.cn/docx/abc)')
+  await wait(400)
+  await page.keyboard.press('Escape')
+  await wait(400)
+
+  await page.locator('.block').first().click()
+  await wait(500)
+  await page.keyboard.press('End')
+  await wait(150)
+  await page.keyboard.type('。后记', { delay: 30 })
+  await wait(400)
+
+  const editing = await state(page)
+  expect(editing.texts[0]).toBe('[飞书文档](https://www.feishu.cn/docx/abc)。后记')
+  expect(editing.chips).toEqual(['飞书文档'])
+
+  await page.keyboard.press('Escape')
+  await wait(400)
+  expect((await state(page)).texts[0]).toBe('飞书文档。后记')
+})
+
+test('标题视图块尾 chip：IME 合成提交后同样落到链接右侧', async ({ page }) => {
+  await boot(page)
+  await page.keyboard.insertText('[飞书文档](https://www.feishu.cn/docx/abc)')
+  await wait(400)
+  await page.keyboard.press('Escape')
+  await wait(400)
+
+  await page.locator('.block').first().click()
+  await wait(500)
+  await page.keyboard.press('End')
+  await wait(150)
+
+  // ProseMirror 边合成边把预编辑文本同步进文档（此时别名已被撑长）
+  const client = await page.context().newCDPSession(page)
+  await client.send('Input.imeSetComposition', { text: '尾', selectionStart: 1, selectionEnd: 1 })
+  await wait(400)
+  expect((await state(page)).texts[0]).toBe('[飞书文档尾](https://www.feishu.cn/docx/abc)')
+
+  // CDP 没有「提交候选」的指令，收尾由合成结束事件触发（插件据此把增长的那截搬回正文）
+  await page.evaluate(() => {
+    document.querySelector('.ProseMirror')?.dispatchEvent(
+      new CompositionEvent('compositionend', { data: '尾', bubbles: true }),
+    )
+  })
+  await wait(600)
+
+  const editing = await state(page)
+  expect(editing.texts[0]).toBe('[飞书文档](https://www.feishu.cn/docx/abc)尾')
+  expect(editing.chips).toEqual(['飞书文档'])
+})
+
 test('链接视图退格：别名与 URL 两截同步，不会退化成标题视图', async ({ page }) => {
   await boot(page)
   await page.keyboard.type('https://www.doubao.com', { delay: 30 })
