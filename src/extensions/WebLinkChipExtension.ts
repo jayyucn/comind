@@ -381,10 +381,15 @@ export const WebLinkChipExtension = Extension.create({
                 setCaret(view, chip.titleFrom)
                 return true
               }
-              if (pos >= chip.titleTo && pos < chip.to) {
-                // 块尾是 chip 时，别名末尾就是可见行尾，再往右没有可停的位置
+              /**
+               * 别名末尾（titleTo）与链接之后（chip.to）之间只隔着零宽的 `](url)`，
+               * 落在两者上插入符**画在同一个像素位置**。逐个跨的话第一次按键毫无动静
+               * （用户反馈「在链接右侧按右键要按两次才动」），所以一次跨到链接之后的下一格。
+               * 块尾 chip 的 `chip.to` 就是可见行尾，右边没有可停位置，原地不动。
+               */
+              if (pos >= chip.titleTo) {
                 if (chip.to >= selection.$from.end()) return true
-                setCaret(view, chip.to)
+                setCaret(view, chip.to + 1)
                 return true
               }
               return false
@@ -398,8 +403,9 @@ export const WebLinkChipExtension = Extension.create({
                 setCaret(view, chip.from)
                 return true
               }
+              // 与 ArrowRight 对称：别在「链接之后」这个视觉格上再停一次，直接跨回别名最后一个字之前
               if (pos > chip.titleTo && pos <= chip.to) {
-                setCaret(view, chip.titleTo)
+                setCaret(view, Math.max(chip.titleFrom, chip.titleTo - 1))
                 return true
               }
               return false

@@ -5,7 +5,8 @@
  * - 键入时不转（只有粘贴转）；
  * - URL 里的 `/` 打开斜杠命令面板，模态层随后吞掉 Esc，块退不出编辑态；
  * - 按 End 把光标送进隐藏的 `](url)`，Chromium 把插入符弹回块首，打的字插到链接前面；
- * - 链接末尾打中文标点被并进 URL。
+ * - 链接末尾打中文标点被并进 URL；
+ * - 链接右侧按 `→` 要按两次才动（别名末尾与链接之后同像素，隐藏尾巴占了中间一格）。
  *
  * 运行：`npm run dev` 后 `npx playwright test tests/web-link-typing.spec.ts`
  */
@@ -325,4 +326,25 @@ test('链接视图退格：别名与 URL 两截同步，不会退化成标题视
   const read = await state(page)
   expect(read.texts[0]).toBe('https://www.doubao.')
   expect(read.chips).toEqual(['https://www.doubao.'])
+})
+
+test('标题视图：链接右侧按 → 一次就前进，隐藏尾巴不占一格', async ({ page }) => {
+  await boot(page)
+  await page.keyboard.insertText('前缀[飞书文档](https://www.feishu.cn/docx/abc)后文字')
+  await wait(500)
+  await page.keyboard.press('Escape')
+  await wait(500)
+
+  // 点在链接右边缘外侧：落在「链接之后」，与别名末尾是同一个视觉格
+  const box = (await page.locator('.web-link-chip').first().boundingBox())!
+  await page.mouse.click(box.x + box.width + 2, box.y + box.height / 2)
+  await wait(400)
+
+  const before = await caretOffsetFromChipEnd(page)
+  await page.keyboard.press('ArrowRight')
+  await wait(250)
+  const after = await caretOffsetFromChipEnd(page)
+
+  // 曾经第一次按键只是从「别名末尾」挪到「链接之后」（同一像素 ⇒ 肉眼不动），要按两次才看到移动
+  expect(after! - before!).toBeGreaterThan(10)
 })

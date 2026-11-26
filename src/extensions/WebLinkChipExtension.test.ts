@@ -202,6 +202,39 @@ describe('WebLinkChipExtension — 最小键盘护栏', () => {
     })
   })
 
+  it('→ 从别名末尾一次跨到链接之后：不在零宽隐藏尾巴上停一格', () => {
+    withEditor('前[飞书](https://a.com)后', (editor) => {
+      const chip = scanWebLinkChipsInDoc(editor.state.doc)[0]
+      // titleTo 与 chip.to 视觉同格（中间只隔零宽尾巴），逐个跨会「按一次没动静」
+      expect(keydown(editor, 'ArrowRight', chip.titleTo)).toBe(true)
+      expect(editor.state.selection.from).toBe(chip.to + 1)
+    })
+  })
+
+  it('→ 已停在链接之后按右键，同样只前进一格', () => {
+    withEditor('前[飞书](https://a.com)后', (editor) => {
+      const chip = scanWebLinkChipsInDoc(editor.state.doc)[0]
+      expect(keydown(editor, 'ArrowRight', chip.to)).toBe(true)
+      expect(editor.state.selection.from).toBe(chip.to + 1)
+    })
+  })
+
+  it('→ 块尾 chip：别名末尾就是可见行尾，按右键不动', () => {
+    withEditor('[飞书](https://a.com)', (editor) => {
+      const chip = scanWebLinkChipsInDoc(editor.state.doc)[0]
+      expect(keydown(editor, 'ArrowRight', chip.titleTo)).toBe(true)
+      expect(editor.state.selection.from).toBe(chip.titleTo)
+    })
+  })
+
+  it('← 从链接之后一次跨回别名最后一个字之前', () => {
+    withEditor('前[飞书](https://a.com)后', (editor) => {
+      const chip = scanWebLinkChipsInDoc(editor.state.doc)[0]
+      expect(keydown(editor, 'ArrowLeft', chip.to)).toBe(true)
+      expect(editor.state.selection.from).toBe(chip.titleTo - 1)
+    })
+  })
+
   it('别名最后一个字被退格：整段 chip 消失，正文留空', () => {
     withEditor('[a](https://a.com)', (editor) => {
       const chip = scanWebLinkChipsInDoc(editor.state.doc)[0]
