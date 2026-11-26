@@ -220,6 +220,86 @@ test('标题视图块尾 chip：IME 合成提交后同样落到链接右侧', as
   expect(editing.chips).toEqual(['飞书文档'])
 })
 
+test('选区跨隐藏尾巴删除：字面保持完整，读态仍是 chip', async ({ page }) => {
+  await boot(page)
+  await page.keyboard.insertText('[飞书文档](https://www.feishu.cn/docx/abc)')
+  await wait(400)
+  await page.keyboard.press('Escape')
+  await wait(400)
+
+  await page.locator('.block').first().click()
+  await wait(500)
+  await page.keyboard.press('End')
+  await wait(150)
+  // 从别名中间选到行尾：选区里除了「文档」还圈进了隐藏的 `](url)`
+  await page.keyboard.press('ArrowLeft')
+  await page.keyboard.press('ArrowLeft')
+  await wait(150)
+  await page.keyboard.press('Shift+End')
+  await wait(250)
+  await page.keyboard.press('Backspace')
+  await wait(400)
+
+  // 曾经这里会剩下 `[飞书](https://www.feishu.cn/docx/abc` 这种残缺字面
+  expect((await state(page)).texts[0]).toBe('[飞书](https://www.feishu.cn/docx/abc)')
+  await page.keyboard.press('Escape')
+  await wait(400)
+  expect((await state(page)).texts[0]).toBe('飞书')
+})
+
+test('选区跨隐藏前缀删除：不会只剩一个孤零零的 `[`', async ({ page }) => {
+  await boot(page)
+  await page.keyboard.insertText('[飞书文档](https://www.feishu.cn/docx/abc)')
+  await wait(400)
+  await page.keyboard.press('Escape')
+  await wait(400)
+
+  await page.locator('.block').first().click()
+  await wait(500)
+  await page.keyboard.press('End')
+  await wait(150)
+  await page.keyboard.press('ArrowLeft')
+  await page.keyboard.press('ArrowLeft')
+  await wait(150)
+  await page.keyboard.press('Shift+Home')
+  await wait(250)
+  await page.keyboard.press('Backspace')
+  await wait(400)
+
+  expect((await state(page)).texts[0]).toBe('[文档](https://www.feishu.cn/docx/abc)')
+  expect((await state(page)).chips).toEqual(['文档'])
+})
+
+test('粘贴替换跨隐藏区的选区：链接字面不被吃掉', async ({ page }) => {
+  await boot(page)
+  await page.keyboard.insertText('[飞书文档](https://www.feishu.cn/docx/abc)')
+  await wait(400)
+  await page.keyboard.press('Escape')
+  await wait(400)
+
+  await page.locator('.block').first().click()
+  await wait(500)
+  await page.keyboard.press('End')
+  await wait(150)
+  await page.keyboard.press('ArrowLeft')
+  await page.keyboard.press('ArrowLeft')
+  await wait(150)
+  await page.keyboard.press('Shift+End')
+  await wait(250)
+
+  await page.evaluate(() => {
+    const dt = new DataTransfer()
+    dt.setData('text/plain', 'X')
+    document.querySelector('.ProseMirror')?.dispatchEvent(
+      new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }),
+    )
+  })
+  await wait(500)
+
+  // 曾经会变成 `[飞书X`（尾巴被删）
+  expect((await state(page)).texts[0]).toBe('[飞书X](https://www.feishu.cn/docx/abc)')
+})
+
 test('链接视图退格：别名与 URL 两截同步，不会退化成标题视图', async ({ page }) => {
   await boot(page)
   await page.keyboard.type('https://www.doubao.com', { delay: 30 })

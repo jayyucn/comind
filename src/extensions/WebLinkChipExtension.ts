@@ -13,6 +13,9 @@
  * 退格会啃掉隐藏的 `)`，所以另有最小键盘护栏：方向键跨过隐藏区；退格/Delete 只作用于可见
  * 别名一个字（停在 `chip.to` 时算「别名最后一个字」），别名删空则整段 chip 消失。
  *
+ * 选区跨隐藏区（Shift+方向键、拖选、双击选词都会圈进来）按**可见区间**裁剪，见
+ * `planVisibleDelete`：删的永远是屏幕上看得见的字，字面不会剩半截。
+ *
  * 键入裸网址即时成 chip（`[url](url)`，链接视图）：见 `planBareUrlWrap`。包完之后光标
  * 落在别名末尾，后续字符由下面的链接视图分支继续同步两截，所以逐字包裹不会重复触发。
  *
@@ -26,7 +29,13 @@
  */
 import { Extension } from '@tiptap/core'
 import type { Node as PMNode } from '@tiptap/pm/model'
-import { type EditorState, Plugin, PluginKey, TextSelection } from '@tiptap/pm/state'
+import {
+  type EditorState,
+  Plugin,
+  PluginKey,
+  TextSelection,
+  type Transaction,
+} from '@tiptap/pm/state'
 import type { EditorView } from '@tiptap/pm/view'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 
@@ -179,13 +188,79 @@ function deleteInLinkView(
   replaceChipLiteral(view, chip, nextAlias, chip.from + caretInAlias)
 }
 
-/** 选区落在别名内、且删完别名会空时，整段拆掉 chip */
-function selectedAliasWouldEmpty(sel: { from: number; to: number }, chip: WebLinkChipMatch): boolean {
-  if (sel.empty) return false
-  if (sel.from < chip.from || sel.to > chip.to) return false
-  const a = Math.max(sel.from, chip.titleFrom)
-  const b = Math.min(sel.to, chip.titleTo)
-  return (chip.title.slice(0, a - chip.titleFrom) + chip.title.slice(b - chip.titleFrom)) === ''
+/**
+ * 光标若落在 chip 的隐藏区里，吸到最近的**可见**位置。
+ *
+ * 尾巴内部往右吸到 `chip.to`：与「光标停在尾巴里打字落到字面之后」同口径，
+ * 否则接着打的字会把别名撑长（用户看不见自己改的是标题）。
+ */
+function snapOutOfHidden(doc: PMNode, pos: number): number {
+  for (const chip of scanWebLinkChipsInDoc(doc)) {
+    if (pos > chip.from && pos < chip.titleFrom) return chip.from
+    if (pos > chip.titleTo && pos < chip.to) return chip.to
+  }
+  return pos
+}
+
+/**
+ * 删除类操作统一收口：选区跨隐藏区时按**可见区间**裁剪。
+ *
+ * 隐藏区（前缀 `[` 与尾巴 `](url)`）在 DOM 里是真实文本节点，Shift+方向键、鼠标拖选、
+ * 双击选词都能把它们圈进选区；照默认路径删就会啃掉字面 —— 轻则 `[飞书文档](https://a.com`
+ * 这种残骸，重则整行只剩一个 `[`（2026-11-26 实测）。这里按「屏幕上看到的字符」删：
+ *
+ * - 别名被整体选中 ⇒ 整段字面一起消失；
+ * - 只选中几个字 ⇒ 只掉那几个字（链接视图两截同步重建，标题视图只动别名）；
+ * - 一个别名字符都没选中（只圈中隐藏字符）⇒ 字面原样保留，删除是空操作。
+ *
+ * 返回 null 表示选区没碰到任何 chip，交给 ProseMirror 默认处理。
+ */
+function planVisibleDelete(state: EditorState, from: number, to: number): Transaction | null {
+  const chips = scanWebLinkChipsInDoc(state.doc).filter(c => from < c.to && to > c.from)
+  if (chips.length === 0) return null
+
+  const tr = state.tr
+  // 起点落在别名内部时，光标得跟着别名走：`replaceWith` 会把区间里的位置映射到替换
+  // 内容末尾，照默认映射会把光标甩到链接之后（接着打的字就跑到字面外面去了）
+  let caretIn: { chipFrom: number; offset: number } | null = null
+  for (const chip of chips) {
+    if (from >= chip.titleFrom && from <= chip.titleTo) {
+      caretIn = { chipFrom: chip.from, offset: from - chip.titleFrom }
+    }
+  }
+  // 从右往左：先删右侧，左侧坐标不漂
+  let right = to
+  for (let i = chips.length - 1; i >= 0; i--) {
+    const chip = chips[i]
+    // chip 与下一个 chip 之间的普通文字
+    const segFrom = Math.max(from, chip.to)
+    if (right > segFrom) tr.delete(segFrom, right)
+
+    const a = Math.max(from, chip.titleFrom)
+    const b = Math.min(to, chip.titleTo)
+    if (b > a) {
+      const marks = state.doc.resolve(chip.titleFrom).marks()
+      const next = chip.title.slice(0, a - chip.titleFrom) + chip.title.slice(b - chip.titleFrom)
+      if (!next) {
+        tr.delete(chip.from, chip.to)
+      } else if (chip.title === chip.url) {
+        // 链接视图：URL 那截跟着改，否则字面会退化成「标题视图 + 旧地址」
+        const literal = isWebLinkUrl(next) ? chipLiteral(next, next) : next
+        tr.replaceWith(chip.from, chip.to, state.schema.text(literal, marks))
+      } else {
+        tr.replaceWith(chip.from, chip.to, state.schema.text(chipLiteral(next, chip.url), marks))
+      }
+    }
+    right = Math.min(right, chip.from)
+  }
+  if (right > from) tr.delete(from, right)
+
+  const caret = snapOutOfHidden(
+    tr.doc,
+    caretIn ? tr.mapping.map(caretIn.chipFrom) + 1 + caretIn.offset : tr.mapping.map(from),
+  )
+  tr.setSelection(TextSelection.near(tr.doc.resolve(caret), -1))
+  return tr
 }
 
 /**
@@ -332,21 +407,11 @@ export const WebLinkChipExtension = Extension.create({
 
             if (event.key === 'Backspace') {
               if (!selection.empty) {
-                const chip = chips.find(c => selectedAliasWouldEmpty(selection, c))
-                if (chip) {
-                  replaceChipLiteral(view, chip, '')
-                  return true
-                }
-                const linkChip = chips.find(
-                  c => c.title === c.url && selection.from >= c.titleFrom && selection.to <= c.titleTo,
-                )
-                if (linkChip) {
-                  const a = selection.from - linkChip.titleFrom
-                  const b = selection.to - linkChip.titleFrom
-                  deleteInLinkView(view, linkChip, linkChip.title.slice(0, a) + linkChip.title.slice(b), a)
-                  return true
-                }
-                return false
+                // 选区可能圈进了隐藏的 `[` / `](url)`：按可见区间删，别留下残缺字面
+                const tr = planVisibleDelete(view.state, selection.from, selection.to)
+                if (!tr) return false
+                view.dispatch(tr)
+                return true
               }
               const chip = chipOf(selection.from)
               if (!chip) return false
@@ -395,21 +460,10 @@ export const WebLinkChipExtension = Extension.create({
 
             if (event.key === 'Delete') {
               if (!selection.empty) {
-                const chip = chips.find(c => selectedAliasWouldEmpty(selection, c))
-                if (chip) {
-                  replaceChipLiteral(view, chip, '')
-                  return true
-                }
-                const linkChip = chips.find(
-                  c => c.title === c.url && selection.from >= c.titleFrom && selection.to <= c.titleTo,
-                )
-                if (linkChip) {
-                  const a = selection.from - linkChip.titleFrom
-                  const b = selection.to - linkChip.titleFrom
-                  deleteInLinkView(view, linkChip, linkChip.title.slice(0, a) + linkChip.title.slice(b), a)
-                  return true
-                }
-                return false
+                const tr = planVisibleDelete(view.state, selection.from, selection.to)
+                if (!tr) return false
+                view.dispatch(tr)
+                return true
               }
               const chip = chipOf(selection.from)
               if (!chip) return false
@@ -442,6 +496,16 @@ export const WebLinkChipExtension = Extension.create({
 
           handleTextInput(view, from, to, text) {
             const chips = scanWebLinkChipsInDoc(view.state.doc)
+            // 打字替换选区：选区可能圈进隐藏区，先按可见区间删，再插入
+            if (from !== to) {
+              const tr = planVisibleDelete(view.state, from, to)
+              if (!tr) return false
+              const at = tr.selection.from
+              tr.insertText(text, at)
+              tr.setSelection(TextSelection.create(tr.doc, at + text.length))
+              view.dispatch(tr)
+              return true
+            }
             const tail = !composingAtTail && from === to
               ? titleChipAtBlockTail(view.state.doc, chips, from)
               : null
@@ -500,7 +564,37 @@ export const WebLinkChipExtension = Extension.create({
             return true
           },
 
+          /**
+           * 粘贴替换选区：选区可能圈进隐藏区，照默认路径粘贴会连字面一起吃掉
+           * （`[飞书文档](https://a.com)` 变成 `[飞书X`）。
+           */
+          handlePaste(view, _event, slice) {
+            const { selection } = view.state
+            if (selection.empty) return false
+            const tr = planVisibleDelete(view.state, selection.from, selection.to)
+            if (!tr) return false
+            tr.replaceSelection(slice)
+            view.dispatch(tr)
+            return true
+          },
+
           handleDOMEvents: {
+            /**
+             * 剪切同样是「删选区」：跨隐藏区时会留下残缺字面。剪贴板照常写完整字面
+             * （粘回来还能成为 chip），文档按可见区间删。
+             */
+            cut(view, event) {
+              const { selection } = view.state
+              if (selection.empty) return false
+              const tr = planVisibleDelete(view.state, selection.from, selection.to)
+              if (!tr) return false
+              const { dom, text } = view.serializeForClipboard(selection.content())
+              event.clipboardData?.setData('text/html', dom.innerHTML)
+              event.clipboardData?.setData('text/plain', text)
+              event.preventDefault()
+              view.dispatch(tr)
+              return true
+            },
             compositionstart(view) {
               composingAtTail = false
               composedTail = null

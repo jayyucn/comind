@@ -391,6 +391,99 @@ describe('WebLinkChipExtension — 块尾 chip 之后接着写正文', () => {
   })
 })
 
+describe('WebLinkChipExtension — 选区跨隐藏区按可见区间裁剪', () => {
+  function select(editor: Editor, from: number, to: number) {
+    editor.commands.setTextSelection({ from, to })
+  }
+
+  it('选中「别名后半 + 整段尾巴」退格：别名截短，字面仍完整', () => {
+    withEditor('[飞书文档](https://a.com)', (editor) => {
+      const chip = scanWebLinkChipsInDoc(editor.state.doc)[0]
+      select(editor, chip.titleFrom + 2, chip.to)
+      expect(keydownAtSelection(editor, 'Backspace')).toBe(true)
+      expect(editor.getText()).toBe('[飞书](https://a.com)')
+      expect(scanWebLinkChipsInDoc(editor.state.doc)[0]).toMatchObject({
+        title: '飞书',
+        url: 'https://a.com',
+      })
+    })
+  })
+
+  it('链接视图同样选区：URL 两截同步，不会退化成标题视图', () => {
+    withEditor('[https://a.com](https://a.com)', (editor) => {
+      const chip = scanWebLinkChipsInDoc(editor.state.doc)[0]
+      // 从 `.` 一路选到字面末尾（含 `com` 与 `](url)`）
+      select(editor, chip.titleFrom + 9, chip.to)
+      expect(keydownAtSelection(editor, 'Backspace')).toBe(true)
+      expect(editor.getText()).toBe('[https://a](https://a)')
+      expect(scanWebLinkChipsInDoc(editor.state.doc)[0]).toMatchObject({
+        title: 'https://a',
+        url: 'https://a',
+      })
+    })
+  })
+
+  it('Shift+Home 式的选区（含隐藏前缀 `[`）：别名后半保留，不剩孤零零的 `[`', () => {
+    withEditor('[飞书文档](https://a.com)', (editor) => {
+      const chip = scanWebLinkChipsInDoc(editor.state.doc)[0]
+      select(editor, chip.from, chip.titleFrom + 2)
+      expect(keydownAtSelection(editor, 'Backspace')).toBe(true)
+      expect(editor.getText()).toBe('[文档](https://a.com)')
+    })
+  })
+
+  it('只选中隐藏尾巴：删除是空操作，字面一个字都不动', () => {
+    withEditor('[飞书](https://a.com)后', (editor) => {
+      const chip = scanWebLinkChipsInDoc(editor.state.doc)[0]
+      select(editor, chip.titleTo + 1, chip.to)
+      expect(keydownAtSelection(editor, 'Backspace')).toBe(true)
+      expect(editor.getText()).toBe('[飞书](https://a.com)后')
+      expect(editor.state.selection.from).toBe(chip.to)
+    })
+  })
+
+  it('整块 chip 被选中：整段字面一起消失，不留残骸', () => {
+    withEditor('前[飞书](https://a.com)后', (editor) => {
+      const chip = scanWebLinkChipsInDoc(editor.state.doc)[0]
+      select(editor, chip.from, chip.to)
+      expect(keydownAtSelection(editor, 'Delete')).toBe(true)
+      expect(editor.getText()).toBe('前后')
+    })
+  })
+
+  it('两个 chip 一起被选中：各自按可见区间处理，中间文字照删', () => {
+    withEditor('前[一](https://a.com)中[二](https://b.com)后', (editor) => {
+      const [first, second] = scanWebLinkChipsInDoc(editor.state.doc)
+      // 从第一个 chip 的别名末尾选到第二个 chip 的字面末尾
+      select(editor, first.titleTo, second.to)
+      expect(keydownAtSelection(editor, 'Backspace')).toBe(true)
+      expect(editor.getText()).toBe('前[一](https://a.com)后')
+      expect(scanWebLinkChipsInDoc(editor.state.doc)).toHaveLength(1)
+    })
+  })
+
+  it('打字替换跨尾巴选区：字落进别名对应位置，字面仍然完整', () => {
+    withEditor('[飞书文档](https://a.com)', (editor) => {
+      const chip = scanWebLinkChipsInDoc(editor.state.doc)[0]
+      expect(textInput(editor, chip.titleFrom + 2, chip.to, 'Z')).toBe(true)
+      expect(editor.getText()).toBe('[飞书Z](https://a.com)')
+      const next = scanWebLinkChipsInDoc(editor.state.doc)[0]
+      expect(next).toMatchObject({ title: '飞书Z', url: 'https://a.com' })
+      // 光标在别名末尾，接着打的字仍进别名
+      expect(editor.state.selection.from).toBe(next.titleTo)
+    })
+  })
+
+  it('只选中隐藏尾巴后打字：字落到字面之后，别名不被撑长', () => {
+    withEditor('[飞书](https://a.com)', (editor) => {
+      const chip = scanWebLinkChipsInDoc(editor.state.doc)[0]
+      expect(textInput(editor, chip.titleTo + 1, chip.to, 'Z')).toBe(true)
+      expect(editor.getText()).toBe('[飞书](https://a.com)Z')
+      expect(scanWebLinkChipsInDoc(editor.state.doc)[0]).toMatchObject({ title: '飞书' })
+    })
+  })
+})
+
 describe('WebLinkChipExtension — 键入裸网址即成 chip', () => {
   it('整块键入网址：补上最后一字符就包成链接视图字面', () => {
     withEditor('https://a.co', (editor) => {
