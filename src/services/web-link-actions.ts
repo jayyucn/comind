@@ -7,17 +7,29 @@
 import { useBlockStore } from '../stores/blocks'
 import { useEditorStore } from '../stores/editor'
 import { DEFAULT_PREVIEW_HEIGHT, domainOf, patchWebLink, WEB_LINK_TYPE, type WebLinkView } from '../utils/web-link'
-import { chipAliasForView, findWebLinkChips, replaceWebLinkChip, webLinkChipMarkdown, webLinkChipOnly } from '../utils/web-link-chip'
+import { chipAliasForView, findWebLinkChip, findWebLinkChips, replaceWebLinkChip, webLinkChipMarkdown, webLinkChipOnly } from '../utils/web-link-chip'
 import { planCardToChip, planChipToCard } from './web-link-split'
 
-/** 编辑链接：改 chip 的标题与 URL（content 字面改写） */
-export async function editChipLink(blockId: string, title: string, url: string): Promise<boolean> {
+/** 定位目标 chip 的锚：悬浮条手里只有从 DOM 读来的 url / 标题 */
+type ChipMatch = { url: string; title?: string }
+
+function locateChip(content: string, match?: ChipMatch) {
+  return match ? findWebLinkChip(content, match) : webLinkChipOnly(content)
+}
+
+/** 编辑链接：改 chip 的标题与 URL（content 字面改写，块内前后文本原样保留） */
+export async function editChipLink(
+  blockId: string,
+  match: ChipMatch,
+  title: string,
+  url: string,
+): Promise<boolean> {
   const store = useBlockStore()
   const block = store.getBlock(blockId)
   if (!block) return false
-  const chip = webLinkChipOnly(block.content)
+  const chip = locateChip(block.content, match)
   if (!chip) return false
-  const next = webLinkChipMarkdown(title || url, url)
+  const next = replaceWebLinkChip(block.content, chip, webLinkChipMarkdown(title || url, url))
   if (next !== block.content) await store.updateBlockContent(blockId, next)
   return true
 }
@@ -49,16 +61,17 @@ export async function copyWebLinkUrl(url: string): Promise<void> {
   }
 }
 
-/** chip → 卡片/预览：拆旧建新 */
+/** chip → 卡片/预览：拆旧建新（块内前后文本各拆成独立块） */
 export async function convertChipToCard(
   blockId: string,
   view: 'card' | 'preview',
+  match?: ChipMatch,
 ): Promise<string | null> {
   const store = useBlockStore()
   const editor = useEditorStore()
   const block = store.getBlock(blockId)
   if (!block) return null
-  const chip = webLinkChipOnly(block.content)
+  const chip = locateChip(block.content, match)
   if (!chip) return null
 
   editor.deactivateBlock()
@@ -158,8 +171,8 @@ export async function fillChipAliasIfUnlocked(blockId: string, url: string, fetc
   const store = useBlockStore()
   const block = store.getBlock(blockId)
   if (!block) return
-  const chip = webLinkChipOnly(block.content)
-  if (!chip || chip.url !== url) return
+  const chip = findWebLinkChip(block.content, { url })
+  if (!chip) return
   // 只有 alias 仍是「域名占位」时才填网页标题；用户改过任何字都保住
   const domain = new URL(url).hostname.replace(/^www\./, '')
   if (chip.title !== domain && chip.title !== url) return
@@ -172,14 +185,15 @@ export async function switchWebLinkView(
   blockId: string,
   target: WebLinkView,
   hostKind: 'chip' | 'block',
+  chip?: ChipMatch,
 ): Promise<string | undefined> {
   const store = useBlockStore()
   if (hostKind === 'chip') {
     if (target === 'card' || target === 'preview') {
-      return (await convertChipToCard(blockId, target)) ?? undefined
+      return (await convertChipToCard(blockId, target, chip)) ?? undefined
     }
     // 链接视图 / 标题视图 = 别名字面，不是 format 里的开关（ADR-0067 D1）
-    return await switchChipTextView(blockId, target)
+    return await switchChipTextView(blockId, target, chip)
   }
   const block = store.getBlock(blockId)
   if (!block) return undefined
@@ -194,11 +208,12 @@ export async function switchWebLinkView(
 export async function switchChipTextView(
   blockId: string,
   target: 'link' | 'title',
+  match?: ChipMatch,
 ): Promise<string | undefined> {
   const store = useBlockStore()
   const block = store.getBlock(blockId)
   if (!block) return undefined
-  const chip = webLinkChipOnly(block.content)
+  const chip = locateChip(block.content, match)
   if (!chip) return undefined
   const alias = chipAliasForView(chip.url, target)
   if (alias === chip.title) return blockId

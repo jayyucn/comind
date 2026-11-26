@@ -9,7 +9,7 @@
  * 视图切换在本条内展开（不套第二层浮层），避免二级 Teleport 的定位抖动。
  */
 import { Check, ChevronDown, Copy, Link2Off, PencilLine } from 'lucide-vue-next'
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 
 import { useWebLinkChipToolbar } from '../../../../composables/useWebLinkChipToolbar'
 import {
@@ -28,13 +28,14 @@ import {
   WEB_LINK_VIEWS,
   type WebLinkView,
 } from '../../../../utils/web-link'
-import { chipAliasForView, findWebLinkChips, webLinkChipMarkdown } from '../../../../utils/web-link-chip'
+import { chipAliasForView, findWebLinkChip, webLinkChipMarkdown } from '../../../../utils/web-link-chip'
 
 const { target, hide, cancelHide, scheduleHide, setPinned, viewMenuOpen } = useWebLinkChipToolbar()
 
 const editing = ref(false)
 const draftTitle = ref('')
 const draftUrl = ref('')
+const titleInputEl = ref<HTMLInputElement | null>(null)
 
 watch(target, (t) => {
   editing.value = false
@@ -61,16 +62,52 @@ function onToolbarEnter(): void {
 }
 
 function onToolbarLeave(): void {
+  // 编辑态是「焦点态」：输入到一半指针飘出边界（手抖、够到窗口边）不得把表单连同内容抽走。
+  // 关闭只走三条显式出口 —— 确认提交、Esc、点击弹窗外。
+  if (editing.value) return
   setPinned(false)
   scheduleHide()
 }
 
-function openEdit(): void {
+async function openEdit(): Promise<void> {
   if (!isChip.value || !target.value) return
   editing.value = true
-  draftTitle.value = target.value.title === target.value.url ? '' : target.value.title
+  setPinned(true)
+  // 两行都带值：链接视图下标题就等于 URL，留空会让「文本」行看起来没内容可改
+  draftTitle.value = target.value.title
   draftUrl.value = target.value.url
+  await nextTick()
+  titleInputEl.value?.focus()
+  titleInputEl.value?.select()
 }
+
+/** 取消编辑并整块收起（Esc / 点击弹窗外）：不回浏览态菜单，避免「关了又冒出来」 */
+function cancelEdit(): void {
+  editing.value = false
+  hide()
+}
+
+const anchorEl = ref<HTMLElement | null>(null)
+
+function onDocMouseDown(e: MouseEvent): void {
+  if (!editing.value) return
+  const el = anchorEl.value
+  if (el && e.target instanceof Node && el.contains(e.target)) return
+  cancelEdit()
+}
+
+watch(editing, (on) => {
+  if (on) document.addEventListener('mousedown', onDocMouseDown, true)
+  else document.removeEventListener('mousedown', onDocMouseDown, true)
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('mousedown', onDocMouseDown, true)
+  // 编辑态钉住的是模块级 pinned 状态：组件卸载（切页 / 关 pane）不收拾，后续悬浮条会被永久冻结
+  if (!editing.value) return
+  editing.value = false
+  hide()
+})
 
 async function commitEdit(): Promise<void> {
   const t = target.value
@@ -83,7 +120,7 @@ async function commitEdit(): Promise<void> {
       await flushActiveChipBlock(t.blockId)
       return
     }
-    await editChipLink(t.blockId, title, url)
+    await editChipLink(t.blockId, { url: t.url, title: t.title }, title, url)
   })
 }
 
@@ -95,7 +132,7 @@ async function removeLink(): Promise<void> {
   ) as HTMLElement | null
   // chip 的 start/end 由 DOM 无法反推，按字面查找（content 单 chip 场景）
   const content = useBlockStore().getBlock(t.blockId)?.content ?? ''
-  const chip = findWebLinkChips(content).find(c => c.url === t.url)
+  const chip = findWebLinkChip(content, { url: t.url, title: t.title })
   if (!chip) return
   await run(async () => {
     if (replaceActiveChip(t.blockId, { url: t.url, title: t.title }, t.title)) {
@@ -120,12 +157,12 @@ async function switchTo(view: WebLinkView): Promise<void> {
         await flushActiveChipBlock(t.blockId)
         return
       }
-      await switchWebLinkView(t.blockId, view, 'chip')
+      await switchWebLinkView(t.blockId, view, 'chip', { url: t.url, title: t.title })
       return
     }
     // 切卡片/预览会拆旧建新，必须先让编辑器的在途正文落库
     await flushActiveChipBlock(t.blockId)
-    await switchWebLinkView(t.blockId, view, t.kind)
+    await switchWebLinkView(t.blockId, view, t.kind, { url: t.url, title: t.title })
   })
 }
 </script>
@@ -139,6 +176,7 @@ async function switchTo(view: WebLinkView): Promise<void> {
     -->
     <div
       v-if="target"
+      ref="anchorEl"
       class="wl-toolbar-anchor"
       :style="{ left: `${Math.max(8, target.left)}px`, top: `${Math.max(8, target.top)}px` }"
       @mouseenter="onToolbarEnter"
@@ -146,28 +184,45 @@ async function switchTo(view: WebLinkView): Promise<void> {
       @mousedown.stop
       @click.stop
     >
-      <div class="wl-toolbar">
-        <template v-if="editing">
-          <input
-            v-model="draftTitle"
-            class="wl-toolbar-input"
-            placeholder="显示文字"
-            @keydown.enter="commitEdit"
-          >
-          <input
-            v-model="draftUrl"
-            class="wl-toolbar-input wl-toolbar-input--url"
-            placeholder="https://…"
-            @keydown.enter="commitEdit"
-          >
+      <div
+        class="wl-toolbar"
+        :class="{ 'is-editing': editing }"
+      >
+        <div
+          v-if="editing"
+          class="wl-edit"
+        >
+          <label class="wl-edit-row">
+            <span class="wl-edit-label">文本</span>
+            <input
+              ref="titleInputEl"
+              v-model="draftTitle"
+              class="wl-edit-input"
+              placeholder="https://…"
+              @keydown.enter="commitEdit"
+              @keydown.esc.prevent.stop="cancelEdit"
+            >
+          </label>
+          <!-- 占位：保证第一行的输入框只占中间一列，与第二行等宽（右侧留给按钮槽位） -->
+          <span aria-hidden="true" />
+          <label class="wl-edit-row">
+            <span class="wl-edit-label">链接</span>
+            <input
+              v-model="draftUrl"
+              class="wl-edit-input"
+              placeholder="https://…"
+              @keydown.enter="commitEdit"
+              @keydown.esc.prevent.stop="cancelEdit"
+            >
+          </label>
           <button
             type="button"
-            class="wl-toolbar-btn wl-toolbar-btn--confirm"
+            class="wl-edit-confirm"
             @click="commitEdit"
           >
             确认
           </button>
-        </template>
+        </div>
 
         <template v-else>
           <button
@@ -244,6 +299,8 @@ async function switchTo(view: WebLinkView): Promise<void> {
 .wl-toolbar-anchor {
   position: fixed;
   z-index: var(--z-popover, 100);
+  /* 编辑态是定宽表单，靠上取 8px 的定位 + 这条上限保证右侧不出视口 */
+  max-width: calc(100vw - 16px);
   padding-bottom: 8px;
   transform: translateY(-100%);
 }
@@ -261,6 +318,72 @@ async function switchTo(view: WebLinkView): Promise<void> {
   white-space: nowrap;
 }
 
+/* 编辑态是两行表单，交给 .wl-edit 的 grid 排布 */
+.wl-toolbar.is-editing {
+  display: block;
+  padding: 0;
+}
+
+.wl-edit {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 10px;
+  row-gap: 10px;
+  box-sizing: border-box;
+  width: 440px;
+  max-width: 100%;
+  padding: 12px 14px;
+  font-size: 13px;
+  white-space: normal;
+}
+
+/* label 只做「点文字聚焦输入框」的隐式关联，`display: contents` 让它不占格子，
+   两个子元素直接成为 grid item —— 否则首列宽度会被整行撑开。 */
+.wl-edit-row {
+  display: contents;
+}
+
+.wl-edit-label {
+  color: var(--text-secondary);
+  justify-self: start;
+  line-height: 1.4;
+}
+
+.wl-edit-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm, 4px);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font: inherit;
+  outline: none;
+}
+
+.wl-edit-input:focus {
+  border-color: var(--accent);
+}
+
+.wl-edit-confirm {
+  height: 30px;
+  padding: 0 20px;
+  border: 0;
+  border-radius: var(--radius-sm, 4px);
+  background: var(--accent);
+  color: var(--color-white);
+  cursor: pointer;
+  font: inherit;
+  white-space: nowrap;
+}
+
+.wl-edit-confirm:hover {
+  background: var(--accent-hover, var(--accent));
+}
+
 .wl-toolbar-btn {
   display: inline-flex;
   align-items: center;
@@ -276,25 +399,6 @@ async function switchTo(view: WebLinkView): Promise<void> {
 .wl-toolbar-btn:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
-}
-
-.wl-toolbar-btn--confirm {
-  background: var(--accent);
-  color: var(--bg-base);
-}
-
-.wl-toolbar-input {
-  width: 120px;
-  padding: 4px 6px;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm, 4px);
-  background: var(--bg-base);
-  color: var(--text-primary);
-  font: inherit;
-}
-
-.wl-toolbar-input--url {
-  width: 200px;
 }
 
 .wl-toolbar-view {

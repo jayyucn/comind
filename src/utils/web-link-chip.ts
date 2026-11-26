@@ -42,6 +42,25 @@ export function webLinkChipOnly(content: string): WebLinkChipSpan | null {
   return chip
 }
 
+/**
+ * 按「url + 标题」定位 content 里的那一个 chip。
+ *
+ * 悬浮条手里只有从 DOM 读来的 url/标题，没有字面下标，服务层只能靠内容反查。
+ * 口径与编辑态的 `replaceActiveChip`（`scanWebLinkChipsInDoc`）一致：
+ * 同 url 不同别名靠标题区分；同 url 同别名（用户手打两份）取第一个。
+ *
+ * 不要用 `webLinkChipOnly` 代替 —— 那个要求「整块恰一个 chip 且前后无文本」，
+ * 块里只要有前后文字或第二个 chip，改链接/切视图/切卡片就会静默失效。
+ */
+export function findWebLinkChip(
+  content: string,
+  target: { url: string; title?: string },
+): WebLinkChipSpan | null {
+  const chips = findWebLinkChips(content)
+  const exact = chips.find(c => c.url === target.url && (target.title === undefined || c.title === target.title))
+  return exact ?? chips.find(c => c.url === target.url) ?? null
+}
+
 /** 拼一个 chip 字面 */
 export function webLinkChipMarkdown(title: string, url: string): string {
   // 标题里出现 `]` 会破坏语法；用全角替身，保住可解析性

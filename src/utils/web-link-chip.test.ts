@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   chipAliasForView,
   chipAliasLocked,
+  findWebLinkChip,
   findWebLinkChips,
   replaceWebLinkChip,
   splitAroundChip,
@@ -33,6 +34,21 @@ describe('markdown 外链 chip 字面读写（ADR-0067）', () => {
     expect(webLinkChipOnly('  [标题](https://a.com)  ')?.title).toBe('标题')
     expect(webLinkChipOnly('前文 [标题](https://a.com)')).toBeNull()
     expect(webLinkChipOnly('[A](https://a.com) [B](https://b.com)')).toBeNull()
+  })
+
+  it('findWebLinkChip 按 url + 标题定位，前后文本与多 chip 都不影响', () => {
+    const content = '前文 [甲](https://a.com) 与 [乙](https://b.com) 后文'
+    // 有前后文本、且不止一个 chip 时仍能定位
+    expect(findWebLinkChip(content, { url: 'https://b.com', title: '乙' })?.title).toBe('乙')
+    // 同 url 不同别名：靠标题区分
+    const same = '[甲](https://a.com) 与 [乙](https://a.com)'
+    expect(findWebLinkChip(same, { url: 'https://a.com', title: '乙' })?.title).toBe('乙')
+    // 同 url 同别名（手打两份）：取第一个
+    const dup = '[甲](https://a.com) 与 [甲](https://a.com)'
+    expect(findWebLinkChip(dup, { url: 'https://a.com' })?.start).toBe(0)
+    // 找不到 / 空正文
+    expect(findWebLinkChip(content, { url: 'https://nope.com' })).toBeNull()
+    expect(findWebLinkChip('', { url: 'https://a.com' })).toBeNull()
   })
 
   it('替换与拆分按字面位置，不误伤同串文本', () => {
