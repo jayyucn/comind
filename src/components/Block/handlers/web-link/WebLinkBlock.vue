@@ -44,7 +44,7 @@ const props = withDefaults(
 const blockStore = useBlockStore()
 const { autoFetch } = useWebLinkSettings()
 const { panelRevealFor } = useWebLinkPanelReveal()
-const { show: showToolbar, hide: hideToolbar } = useWebLinkChipToolbar()
+const { show: showToolbar, hide: hideToolbar, cancelHide, scheduleHide, isFor } = useWebLinkChipToolbar()
 
 const block = computed(() => blockStore.getBlock(props.blockId))
 const settings = computed(() => readWebLink(block.value?.format))
@@ -90,7 +90,14 @@ async function runFetch(): Promise<void> {
   try {
     const { meta: fetched, error } = await fetchWebLinkMeta(target)
     const latest = blockStore.getBlock(props.blockId)?.format
-    const nextMeta = fetched ?? { domain: domainOf(target), error: error ?? 'network' }
+    // 失败时只在旧 meta 上盖错误码：chip 切卡片时带过来的标题/摘要要留住，
+    // 否则卡片切回 chip 会把用户原来的别名退化成域名（视图切换变成破坏性操作）。
+    const previous = readWebLink(latest).meta
+    const nextMeta = fetched ?? {
+      ...(previous ?? {}),
+      domain: previous?.domain || domainOf(target),
+      error: error ?? 'network',
+    }
     await blockStore.updateBlockFormat(props.blockId, patchWebLink(latest, { meta: nextMeta }))
   } finally {
     inFlight.delete(props.blockId)
@@ -166,7 +173,6 @@ onBeforeUnmount(onResizeUp)
 // ── 悬停浮出的「显示为」面板（Teleport 到 body：祖先的 transform 会困住 z-index）──
 const rootEl = ref<HTMLElement | null>(null)
 const panelPos = ref({ left: 0, top: 0 })
-let hideTimer: number | undefined
 
 function measure(): void {
   const rect = rootEl.value?.getBoundingClientRect()
@@ -175,11 +181,8 @@ function measure(): void {
 }
 
 function onEnter(): void {
-  if (hideTimer) {
-    clearTimeout(hideTimer)
-    hideTimer = undefined
-  }
   if (!url.value) return
+  cancelHide()
   measure()
   showToolbar({
     blockId: props.blockId,
@@ -192,12 +195,18 @@ function onEnter(): void {
   })
 }
 
+/**
+ * 离场排队必须走悬浮条自己的 scheduleHide，不能用本地定时器直接 hide()：
+ * 指针从块移动到悬浮条上时，本地定时器照旧触发，会把菜单在开着的一瞬间抽走
+ * （表现为「视图切换菜单点了没反应」）。scheduleHide 会被悬浮条的 mouseenter 取消。
+ */
 function onLeave(): void {
-  if (hideTimer) clearTimeout(hideTimer)
-  hideTimer = window.setTimeout(() => hideToolbar(), 200)
+  scheduleHide(200)
 }
 
-onBeforeUnmount(() => hideTimer && clearTimeout(hideTimer))
+onBeforeUnmount(() => {
+  if (isFor(props.blockId)) hideToolbar()
+})
 
 function openExternal(): void {
   // 与正文外链一致：交给系统/浏览器新窗口，不在应用内导航

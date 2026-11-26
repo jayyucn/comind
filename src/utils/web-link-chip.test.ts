@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  chipAliasForView,
   chipAliasLocked,
   findWebLinkChips,
   replaceWebLinkChip,
@@ -55,5 +56,12 @@ describe('markdown 外链 chip 字面读写（ADR-0067）', () => {
     expect(chipAliasLocked(chip, '网页原始标题')).toBe(true)
     expect(chipAliasLocked(chip, '我的备注')).toBe(false)
     expect(chipAliasLocked(chip, undefined)).toBe(false)
+  })
+
+  it('文本视图互换的别名：链接视图=URL 原文，标题视图=域名', () => {
+    expect(chipAliasForView('https://www.feishu.cn/docx/abc', 'link')).toBe('https://www.feishu.cn/docx/abc')
+    expect(chipAliasForView('https://www.feishu.cn/docx/abc', 'title')).toBe('feishu.cn')
+    // 无主机名的脏值退回 URL，不能产生空别名（空别名会让 chip 语法直接失效）
+    expect(chipAliasForView('https://', 'title')).toBe('https://')
   })
 })

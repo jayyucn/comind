@@ -10,18 +10,33 @@
  * 走自己的 keymap，不受浏览器 contenteditable 限制，所以另有最小键盘护栏：
  * 方向键跨过隐藏区；退格/Delete 只作用于可见别名一个字，别名删空则整段 chip 消失。
  *
- * 链接视图（别名 = URL）直接打字会同步改两截字面；一旦不再像网址就拆掉隐藏 URL、
- * 只留用户输入。标题视图只改别名，URL 交给 ProseMirror 默认逐字编辑，保持不动。
+ * 键入裸网址即时成 chip（`[url](url)`，链接视图）：见 `planBareUrlWrap`。包完之后光标
+ * 落在别名末尾，后续字符由下面的链接视图分支继续同步两截，所以逐字包裹不会重复触发。
+ *
+ * 链接视图（别名 = URL）直接打字会同步改两截字面；一旦不再是网址就拆掉隐藏 URL、
+ * 只留用户输入。但在别名末尾打空格/标点不是「改网址」，那是接着写正文 —— 字符落到
+ * chip 右侧，链接保留。标题视图只改别名，URL 交给 ProseMirror 默认逐字编辑。
  */
 import { Extension } from '@tiptap/core'
 import type { Node as PMNode } from '@tiptap/pm/model'
-import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state'
+import { type EditorState, Plugin, PluginKey, TextSelection } from '@tiptap/pm/state'
 import type { EditorView } from '@tiptap/pm/view'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 
 /** 与 `utils/web-link-chip.ts` 的 MD_LINK_RE 同源 */
 const MD_LINK_RE = /\[([^[\]]+)\]\((https?:\/\/[^\s)]+)\)/g
-const URL_RE = /^https?:\/\/[^\s)]+$/
+
+/**
+ * 网址里允许出现的字符：排除空白与括号。
+ *
+ * 括号必须排除——`[别名](url)` 的字面语法用 `)` 收尾，URL 里带 `)` 会让字面解析不完整，
+ * 包成 chip 反而写坏正文。中文标点同样不在集合内，所以「https://a.com，然后」里的逗号
+ * 天然成为网址边界，不会被吃进 URL。
+ */
+const URL_CHAR = 'A-Za-z0-9\\-._~:/?#@!$&*+,;=%'
+const URL_ONLY_RE = new RegExp(`^https?://[${URL_CHAR}]+$`)
+/** 光标前那截文字的末尾是否正好是一段网址 */
+const URL_TAIL_RE = new RegExp(`https?://[${URL_CHAR}]+$`)
 
 export interface WebLinkChipMatch {
   /** PM 文档坐标：整段字面 [from, to) */
@@ -67,7 +82,35 @@ export function chipLiteral(title: string, url: string): string {
 
 /** 链接视图下编辑后的文字是否仍是合法网址 */
 export function isWebLinkUrl(text: string): boolean {
-  return URL_RE.test(text)
+  return URL_ONLY_RE.test(text)
+}
+
+/**
+ * 键入裸网址时要包成 chip 的区间计划。
+ *
+ * `from/to/text` 是 ProseMirror 即将插入的那一笔（尚未落进文档），所以「光标前的字 +
+ * 本次插入的字」拼起来才是插入后的真实文本。只在末尾正好是网址时命中：
+ * `明天看 https://a.com 再定` 里正在打的 `https://a.c` 补上 `o` 就正好命中，
+ * 已存在的 `[别名](url)` chip 内部不重复包裹（光标在 chip 里时由 chip 分支接走）。
+ */
+function planBareUrlWrap(
+  state: EditorState,
+  from: number,
+  to: number,
+  text: string,
+  chips: WebLinkChipMatch[],
+): { start: number; url: string } | null {
+  if (from !== to) return null
+  if (chips.some(c => from >= c.from && from <= c.to)) return null
+  const $from = state.doc.resolve(from)
+  if (!$from.parent.isTextblock) return null
+  const parentStart = $from.start()
+  const before = state.doc.textBetween(parentStart, from, '\n', '\n')
+  const url = (before + text).match(URL_TAIL_RE)?.[0]
+  if (!url) return null
+  const start = from - (url.length - text.length)
+  if (start < parentStart) return null
+  return { start, url }
 }
 
 function setCaret(view: EditorView, pos: number): void {
@@ -75,12 +118,17 @@ function setCaret(view: EditorView, pos: number): void {
   view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, clamped)))
 }
 
-/** 把 chip 整段换成 replacement（保留别名首字符的 marks），光标落在别名末尾 */
+/**
+ * 把 chip 整段换成 replacement（保留别名首字符的 marks）。
+ *
+ * `caretAt` 是**文档绝对位置**（不是相对 chip 的偏移）；缺省落到替换文本末尾。
+ * 传相对偏移会让光标多走一个 `chip.from`，落进隐藏区之后 —— 表现为「接着打的字插到了字面外面」。
+ */
 export function replaceChipLiteral(
   view: EditorView,
   chip: WebLinkChipMatch,
   replacement: string,
-  caretOffset?: number,
+  caretAt?: number,
 ): void {
   const mark = view.state.doc.resolve(chip.titleFrom).marks()
   const tr = view.state.tr
@@ -90,10 +138,38 @@ export function replaceChipLiteral(
     // 别名删空：整段字面一起消失（ProseMirror 不接受空文本节点）
     tr.delete(chip.from, chip.to)
   }
-  const caretAt = caretOffset ?? replacement.length
-  const caret = chip.from + Math.min(caretAt, replacement.length)
-  tr.setSelection(TextSelection.create(tr.doc, Math.max(1, Math.min(caret, tr.doc.content.size - 1))))
+  const caret = caretAt ?? chip.from + replacement.length
+  tr.setSelection(TextSelection.create(
+    tr.doc,
+    Math.max(1, Math.min(caret, tr.doc.content.size - 1)),
+  ))
   view.dispatch(tr)
+}
+
+/**
+ * 链接视图（别名 = URL）下删掉别名的若干字符：两截必须一起重建。
+ *
+ * 只删可见那一截会得到 `[https://a.co](https://a.com)` —— 字面不再满足 title === url，
+ * 立刻被判成标题视图，屏幕上的字和点开的地址从此不一致。所以删除也走整段替换：
+ * 剩下的仍是网址就重建 `[新网址](新网址)`，否则按打字同口径拆掉隐藏 URL、只留文字。
+ *
+ * `caretInAlias` 是删完后光标在别名里的偏移；`replaceChipLiteral` 收的是文档绝对位置。
+ */
+function deleteInLinkView(
+  view: EditorView,
+  chip: WebLinkChipMatch,
+  nextAlias: string,
+  caretInAlias: number,
+): void {
+  if (!nextAlias) {
+    replaceChipLiteral(view, chip, '')
+    return
+  }
+  if (isWebLinkUrl(nextAlias)) {
+    replaceChipLiteral(view, chip, chipLiteral(nextAlias, nextAlias), chip.from + 1 + caretInAlias)
+    return
+  }
+  replaceChipLiteral(view, chip, nextAlias, chip.from + caretInAlias)
 }
 
 /** 选区落在别名内、且删完别名会空时，整段拆掉 chip */
@@ -103,6 +179,26 @@ function selectedAliasWouldEmpty(sel: { from: number; to: number }, chip: WebLin
   const a = Math.max(sel.from, chip.titleFrom)
   const b = Math.min(sel.to, chip.titleTo)
   return (chip.title.slice(0, a - chip.titleFrom) + chip.title.slice(b - chip.titleFrom)) === ''
+}
+
+/**
+ * 行尾光标：块尾恰好是 chip 时收到别名末尾。
+ *
+ * `chip.to` 落在隐藏区 `](url)` 的末尾，Chromium 不允许插入符停在 contenteditable=false
+ * 的文本里，会把整个插入符弹回块首（表现为「按 End 后光标跳到开头，打的字插到链接前面」）。
+ * 可见行尾其实就是别名末尾。
+ */
+function visibleLineEnd(state: EditorState, chips: WebLinkChipMatch[]): number {
+  const blockEnd = state.selection.$from.end()
+  const last = chips[chips.length - 1]
+  return last && last.to >= blockEnd ? last.titleTo : blockEnd
+}
+
+/** 行首光标：块首恰好是 chip 时放到别名开头（`chip.from` 同理落在隐藏的 `[` 里） */
+function visibleLineStart(state: EditorState, chips: WebLinkChipMatch[]): number {
+  const blockStart = state.selection.$from.start()
+  const first = chips[0]
+  return first && first.from <= blockStart ? first.titleFrom : blockStart
 }
 
 const WEB_LINK_CHIP_KEY = new PluginKey('webLinkChip')
@@ -146,6 +242,16 @@ export const WebLinkChipExtension = Extension.create({
             const chipOf = (pos: number) =>
               chips.find(c => pos >= c.from && pos <= c.to)
 
+            // Home / End 是浏览器按 DOM 行盒移动光标，落点可能进隐藏的 `[` / `](url)`：
+            // 之后打的字会插到字面外面（表现为「打字跑到链接前面去了」）。改成块内首/尾。
+            // Home / End 是浏览器按 DOM 行盒移动光标，落点会进隐藏的 `[` / `](url)`；
+            // 那个位置 Chromium 存不住，插入符随即被弹回块首。改成块内首/尾的可见位置。
+            if ((event.key === 'Home' || event.key === 'End') && selection.empty && !event.shiftKey) {
+              if (!selection.$from.parent.isTextblock) return false
+              setCaret(view, event.key === 'End' ? visibleLineEnd(view.state, chips) : visibleLineStart(view.state, chips))
+              return true
+            }
+
             if (event.key === 'ArrowRight' && selection.empty) {
               const chip = chipOf(selection.from)
               if (!chip) return false
@@ -155,6 +261,8 @@ export const WebLinkChipExtension = Extension.create({
                 return true
               }
               if (pos >= chip.titleTo && pos < chip.to) {
+                // 块尾是 chip 时，别名末尾就是可见行尾，再往右没有可停的位置
+                if (chip.to >= selection.$from.end()) return true
                 setCaret(view, chip.to)
                 return true
               }
@@ -179,9 +287,20 @@ export const WebLinkChipExtension = Extension.create({
             if (event.key === 'Backspace') {
               if (!selection.empty) {
                 const chip = chips.find(c => selectedAliasWouldEmpty(selection, c))
-                if (!chip) return false
-                replaceChipLiteral(view, chip, '')
-                return true
+                if (chip) {
+                  replaceChipLiteral(view, chip, '')
+                  return true
+                }
+                const linkChip = chips.find(
+                  c => c.title === c.url && selection.from >= c.titleFrom && selection.to <= c.titleTo,
+                )
+                if (linkChip) {
+                  const a = selection.from - linkChip.titleFrom
+                  const b = selection.to - linkChip.titleFrom
+                  deleteInLinkView(view, linkChip, linkChip.title.slice(0, a) + linkChip.title.slice(b), a)
+                  return true
+                }
+                return false
               }
               const chip = chipOf(selection.from)
               if (!chip) return false
@@ -190,14 +309,20 @@ export const WebLinkChipExtension = Extension.create({
                 replaceChipLiteral(view, chip, '')
                 return true
               }
-              if (pos > chip.titleTo && pos < chip.to) {
-                setCaret(view, chip.titleTo)
-                return true
-              }
               if (pos === chip.titleFrom) {
                 // 别名左侧是隐藏的 `[`：跳过它，删掉 chip 之前的可见字符
                 if (chip.from <= 1) return true
                 view.dispatch(view.state.tr.delete(chip.from - 1, chip.from))
+                return true
+              }
+              if (pos > chip.titleFrom && pos <= chip.titleTo && chip.title === chip.url) {
+                // 链接视图删别名一个字：URL 那截一起改，否则字面会退化成标题视图 + 旧地址
+                const i = pos - chip.titleFrom
+                deleteInLinkView(view, chip, chip.title.slice(0, i - 1) + chip.title.slice(i), i - 1)
+                return true
+              }
+              if (pos > chip.titleTo && pos < chip.to) {
+                setCaret(view, chip.titleTo)
                 return true
               }
               return false
@@ -206,9 +331,20 @@ export const WebLinkChipExtension = Extension.create({
             if (event.key === 'Delete') {
               if (!selection.empty) {
                 const chip = chips.find(c => selectedAliasWouldEmpty(selection, c))
-                if (!chip) return false
-                replaceChipLiteral(view, chip, '')
-                return true
+                if (chip) {
+                  replaceChipLiteral(view, chip, '')
+                  return true
+                }
+                const linkChip = chips.find(
+                  c => c.title === c.url && selection.from >= c.titleFrom && selection.to <= c.titleTo,
+                )
+                if (linkChip) {
+                  const a = selection.from - linkChip.titleFrom
+                  const b = selection.to - linkChip.titleFrom
+                  deleteInLinkView(view, linkChip, linkChip.title.slice(0, a) + linkChip.title.slice(b), a)
+                  return true
+                }
+                return false
               }
               const chip = chipOf(selection.from)
               if (!chip) return false
@@ -223,6 +359,12 @@ export const WebLinkChipExtension = Extension.create({
                 view.dispatch(view.state.tr.delete(chip.to, chip.to + 1))
                 return true
               }
+              if (pos >= chip.titleFrom && pos < chip.titleTo && chip.title === chip.url) {
+                // 与退格对称：链接视图删别名一个字，URL 那截一起改
+                const i = pos - chip.titleFrom
+                deleteInLinkView(view, chip, chip.title.slice(0, i) + chip.title.slice(i + 1), i)
+                return true
+              }
               if (pos > chip.titleTo && pos < chip.to) {
                 setCaret(view, chip.titleTo)
                 return true
@@ -234,18 +376,43 @@ export const WebLinkChipExtension = Extension.create({
           },
 
           handleTextInput(view, from, to, text) {
-            const chip = scanWebLinkChipsInDoc(view.state.doc).find(
+            const chips = scanWebLinkChipsInDoc(view.state.doc)
+            const chip = chips.find(
               c => c.title === c.url && from >= c.titleFrom && to <= c.titleTo,
             )
-            if (!chip) return false
+            if (chip) {
+              const before = chip.title.slice(0, from - chip.titleFrom)
+              const after = chip.title.slice(to - chip.titleFrom)
+              const next = before + text + after
+              const valid = isWebLinkUrl(next)
+              // 在链接末尾打空格 / 标点 = 接着写正文，不是改网址：链接保留，字符落右侧。
+              // 否则每打完一个链接都要被标点拆散，句读写完 chip 就没了。
+              if (!valid && from === to && from === chip.titleTo) {
+                const tr = view.state.tr.insertText(text, chip.to)
+                tr.setSelection(TextSelection.create(
+                  tr.doc,
+                  Math.min(chip.to + text.length, tr.doc.content.size - 1),
+                ))
+                view.dispatch(tr)
+                return true
+              }
+              const replacement = valid ? chipLiteral(next, next) : next
+              const caretAt = chip.from + 1 + before.length + text.length
+              replaceChipLiteral(view, chip, replacement, caretAt)
+              return true
+            }
 
-            const before = chip.title.slice(0, from - chip.titleFrom)
-            const after = chip.title.slice(to - chip.titleFrom)
-            const next = before + text + after
-            const valid = isWebLinkUrl(next)
-            const replacement = valid ? chipLiteral(next, next) : next
-            const caretAt = chip.from + 1 + before.length + text.length
-            replaceChipLiteral(view, chip, replacement, caretAt)
+            // 裸网址实时成 chip：句中的网址只包它自己，前后文字不动
+            const wrap = planBareUrlWrap(view.state, from, to, text, chips)
+            if (!wrap) return false
+            const marks = view.state.doc.resolve(wrap.start).marks()
+            const tr = view.state.tr.replaceWith(
+              wrap.start,
+              to,
+              view.state.schema.text(chipLiteral(wrap.url, wrap.url), marks),
+            )
+            tr.setSelection(TextSelection.create(tr.doc, wrap.start + 1 + wrap.url.length))
+            view.dispatch(tr)
             return true
           },
 

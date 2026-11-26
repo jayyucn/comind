@@ -29,20 +29,45 @@ export interface WebLinkToolbarTarget {
 const target = ref<WebLinkToolbarTarget | null>(null)
 let hideTimer: number | undefined
 
+/**
+ * 指针已进入悬浮条本身。置位期间宿主块/其它 chip 的 hover 不得改写目标，
+ * 否则「悬浮条浮在别的 chip 上方」时点下拉会被它下面的 chip 抢走目标，
+ * 菜单当场被重置 —— 视图切换点了没反应的表象之一。
+ */
+let pinned = false
+
 /** 视图切换下拉的开合（悬浮条内部状态，独立导出供全局关闭） */
 const viewMenuOpen = ref(false)
 
 export function useWebLinkChipToolbar() {
   function show(next: WebLinkToolbarTarget): void {
+    if (pinned) return
     if (hideTimer) {
       clearTimeout(hideTimer)
       hideTimer = undefined
     }
+    // 同一个宿主重复 hover（子元素冒泡）不该把已展开的下拉关掉
+    const same = !!target.value
+      && target.value.kind === next.kind
+      && target.value.blockId === next.blockId
+      && target.value.url === next.url
     target.value = next
-    viewMenuOpen.value = false
+    if (!same) viewMenuOpen.value = false
+  }
+
+  /** 指针进入 / 离开悬浮条：进入期间冻结目标，离开后交给正常的隐藏排队 */
+  function setPinned(value: boolean): void {
+    pinned = value
+    if (value) {
+      if (hideTimer) {
+        clearTimeout(hideTimer)
+        hideTimer = undefined
+      }
+    }
   }
 
   function scheduleHide(delay = 220): void {
+    if (pinned) return
     if (hideTimer) clearTimeout(hideTimer)
     hideTimer = window.setTimeout(() => {
       target.value = null
@@ -54,6 +79,7 @@ export function useWebLinkChipToolbar() {
     if (hideTimer) clearTimeout(hideTimer)
     target.value = null
     viewMenuOpen.value = false
+    pinned = false
   }
 
   /** 指针进入悬浮条本身：取消排队中的隐藏，让菜单可点 */
@@ -68,5 +94,5 @@ export function useWebLinkChipToolbar() {
     return target.value?.blockId === blockId
   }
 
-  return { target, show, scheduleHide, hide, cancelHide, isFor, viewMenuOpen }
+  return { target, show, scheduleHide, hide, cancelHide, setPinned, isFor, viewMenuOpen }
 }

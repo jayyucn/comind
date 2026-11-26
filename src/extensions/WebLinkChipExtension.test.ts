@@ -3,6 +3,7 @@ import Code from '@tiptap/extension-code'
 import Document from '@tiptap/extension-document'
 import Paragraph from '@tiptap/extension-paragraph'
 import Text from '@tiptap/extension-text'
+import { TextSelection } from '@tiptap/pm/state'
 import type { EditorView } from '@tiptap/pm/view'
 
 import {
@@ -50,6 +51,16 @@ function keydown(editor: Editor, key: string, pos: number) {
   return handler!(editor.view, { key, preventDefault: vi.fn() } as unknown as KeyboardEvent)
 }
 
+/** 不重置选区：用来测「选中一段再按 Backspace/Delete」这类路径 */
+function keydownAtSelection(editor: Editor, key: string) {
+  const plugin = editor.state.plugins.find(p => p.key.startsWith('webLinkChip'))
+  const handler = plugin!.spec.props.handleKeyDown as
+    | ((view: EditorView, event: KeyboardEvent) => boolean)
+    | undefined
+  expect(handler).toBeTypeOf('function')
+  return handler!(editor.view, { key, preventDefault: vi.fn() } as unknown as KeyboardEvent)
+}
+
 function textInput(editor: Editor, from: number, to: number, text: string) {
   const plugin = editor.state.plugins.find(p => p.key.startsWith('webLinkChip'))
   const handler = plugin!.spec.props.handleTextInput as
@@ -57,6 +68,21 @@ function textInput(editor: Editor, from: number, to: number, text: string) {
     | undefined
   expect(handler).toBeTypeOf('function')
   return handler!(editor.view, from, to, text)
+}
+
+/**
+ * 逐字键入：handler 未拦截时由这里插入（等价 ProseMirror 默认路径）。
+ * 光标若被护栏算错一位，后续字符就会插到字面外面——只断言最终文本发现不了。
+ */
+function typeText(editor: Editor, input: string) {
+  for (const ch of input) {
+    const pos = editor.state.selection.from
+    if (!textInput(editor, pos, pos, ch)) {
+      const tr = editor.state.tr.insertText(ch, pos)
+      tr.setSelection(TextSelection.create(tr.doc, pos + 1))
+      editor.view.dispatch(tr)
+    }
+  }
 }
 
 describe('WebLinkChipExtension — 编辑态只露别名（ADR-0067）', () => {
@@ -121,6 +147,17 @@ describe('WebLinkChipExtension — 最小键盘护栏', () => {
       expect(editor.getText()).toBe('')
     })
   })
+
+  it('End / Home 落在可见行首行尾，不进隐藏的 `[](url)`', () => {
+    withEditor('[https://a.com](https://a.com)', (editor) => {
+      const chip = scanWebLinkChipsInDoc(editor.state.doc)[0]
+      expect(keydown(editor, 'End', chip.from)).toBe(true)
+      // 块尾是 chip：可见行尾 = 别名末尾（chip.to 在 contenteditable=false 里，浏览器存不住）
+      expect(editor.state.selection.from).toBe(chip.titleTo)
+      expect(keydown(editor, 'Home', chip.titleTo)).toBe(true)
+      expect(editor.state.selection.from).toBe(chip.titleFrom)
+    })
+  })
 })
 
 describe('WebLinkChipExtension — 链接视图改写语义', () => {
@@ -135,9 +172,139 @@ describe('WebLinkChipExtension — 链接视图改写语义', () => {
   it('改成不合法网址就拆掉隐藏 URL，只留用户输入的文字', () => {
     withEditor('[https://a.com](https://a.com)', (editor) => {
       const chip = scanWebLinkChipsInDoc(editor.state.doc)[0]
-      expect(textInput(editor, chip.titleTo, chip.titleTo, ' ')).toBe(true)
-      expect(editor.getText()).toBe('https://a.com ')
+      // 改的是别名中段（不是末尾），视为真的在改网址 ⇒ 拆掉链接
+      expect(textInput(editor, chip.titleFrom + 1, chip.titleFrom + 1, '中')).toBe(true)
+      expect(editor.getText()).toBe('h中ttps://a.com')
       expect(editor.view.dom.querySelector('.web-link-chip')).toBeNull()
+    })
+  })
+
+  it('链接末尾打空格 / 标点：链接保留，字符落到右侧', () => {
+    withEditor('[https://a.com](https://a.com)', (editor) => {
+      const chip = scanWebLinkChipsInDoc(editor.state.doc)[0]
+      expect(textInput(editor, chip.titleTo, chip.titleTo, '，')).toBe(true)
+      expect(editor.getText()).toBe('[https://a.com](https://a.com)，')
+      expect(scanWebLinkChipsInDoc(editor.state.doc)).toHaveLength(1)
+    })
+  })
+
+  it('链接视图退格删末字符：两截同步，不会退化成标题视图 + 旧地址', () => {
+    withEditor('[https://www.doubao.com](https://www.doubao.com)', (editor) => {
+      const chip = scanWebLinkChipsInDoc(editor.state.doc)[0]
+      expect(keydown(editor, 'Backspace', chip.titleTo)).toBe(true)
+      expect(editor.getText()).toBe('[https://www.doubao.co](https://www.doubao.co)')
+      const next = scanWebLinkChipsInDoc(editor.state.doc)
+      expect(next).toHaveLength(1)
+      expect(next[0]).toMatchObject({ title: 'https://www.doubao.co', url: 'https://www.doubao.co' })
+      // 光标留在别名末尾，继续打字/退格都不会跳进隐藏区
+      expect(editor.state.selection.from).toBe(next[0].titleTo)
+    })
+  })
+
+  it('链接视图退格删中间字符：URL 跟着一起改', () => {
+    withEditor('[https://a.com](https://a.com)', (editor) => {
+      const chip = scanWebLinkChipsInDoc(editor.state.doc)[0]
+      // 光标在 `.` 之后：退格删掉点号，`https://acom` 仍是合法网址
+      expect(keydown(editor, 'Backspace', chip.titleFrom + 10)).toBe(true)
+      expect(editor.getText()).toBe('[https://acom](https://acom)')
+    })
+  })
+
+  it('链接视图 Delete 删首字符：删到不像网址就整段拆成文字', () => {
+    withEditor('[https://a.com](https://a.com)', (editor) => {
+      const chip = scanWebLinkChipsInDoc(editor.state.doc)[0]
+      expect(keydown(editor, 'Delete', chip.titleFrom)).toBe(true)
+      expect(editor.getText()).toBe('ttps://a.com')
+      expect(editor.view.dom.querySelector('.web-link-chip')).toBeNull()
+    })
+  })
+
+  it('链接视图退格到不再像网址：拆掉隐藏 URL，只留剩下的文字', () => {
+    withEditor('[https://a](https://a)', (editor) => {
+      const chip = scanWebLinkChipsInDoc(editor.state.doc)[0]
+      expect(keydown(editor, 'Backspace', chip.titleTo)).toBe(true)
+      expect(editor.getText()).toBe('https://')
+      expect(editor.view.dom.querySelector('.web-link-chip')).toBeNull()
+    })
+  })
+
+  it('链接视图选中一段删除：两截同步', () => {
+    withEditor('[https://a.com](https://a.com)', (editor) => {
+      const chip = scanWebLinkChipsInDoc(editor.state.doc)[0]
+      // 选中别名里的 `a.`：剩 `https://com`，仍是合法网址
+      editor.commands.setTextSelection({ from: chip.titleFrom + 8, to: chip.titleFrom + 10 })
+      expect(keydownAtSelection(editor, 'Backspace')).toBe(true)
+      expect(editor.getText()).toBe('[https://com](https://com)')
+    })
+  })
+
+  it('标题视图退格交给默认路径：只改别名，URL 保持不动', () => {
+    withEditor('[飞书](https://a.com)', (editor) => {
+      const chip = scanWebLinkChipsInDoc(editor.state.doc)[0]
+      // 返回 false = 放行 ProseMirror 默认删除（只掉别名一个字，隐藏 URL 不受影响）
+      expect(keydown(editor, 'Backspace', chip.titleTo)).toBe(false)
+      editor.commands.deleteRange({ from: chip.titleTo - 1, to: chip.titleTo })
+      expect(editor.getText()).toBe('[飞](https://a.com)')
+      expect(scanWebLinkChipsInDoc(editor.state.doc)[0]).toMatchObject({ title: '飞', url: 'https://a.com' })
+    })
+  })
+})
+
+describe('WebLinkChipExtension — 键入裸网址即成 chip', () => {
+  it('整块键入网址：补上最后一字符就包成链接视图字面', () => {
+    withEditor('https://a.co', (editor) => {
+      const end = editor.state.doc.content.size - 1
+      expect(textInput(editor, end, end, 'm')).toBe(true)
+      expect(editor.getText()).toBe('[https://a.com](https://a.com)')
+      const chip = scanWebLinkChipsInDoc(editor.state.doc)[0]
+      expect(chip.title).toBe('https://a.com')
+      expect(chip.url).toBe('https://a.com')
+    })
+  })
+
+  it('句中键入网址：只包网址那一段，前后文字不动', () => {
+    withEditor('明天看 https://a.c', (editor) => {
+      const end = editor.state.doc.content.size - 1
+      expect(textInput(editor, end, end, 'o')).toBe(true)
+      expect(editor.getText()).toBe('明天看 [https://a.co](https://a.co)')
+    })
+  })
+
+  it('已经成 chip 之后再补字符，不会重复包裹', () => {
+    withEditor('[https://a.com](https://a.com)', (editor) => {
+      const chip = scanWebLinkChipsInDoc(editor.state.doc)[0]
+      // 光标在字面之外（chip 右侧）：不归 chip 分支，也没有裸网址可包
+      expect(textInput(editor, chip.to, chip.to, 'x')).toBe(false)
+      expect(editor.getText()).toBe('[https://a.com](https://a.com)')
+    })
+  })
+
+  it('半截网址不成 chip：只打到 `https://` 还不包裹', () => {
+    withEditor('https:/', (editor) => {
+      const end = editor.state.doc.content.size - 1
+      // 返回 false = 放行 ProseMirror 默认插入，文档由它去写
+      expect(textInput(editor, end, end, '/')).toBe(false)
+      expect(editor.getText()).toBe('https:/')
+    })
+  })
+
+  it('逐字键入整段网址：每个后续字符都续在别名末尾，不跑到字面外面', () => {
+    withEditor('', (editor) => {
+      typeText(editor, 'https://www.doubao.com')
+      expect(editor.getText()).toBe('[https://www.doubao.com](https://www.doubao.com)')
+      const chip = scanWebLinkChipsInDoc(editor.state.doc)[0]
+      expect(chip).toMatchObject({ title: 'https://www.doubao.com', url: 'https://www.doubao.com' })
+      // 光标停在别名末尾（不是别名之后、也不是隐藏区里）
+      expect(editor.state.selection.from).toBe(chip.titleTo)
+    })
+  })
+
+  it('逐字键入后接着打中文标点：链接保留，标点落右侧', () => {
+    withEditor('', (editor) => {
+      typeText(editor, 'https://a.com')
+      typeText(editor, '，然后')
+      expect(editor.getText()).toBe('[https://a.com](https://a.com)，然后')
+      expect(scanWebLinkChipsInDoc(editor.state.doc)).toHaveLength(1)
     })
   })
 })

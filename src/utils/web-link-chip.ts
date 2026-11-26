@@ -6,6 +6,7 @@
  *
  * 本模块只处理字面串，不碰 store；拆块/改块由服务层调用这些函数。
  */
+import { domainOf } from './web-link'
 
 /** 与 Rust `RE_MD_LINK` 同源：`\[([^\[\]]+)\]\((https?://[^\s)]+)\)` */
 const MD_LINK_RE = /\[([^[\]]+)\]\((https?:\/\/[^\s)]+)\)/g
@@ -45,6 +46,21 @@ export function webLinkChipOnly(content: string): WebLinkChipSpan | null {
 export function webLinkChipMarkdown(title: string, url: string): string {
   // 标题里出现 `]` 会破坏语法；用全角替身，保住可解析性
   return `[${title.split('[').join('｜').split(']').join('｜')}](${url})`
+}
+
+/**
+ * chip 两种文本视图对应的别名（ADR-0067：视图 = 显示文字是否等于 URL）。
+ *
+ * - 链接视图 = URL 原文，字面 `[url](url)`；
+ * - 标题视图 = 域名（`webLinkTitle` 回退链的第二档），无域名时退回 URL。
+ *
+ * 这两个「视图」不是独立存储的开关，切换就是改写别名字面；用户手写的别名
+ * 在切到链接视图时会被 URL 覆盖，靠撤销恢复。
+ */
+export function chipAliasForView(url: string, view: 'link' | 'title'): string {
+  if (view === 'link') return url
+  const domain = domainOf(url)
+  return domain || url
 }
 
 /** 替换 content 里第一个匹配 chip 的字面（按 start/end，避免误伤同串文本） */

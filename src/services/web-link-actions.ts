@@ -6,8 +6,8 @@
  */
 import { useBlockStore } from '../stores/blocks'
 import { useEditorStore } from '../stores/editor'
-import { DEFAULT_PREVIEW_HEIGHT, patchWebLink, WEB_LINK_TYPE, type WebLinkView } from '../utils/web-link'
-import { findWebLinkChips, replaceWebLinkChip, webLinkChipMarkdown, webLinkChipOnly } from '../utils/web-link-chip'
+import { DEFAULT_PREVIEW_HEIGHT, domainOf, patchWebLink, WEB_LINK_TYPE, type WebLinkView } from '../utils/web-link'
+import { chipAliasForView, findWebLinkChips, replaceWebLinkChip, webLinkChipMarkdown, webLinkChipOnly } from '../utils/web-link-chip'
 import { planCardToChip, planChipToCard } from './web-link-split'
 
 /** 编辑链接：改 chip 的标题与 URL（content 字面改写） */
@@ -80,7 +80,7 @@ export async function convertChipToCard(
     link: {
       view,
       previewHeight: DEFAULT_PREVIEW_HEIGHT,
-      meta: { title: plan.title, domain: new URL(plan.url).hostname.replace(/^www\./, '') },
+      meta: { title: plan.title, domain: domainOf(plan.url) },
     },
   }
   const card = await store.createBlock({
@@ -102,11 +102,20 @@ export async function convertChipToCard(
       pos: plan.pos + 2,
     })
   }
+  // 整块正文都搬进了卡片：原块只剩空壳，必须收拾掉，否则页面上会同时留下
+  // 一份 chip 和一张卡片（重复内容）。有子块时改清空，不动子树。
+  if (!plan.keepAsBefore) {
+    if (store.getChildren(blockId).length === 0) await store.deleteBlocks([blockId])
+    else await store.updateBlockContent(blockId, '')
+  }
   return card.id
 }
 
 /** 卡片/预览 → chip：合并前后文本，删 web-link 块 */
-export async function convertCardToChip(blockId: string): Promise<string | null> {
+export async function convertCardToChip(
+  blockId: string,
+  target: 'link' | 'title' = 'title',
+): Promise<string | null> {
   const store = useBlockStore()
   const editor = useEditorStore()
   const block = store.getBlock(blockId)
@@ -121,7 +130,10 @@ export async function convertCardToChip(blockId: string): Promise<string | null>
   const before = idx > 0 && siblings[idx - 1].type === 'text' ? siblings[idx - 1] : undefined
   const after = idx >= 0 && idx < siblings.length - 1 && siblings[idx + 1].type === 'text' ? siblings[idx + 1] : undefined
   const meta = (block.format?.link as { meta?: { title?: string } } | undefined)?.meta
-  const title = meta?.title || new URL(url).hostname.replace(/^www\./, '')
+  // 落到哪个文本视图由这次点击决定：链接视图写 URL 原文，标题视图写网页标题（退域名）
+  const title = target === 'link'
+    ? url
+    : (meta?.title?.trim() || domainOf(url) || url)
 
   const plan = planCardToChip({
     url,
@@ -163,8 +175,11 @@ export async function switchWebLinkView(
 ): Promise<string | undefined> {
   const store = useBlockStore()
   if (hostKind === 'chip') {
-    if (target === 'link' || target === 'title') return blockId
-    return (await convertChipToCard(blockId, target)) ?? undefined
+    if (target === 'card' || target === 'preview') {
+      return (await convertChipToCard(blockId, target)) ?? undefined
+    }
+    // 链接视图 / 标题视图 = 别名字面，不是 format 里的开关（ADR-0067 D1）
+    return await switchChipTextView(blockId, target)
   }
   const block = store.getBlock(blockId)
   if (!block) return undefined
@@ -172,5 +187,24 @@ export async function switchWebLinkView(
     await store.updateBlockFormat(blockId, patchWebLink(block.format, { view: target }))
     return blockId
   }
-  return (await convertCardToChip(blockId)) ?? undefined
+  return (await convertCardToChip(blockId, target)) ?? undefined
+}
+
+/** chip 在「链接视图 ↔ 标题视图」之间切换：只改别名字面，URL 不动 */
+export async function switchChipTextView(
+  blockId: string,
+  target: 'link' | 'title',
+): Promise<string | undefined> {
+  const store = useBlockStore()
+  const block = store.getBlock(blockId)
+  if (!block) return undefined
+  const chip = webLinkChipOnly(block.content)
+  if (!chip) return undefined
+  const alias = chipAliasForView(chip.url, target)
+  if (alias === chip.title) return blockId
+  await store.updateBlockContent(
+    blockId,
+    replaceWebLinkChip(block.content, chip, webLinkChipMarkdown(alias, chip.url)),
+  )
+  return blockId
 }

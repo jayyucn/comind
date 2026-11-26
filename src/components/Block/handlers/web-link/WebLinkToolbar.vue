@@ -28,9 +28,9 @@ import {
   WEB_LINK_VIEWS,
   type WebLinkView,
 } from '../../../../utils/web-link'
-import { findWebLinkChips, webLinkChipMarkdown } from '../../../../utils/web-link-chip'
+import { chipAliasForView, findWebLinkChips, webLinkChipMarkdown } from '../../../../utils/web-link-chip'
 
-const { target, hide, cancelHide, scheduleHide, viewMenuOpen } = useWebLinkChipToolbar()
+const { target, hide, cancelHide, scheduleHide, setPinned, viewMenuOpen } = useWebLinkChipToolbar()
 
 const editing = ref(false)
 const draftTitle = ref('')
@@ -52,6 +52,17 @@ function chipViewOf(t: { title: string; url: string }): WebLinkView {
 async function run(action: () => unknown | Promise<unknown>): Promise<void> {
   await action()
   hide()
+}
+
+/** 指针停在悬浮条上：冻结目标，宿主的离场定时器不得把面板抽走 */
+function onToolbarEnter(): void {
+  cancelHide()
+  setPinned(true)
+}
+
+function onToolbarLeave(): void {
+  setPinned(false)
+  scheduleHide()
 }
 
 function openEdit(): void {
@@ -100,6 +111,18 @@ async function switchTo(view: WebLinkView): Promise<void> {
   const t = target.value
   if (!t) return
   await run(async () => {
+    // chip 的「链接视图/标题视图」就是别名字面本身：编辑态必须就地改文档，
+    // 否则 store 的改写会被编辑器的防抖回写覆盖，看起来「点了没反应」。
+    if (isChip.value && (view === 'link' || view === 'title')) {
+      const alias = chipAliasForView(t.url, view)
+      if (alias === t.title) return
+      if (replaceActiveChip(t.blockId, { url: t.url, title: t.title }, webLinkChipMarkdown(alias, t.url))) {
+        await flushActiveChipBlock(t.blockId)
+        return
+      }
+      await switchWebLinkView(t.blockId, view, 'chip')
+      return
+    }
     // 切卡片/预览会拆旧建新，必须先让编辑器的在途正文落库
     await flushActiveChipBlock(t.blockId)
     await switchWebLinkView(t.blockId, view, t.kind)
@@ -113,8 +136,8 @@ async function switchTo(view: WebLinkView): Promise<void> {
       v-if="target"
       class="wl-toolbar"
       :style="{ left: `${Math.max(8, target.left)}px`, top: `${Math.max(8, target.top - 40)}px` }"
-      @mouseenter="cancelHide"
-      @mouseleave="scheduleHide()"
+      @mouseenter="onToolbarEnter"
+      @mouseleave="onToolbarLeave"
       @mousedown.stop
       @click.stop
     >

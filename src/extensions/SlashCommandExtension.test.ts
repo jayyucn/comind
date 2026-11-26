@@ -270,6 +270,24 @@ describe('SlashCommandExtension — 光标落在 / 右侧触发面板（selectio
     expect(dispatched).toHaveLength(0)
   })
 
+  it('键入 `https://` 的中间态（`https:` / `https:/`）不触发', () => {
+    // 打第二个 `/` 时 `//` 还没凑齐，否则斜杠面板会被网址打开并吞掉 Esc
+    const { editor, dispatched } = createEditor('<p>https:</p>')
+    const plugin = editor.state.plugins.find(p => p.key.startsWith('slashCommand'))
+    const handleTextInput = plugin!.spec.props.handleTextInput as
+      (view: unknown, from: number, to: number, text: string) => boolean
+    editor.commands.setTextSelection(7)
+    expect(handleTextInput(editor.view, 7, 7, '/')).toBe(false)
+    expect(dispatched).toHaveLength(0)
+  })
+
+  it('光标停在 `https:/` 右侧也不触发', () => {
+    const { editor, dispatched } = createEditor('<p>https:/</p>')
+    editor.commands.setTextSelection(1)
+    editor.commands.setTextSelection(8)
+    expect(dispatched).toHaveLength(0)
+  })
+
   it('非空选区（拖选）不触发', () => {
     const { editor, dispatched } = createEditor('<p>a/</p>')
 
