@@ -7,6 +7,7 @@ import {
   Eraser,
   IndentDecrease,
   IndentIncrease,
+  Link2,
   Scissors,
   Trash2,
 } from 'lucide-vue-next'
@@ -51,6 +52,7 @@ const emit = defineEmits<{ close: [] }>()
 const {
   canIndent,
   canOutdent,
+  canConvertToWebLink,
   insertBlockAbove,
   insertBlockBelow,
   indentBlock,
@@ -58,6 +60,7 @@ const {
   copyBlock,
   cutBlock,
   pasteBlock,
+  convertToWebLink,
   resetToTextBlock,
   deleteBlock,
 } = useBlockMenuActions(() => props.blockId, { afterPaste: (...args) => props.afterPaste?.(...args) })
@@ -126,6 +129,16 @@ function run(action: () => void | Promise<void>) {
   />
 
   <span class="menu-sep" />
+
+  <!-- 转为网页链接（ADR-0066 D10）：只对「整块恰为一个 URL」的文本块出现。
+       与「清空」同组：都是改造自身而非搬运/销毁，且转错了可用撤销找回 -->
+  <BlockMenuItem
+    v-if="canConvertToWebLink"
+    data-block-menu-item="convert-web-link"
+    :icon="Link2"
+    label="转为网页链接"
+    @click="run(convertToWebLink)"
+  />
 
   <!-- 清空 = 删块 + 同位置新建空文本块：与删除同属「真的删东西」，但它是可撤销的改造
        而非销毁，所以不涂危险色，靠分隔线守住与删除的距离 -->

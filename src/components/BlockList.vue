@@ -22,6 +22,8 @@ import { useCrossBlockSelection } from '../composables/useCrossBlockSelection'
 import { UNDO_FLASH_MS, useRestoreFlash } from '../composables/useRestoreFlash'
 import { ensureStack } from '../composables/useUndoHistory'
 import { linkCrossPageMove, runUndoOrRedo } from '../composables/useUndoRestore'
+import { useWebLinkChipToolbar } from '../composables/useWebLinkChipToolbar'
+import { useWebLinkSettings } from '../composables/useWebLinkSettings'
 import { COMIND_BLOCK_MIME, resolveClipboardPayload } from '../services/external-paste-parse'
 import { onLayoutChange } from '../services/layout-change'
 import { ensureWikiLinkTargets, notifyCreatedPages } from '../services/paste-ensure-wiki-targets'
@@ -32,6 +34,8 @@ import {
 } from '../services/render-text'
 import { blockOffsetFromPoint, mergeSelectionRects, selectionClientRects, type SelectionRect } from '../services/selection-geometry'
 import { normalizeTextRange } from '../services/text-range'
+import { fillChipAliasIfUnlocked } from '../services/web-link-actions'
+import { fetchWebLinkMeta } from '../services/web-link-meta'
 import { useBlockStore } from '../stores/blocks'
 import { useEditorStore } from '../stores/editor'
 import { usePageStore } from '../stores/pages'
@@ -52,6 +56,8 @@ import {
 import { padUnitForContent } from '../utils/inline-unit-pad'
 import { pageNameRejectionHint, validatePageName } from '../utils/page-name'
 import { resolveUndoScopeBlockPage, takeOverUndoRedo } from '../utils/undo-chord'
+import { webLinkUrlOf } from '../utils/web-link'
+import { webLinkChipMarkdown } from '../utils/web-link-chip'
 import BlockDraggableList from './Block/components/BlockDraggableList.vue'
 import BlockDropIndicator from './Block/components/BlockDropIndicator.vue'
 import TaskProgressBar from './Block/components/TaskProgressBar.vue'
@@ -59,6 +65,7 @@ import type { DragEndIntent } from './Block/composables/useBlockDragDrop'
 import { applyDropTarget, useSharedDropIndicator } from './Block/composables/useBlockDragDrop'
 import { useParentTaskStatusSync } from './Block/composables/useParentTaskStatusSync'
 import { useChildTaskProgress } from './Block/composables/useTaskProgress'
+import WebLinkToolbar from './Block/handlers/web-link/WebLinkToolbar.vue'
 import InlineFormatToolbar from './InlineFormatToolbar.vue'
 
 const props = defineProps<{
@@ -775,6 +782,18 @@ function resolvePasteAnchor(): string | null {
   return editorStore.activeBlockId
 }
 
+/** 落 chip 后异步抓网页标题换 alias（ADR-0067 D8：用户改过则不覆盖） */
+async function fillChipAliasAsync(blockId: string, url: string): Promise<void> {
+  const { autoFetch } = useWebLinkSettings()
+  if (!autoFetch.value) return
+  try {
+    const { meta } = await fetchWebLinkMeta(url)
+    if (meta?.title) await fillChipAliasIfUnlocked(blockId, url, meta.title)
+  } catch {
+    // 抓取失败：chip 保留域名 alias，不阻塞输入（失败是常态分支）
+  }
+}
+
 async function handleDocPaste(e: ClipboardEvent) {
   // 侧边栏粘贴不进入主文档分发（无编辑上下文，避免误粘到主文档）
   if (isInSidebar(e)) return
@@ -823,6 +842,38 @@ async function handleDocPaste(e: ClipboardEvent) {
   if (!hasInternal && selection.anchorIds.size === 0 && isInlineCaretContext(e)) {
     void ensurePages.then(({ created }) => notifyCreatedPages(created, editorStore.showToast))
     return
+  }
+
+  // 整段恰为一个网址 → 落 text 块里的 markdown 外链 chip（ADR-0067 D7）。
+  // content 存 `[域名](url)`，抓到网页标题后异步换 alias（用户改过则不覆盖）。
+  // 判定要求「整块内容就是一个 URL」—— 前后缀带文字或含换行的粘贴仍走普通文本。
+  if (!hasInternal && forest.length === 1 && selection.anchorIds.size === 0) {
+    const pasted = forest[0]!
+    const url = pasted.type === 'text' ? webLinkUrlOf(pasted.content) : null
+    if (url) {
+      e.preventDefault()
+      const chipContent = webLinkChipMarkdown(new URL(url).hostname.replace(/^www\./, ''), url)
+      const targetId = editorStore.activeBlockId
+      const target = targetId ? blockStore.getBlock(targetId) : null
+      if (
+        target
+        && target.pageId === props.pageId
+        && target.type === 'text'
+        && target.content.trim() === ''
+        && blockStore.getChildren(target.id).length === 0
+      ) {
+        await blockStore.updateBlockContent(target.id, chipContent)
+        editorStore.deactivateBlock()
+        void fillChipAliasAsync(target.id, url)
+        return
+      }
+      const created = await blockStore.pasteBlocks(
+        [{ content: chipContent, type: 'text', format: {}, properties: null, children: [] }],
+        { pageId: props.pageId, anchorBlockId: resolvePasteAnchor(), fallbackParentId: rootBlockId.value },
+      )
+      if (created[0]) void fillChipAliasAsync(created[0].id, url)
+      return
+    }
   }
 
   // 空块就地转表（ADR-0061 D4）：整段只产出一个表格 + 无块选区 + 活动块是空 bullet
@@ -947,6 +998,43 @@ function handleViewportChange() {
   refreshTextHighlight()
   refreshFlashRects()
   refreshBlockSelection()
+}
+
+/**
+ * 网页链接 chip 的悬浮条触发（ADR-0067 D2）：chip 是 v-html 出来的裸 span，
+ * 没法在组件里绑事件，只能在列表根上做委托。
+ */
+const { show: showChipToolbar, scheduleHide: hideChipToolbar } = useWebLinkChipToolbar()
+
+function onChipMouseOver(e: MouseEvent): void {
+  const target = e.target as HTMLElement | null
+  const chip = target?.closest?.('.web-link-chip') as HTMLElement | null
+  if (!chip || !rootEl.value?.contains(chip)) return
+  // 同一 chip 内的 mouseover 冒泡不重复触发定位
+  if (chip.contains(e.relatedTarget as Node | null)) return
+  const blockEl = chip.closest('[data-block-id]') as HTMLElement | null
+  const blockId = blockEl?.dataset.blockId
+  const url = chip.dataset.chipUrl
+  if (!blockId || !url) return
+  const rect = chip.getBoundingClientRect()
+  const title = chip.dataset.chipTitle || url
+  showChipToolbar({
+    blockId,
+    kind: 'chip',
+    url,
+    title,
+    left: rect.left,
+    top: rect.top,
+    view: title === url ? 'link' : 'title',
+  })
+}
+
+function onChipMouseOut(e: MouseEvent): void {
+  const chip = (e.target as HTMLElement | null)?.closest?.('.web-link-chip') as HTMLElement | null
+  if (!chip) return
+  const next = e.relatedTarget as Node | null
+  if (next && chip.contains(next)) return
+  hideChipToolbar()
 }
 
 /** 布局变更（折叠侧栏 / 侧栏开合 / 拖 pane 分隔条）：不派发 window resize，但视口矩形已失效 */
@@ -1257,6 +1345,8 @@ onMounted(() => {
   document.addEventListener('keydown', handleDocKeyDownCapture, true)
   document.addEventListener('keydown', handleDocUndoRedoKeyDown, true)
   document.addEventListener('paste', handleDocPaste, true)
+  rootEl.value?.addEventListener('mouseover', onChipMouseOver)
+  rootEl.value?.addEventListener('mouseout', onChipMouseOut)
   // 文本选区覆盖层高亮需随滚动/缩放重绘（视口矩形会失效）
   document.addEventListener('scroll', handleViewportChange, true)
   window.addEventListener('resize', handleViewportChange)
@@ -1273,6 +1363,8 @@ onBeforeUnmount(() => {
   document.removeEventListener('keydown', handleDocKeyDownCapture, true)
   document.removeEventListener('keydown', handleDocUndoRedoKeyDown, true)
   document.removeEventListener('paste', handleDocPaste, true)
+  rootEl.value?.removeEventListener('mouseover', onChipMouseOver)
+  rootEl.value?.removeEventListener('mouseout', onChipMouseOut)
   document.removeEventListener('scroll', handleViewportChange, true)
   window.removeEventListener('resize', handleViewportChange)
   offLayoutChange?.()
@@ -1315,6 +1407,9 @@ onBeforeUnmount(() => {
       :css-class="indicatorClass"
       :visible="indicatorVisible"
     />
+
+    <!-- 网页链接悬浮条（ADR-0067）：chip 与卡片/预览块共用一条 -->
+    <WebLinkToolbar />
 
     <!-- 块选区覆盖层（ADR-0065）：连续段合并成单层矩形，替代逐块的 `.cb-selected::after`。
          Teleport 到 body 同样是为了躲开 transform 祖先对 fixed 的困束（ADR-0032 铁律 2）。 -->

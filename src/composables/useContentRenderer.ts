@@ -370,9 +370,11 @@ function renderContentToHtml(input: RenderInput): string {
       }
 
       case 'external_link': {
+        // ADR-0067：chip 只显示标题（display_text），url 走 data 属性供悬浮条读取。
         const url = escapeHtmlEntities(seg.url)
+        const label = escapeHtmlEntities(seg.display_text || seg.url)
         parts.push(wrapSegmentWithMarks(
-          `<span class="${CSS_CLASSES.blockLink} external" data-external="${url}">${url}</span>`,
+          `<span class="${CSS_CLASSES.blockLink} external web-link-chip" data-external="${url}" data-chip-url="${url}" data-chip-title="${label}">${label}</span>`,
           seg.start,
           seg.end,
           marks,

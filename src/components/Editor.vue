@@ -23,6 +23,7 @@ import { closeTagMenuByEditor, findTagAtCursor, InlineTagTriggerExtension, notif
 import { ParagraphStylePreviewExtension } from '../extensions/ParagraphStylePreviewExtension'
 import { RelationshipTriggerExtension } from '../extensions/RelationshipTriggerExtension'
 import { SlashCommandExtension } from '../extensions/SlashCommandExtension'
+import { WebLinkChipExtension } from '../extensions/WebLinkChipExtension'
 import { WikiLinkExtension } from '../extensions/WikiLinkExtension'
 import { closeWikiLinkMenuByEditor, findWikiLinkAtCursor, notifyWikiLinkMenuSelect, WikiLinkTriggerExtension } from '../extensions/WikiLinkTriggerExtension'
 import { useEditorStore } from '../stores/editor'
@@ -182,6 +183,8 @@ const editor = shallowRef(useEditor({
     SlashCommandExtension,
     EnterAsBlockExtension,
     WikiLinkExtension,
+    // 编辑态外链 chip：藏 `[别名](url)` 的语法字符，只露别名（ADR-0067）
+    WebLinkChipExtension,
     // 编辑态 `#tag` 胶囊与渲染态同形（ADR-0050 D11），色由宿主解析后注入
     InlineTagExtension.configure({ resolve: resolveInlineTag }),
     WikiLinkTriggerExtension,
@@ -921,6 +924,12 @@ defineExpose({
   background-color: transparent;
   color: transparent;
   -webkit-text-fill-color: transparent;
+}
+
+/* 外链 chip：语法字符复用 `.pm-prefix-hidden` 零宽隐藏，别名沿用读态
+   `.block-link.external` 的链接色；编辑态是可打字正文，光标保持文本形。 */
+.editor-wrapper :deep(.web-link-chip) {
+  cursor: text;
 }
 
 /* 列表标记：装饰经 data-marker 下发标签，画在前缀 span 的 ::before 上。

@@ -301,7 +301,7 @@ export type RenderSegment =
   | { type: 'text'; start: number; end: number }
   | { type: 'link'; start: number; end: number; target_page_title: string; display_text: string }
   | { type: 'typed_link'; start: number; end: number; target_page_title: string; display_text: string; relationship_type: string; rel_label: string; rel_color: string }
-  | { type: 'external_link'; start: number; end: number; url: string }
+  | { type: 'external_link'; start: number; end: number; url: string; display_text: string }
   | { type: 'date_ref'; start: number; end: number; kind: string; iso: string; recurrence: string; lead_minutes: number; is_overdue: boolean }
   // ADR-0049 grill 决策 #4：inline `#foo` 结构化渲染（点击无行为；is_system 驱动系统样式）
   // color = 调色板 token 名（如 `--tag-color-3`，ADR-0050 D11），空串 = 无色。

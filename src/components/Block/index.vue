@@ -20,6 +20,7 @@ import './handlers/embed'
 import './handlers/image'
 import './handlers/query'
 import './handlers/table'
+import './handlers/web-link'
 
 import type { EditorView } from '@codemirror/view'
 import type { Editor } from '@tiptap/core'

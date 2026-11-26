@@ -31,6 +31,12 @@ futures-util = "0.3"
 qrcode = "0.14"
 image = "0.25"
 base64 = "0.22"
+# 网页链接块的元数据抓取（ADR-0065 D3）：前端被 CSP connect-src 与 CORS 双重拦死，
+# 只能由 Rust 侧发请求。rustls 复用 tokio-tungstenite 已在树上的 TLS 实现，
+# charset 用于按 Content-Type 解非 UTF-8 站点（中文站点大量 GBK）。
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "gzip", "charset"] }
+# 直接解码：响应头常缺 charset，得靠 <meta charset> 嗅探后自己解（含 gb2312→GBK 归一）
+encoding_rs = "0.8"
 # Dev-only AI debug bridge (tauri-plugin-mcp)。Cargo 的 target cfg 依赖仅识别
 # target_os 等 target 属性，不支持 debug_assertions（写在该 section 下不生效，
 # release 同样会编译）；故放普通 dependencies，仅 debug 的插件注册与

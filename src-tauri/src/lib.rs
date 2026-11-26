@@ -6,6 +6,7 @@ mod config;
 mod markdown;
 mod state;
 mod sync;
+mod web_link;
 #[cfg(not(target_os = "android"))]
 mod sync_server;
 #[cfg(any(target_os = "android", test))]
@@ -212,6 +213,7 @@ pub fn run() {
             commands::save_asset_file,
             commands::read_asset_file,
             commands::delete_asset_file,
+            commands::fetch_web_link_metadata,
             commands::save_book_file,
             commands::read_book_file,
             commands::export_to_markdown,

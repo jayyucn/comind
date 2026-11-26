@@ -55,12 +55,14 @@ pub enum RenderSegment {
         rel_color: String,
     },
 
-    /// External link `[[https://...]]`.
+    /// External link. Markdown `[title](https://...)` 或裸 `[[https://...]]`。
+    /// `display_text` 是 chip 上显示的文字（markdown 标题；裸语法时等于 url）。
     #[serde(rename = "external_link")]
     ExternalLink {
         start: usize,
         end: usize,
         url: String,
+        display_text: String,
     },
 
     /// Date reference `@2026-08-03 ⏰|daily|30`.

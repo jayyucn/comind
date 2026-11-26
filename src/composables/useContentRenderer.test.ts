@@ -318,22 +318,25 @@ describe('结构化渲染片段（pre-computed segments）', () => {
   describe('external_link 片段', () => {
     it('渲染外部链接 span', () => {
       const html = renderContentToHtml({
-        segments: [{ type: 'external_link', start: 0, end: 23, url: 'https://example.com' }],
+        segments: [{ type: 'external_link', start: 0, end: 23, url: 'https://example.com', display_text: 'https://example.com' }],
         content: 'https://example.com',
         blockId: 'b1',
       })
-      expect(html).toContain('class="block-link external"')
+      expect(html).toContain('class="block-link external web-link-chip"')
       expect(html).toContain('data-external="https://example.com"')
-      expect(html).toContain('https://example.com')
+      expect(html).toContain('data-chip-url="https://example.com"')
+      expect(html).toContain('>https://example.com</span>')
     })
 
     it('外部链接的 URL 被 HTML 转义', () => {
       const html = renderContentToHtml({
-        segments: [{ type: 'external_link', start: 0, end: 30, url: 'https://a.com?x=1&y=2' }],
+        segments: [{ type: 'external_link', start: 0, end: 30, url: 'https://a.com?x=1&y=2', display_text: 'A 站点' }],
         content: 'https://a.com?x=1&y=2',
         blockId: 'b1',
       })
       expect(html).toContain('data-external="https://a.com?x=1&amp;y=2"')
+      expect(html).toContain('>A 站点</span>')
+      expect(html).toContain('data-chip-title="A 站点"')
     })
   })
 
