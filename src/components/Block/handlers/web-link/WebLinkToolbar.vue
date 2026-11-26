@@ -132,106 +132,123 @@ async function switchTo(view: WebLinkView): Promise<void> {
 
 <template>
   <Teleport to="body">
+    <!--
+      外层 anchor 只负责定位与命中判定：底边对齐宿主上沿，视觉盒靠 `padding-bottom`
+      抬起 8px，这段 padding 是透明桥。指针从 chip/卡片升上来时全程落在 anchor 内，
+      宿主不会先收到 mouseleave 把面板排队抽走。
+    -->
     <div
       v-if="target"
-      class="wl-toolbar"
-      :style="{ left: `${Math.max(8, target.left)}px`, top: `${Math.max(8, target.top - 40)}px` }"
+      class="wl-toolbar-anchor"
+      :style="{ left: `${Math.max(8, target.left)}px`, top: `${Math.max(8, target.top)}px` }"
       @mouseenter="onToolbarEnter"
       @mouseleave="onToolbarLeave"
       @mousedown.stop
       @click.stop
     >
-      <template v-if="editing">
-        <input
-          v-model="draftTitle"
-          class="wl-toolbar-input"
-          placeholder="显示文字"
-          @keydown.enter="commitEdit"
-        >
-        <input
-          v-model="draftUrl"
-          class="wl-toolbar-input wl-toolbar-input--url"
-          placeholder="https://…"
-          @keydown.enter="commitEdit"
-        >
-        <button
-          type="button"
-          class="wl-toolbar-btn wl-toolbar-btn--confirm"
-          @click="commitEdit"
-        >
-          确认
-        </button>
-      </template>
+      <div class="wl-toolbar">
+        <template v-if="editing">
+          <input
+            v-model="draftTitle"
+            class="wl-toolbar-input"
+            placeholder="显示文字"
+            @keydown.enter="commitEdit"
+          >
+          <input
+            v-model="draftUrl"
+            class="wl-toolbar-input wl-toolbar-input--url"
+            placeholder="https://…"
+            @keydown.enter="commitEdit"
+          >
+          <button
+            type="button"
+            class="wl-toolbar-btn wl-toolbar-btn--confirm"
+            @click="commitEdit"
+          >
+            确认
+          </button>
+        </template>
 
-      <template v-else>
-        <button
-          v-if="isChip"
-          type="button"
-          class="wl-toolbar-btn"
-          title="编辑链接"
-          @click="openEdit"
-        >
-          <PencilLine :size="13" />
-          <span>编辑链接</span>
-        </button>
-        <button
-          v-if="isChip"
-          type="button"
-          class="wl-toolbar-btn"
-          title="移除链接（保留文字）"
-          @click="removeLink"
-        >
-          <Link2Off :size="13" />
-          <span>移除链接</span>
-        </button>
+        <template v-else>
+          <button
+            v-if="isChip"
+            type="button"
+            class="wl-toolbar-btn"
+            title="编辑链接"
+            @click="openEdit"
+          >
+            <PencilLine :size="13" />
+            <span>编辑链接</span>
+          </button>
+          <button
+            v-if="isChip"
+            type="button"
+            class="wl-toolbar-btn"
+            title="移除链接（保留文字）"
+            @click="removeLink"
+          >
+            <Link2Off :size="13" />
+            <span>移除链接</span>
+          </button>
 
-        <div class="wl-toolbar-view">
+          <div class="wl-toolbar-view">
+            <button
+              type="button"
+              class="wl-toolbar-btn"
+              @click="viewMenuOpen = !viewMenuOpen"
+            >
+              <span>{{ WEB_LINK_VIEW_LABELS[isChip ? chipViewOf(target) : (target.view as WebLinkView)] }}</span>
+              <ChevronDown :size="12" />
+            </button>
+            <div
+              v-if="viewMenuOpen"
+              class="wl-toolbar-menu"
+            >
+              <button
+                v-for="v in WEB_LINK_VIEWS"
+                :key="v"
+                type="button"
+                class="wl-toolbar-menu-item"
+                @click="switchTo(v)"
+              >
+                <span>{{ WEB_LINK_VIEW_LABELS[v] }}</span>
+                <Check
+                  v-if="v === (isChip ? chipViewOf(target) : target.view)"
+                  :size="12"
+                />
+              </button>
+            </div>
+          </div>
+
           <button
             type="button"
             class="wl-toolbar-btn"
-            @click="viewMenuOpen = !viewMenuOpen"
+            title="复制原始链接"
+            @click="run(() => copyWebLinkUrl(target!.url))"
           >
-            <span>{{ WEB_LINK_VIEW_LABELS[isChip ? chipViewOf(target) : (target.view as WebLinkView)] }}</span>
-            <ChevronDown :size="12" />
+            <Copy :size="13" />
+            <span>复制链接</span>
           </button>
-          <div
-            v-if="viewMenuOpen"
-            class="wl-toolbar-menu"
-          >
-            <button
-              v-for="v in WEB_LINK_VIEWS"
-              :key="v"
-              type="button"
-              class="wl-toolbar-menu-item"
-              @click="switchTo(v)"
-            >
-              <span>{{ WEB_LINK_VIEW_LABELS[v] }}</span>
-              <Check
-                v-if="v === (isChip ? chipViewOf(target) : target.view)"
-                :size="12"
-              />
-            </button>
-          </div>
-        </div>
-
-        <button
-          type="button"
-          class="wl-toolbar-btn"
-          title="复制原始链接"
-          @click="run(() => copyWebLinkUrl(target!.url))"
-        >
-          <Copy :size="13" />
-          <span>复制链接</span>
-        </button>
-      </template>
+        </template>
+      </div>
     </div>
   </Teleport>
 </template>
 
 <style scoped>
-.wl-toolbar {
+/*
+ * 定位 + 命中层。锚点底边严格对齐宿主上沿（`translateY(-100%)`），
+ * 视觉盒再靠 `padding-bottom: 8px` 抬起 —— 那 8px 是透明桥，指针从宿主升上来
+ * 一路都在锚点内，宿主不会先收到 mouseleave 把面板排队抽走。
+ */
+.wl-toolbar-anchor {
   position: fixed;
   z-index: var(--z-popover, 100);
+  padding-bottom: 8px;
+  transform: translateY(-100%);
+}
+
+.wl-toolbar {
   display: flex;
   align-items: center;
   gap: 2px;
