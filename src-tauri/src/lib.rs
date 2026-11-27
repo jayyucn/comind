@@ -7,7 +7,6 @@ mod markdown;
 mod state;
 mod sync;
 mod web_link;
-mod window_focus;
 #[cfg(not(target_os = "android"))]
 mod sync_server;
 #[cfg(any(target_os = "android", test))]
@@ -213,7 +212,6 @@ pub fn run() {
             commands::set_workspace_path,
             commands::reset_workspace_path,
             commands::open_workspace_path,
-            commands::focus_main_window,
             commands::save_asset_file,
             commands::read_asset_file,
             commands::delete_asset_file,

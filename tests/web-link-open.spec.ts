@@ -81,6 +81,23 @@ test('从 chip 里起手拖选：有选区就不打开（选字优先）', async
   expect(await opened(page)).toEqual([])
 })
 
+test('打开后失焦再回窗口：插入符交还给活动块（回来能直接接着敲）', async ({ page }) => {
+  await seedChipAndLeaveEdit(page)
+  await page.locator(`.block ${chipSelector}`).click()
+  await wait(800)
+  expect(await opened(page)).toEqual(['https://www.doubao.com'])
+
+  // 模拟「系统浏览器抢走前台 → 用户切回来」：先让焦点离开编辑器，再让窗口重新获得焦点
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
+  expect(await page.evaluate(() => !!document.activeElement?.closest?.('.ProseMirror'))).toBe(false)
+
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+  await wait(200)
+
+  expect(await page.evaluate(() => !!document.activeElement?.closest?.('.ProseMirror'))).toBe(true)
+  expect(await page.evaluate(() => window.getSelection()?.isCollapsed ?? null)).toBe(true)
+})
+
 test('编辑态单击可见别名：同样打开（两态同形）', async ({ page }) => {
   await boot(page)
   await page.keyboard.type('https://www.doubao.com', { delay: 30 })

@@ -1,5 +1,5 @@
 import { createPinia, setActivePinia } from 'pinia'
-import { beforeEach, describe, expect, test } from 'vitest'
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { useEditorStore } from './editor'
 
 beforeEach(() => {
@@ -318,6 +318,36 @@ describe('useEditorStore', () => {
       store.openBlockModal('block-2')
       expect(store.blockModalBlockId).toBe('block-2')
       expect(store.blockModalSnapshotOf).toBeNull()
+    })
+  })
+
+  describe('外链打开后的光标归还（ADR-0069 D4）', () => {
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    test('未登记时消费为 false', () => {
+      const store = useEditorStore()
+      expect(store.consumeCaretRestore()).toBe(false)
+    })
+
+    test('登记后消费一次为 true，再次消费为 false（用完即清）', () => {
+      const store = useEditorStore()
+      store.requestCaretRestore()
+      expect(store.consumeCaretRestore()).toBe(true)
+      expect(store.consumeCaretRestore()).toBe(false)
+    })
+
+    test('两分钟内有效：119s 仍归还，121s 作废', () => {
+      vi.useFakeTimers()
+      const store = useEditorStore()
+      store.requestCaretRestore()
+      vi.advanceTimersByTime(119_000)
+      expect(store.consumeCaretRestore()).toBe(true)
+
+      store.requestCaretRestore()
+      vi.advanceTimersByTime(121_000)
+      expect(store.consumeCaretRestore()).toBe(false)
     })
   })
 })

@@ -743,6 +743,8 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
     if (Math.abs(e.clientX - press.x) > 4 || Math.abs(e.clientY - press.y) > 4) return
     const sel = window.getSelection()
     if (sel && !sel.isCollapsed) return
+    // 系统浏览器会拿走前台：登记一下，窗口回来时把插入符还回本块（ADR-0069 D4）
+    editorStore.requestCaretRestore()
     void openExternalUrl(press.url)
   }
 

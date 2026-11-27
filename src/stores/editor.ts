@@ -33,6 +33,16 @@ export const useEditorStore = defineStore('editor', () => {
   const pendingArrowFocus = ref<{ x: number | null; line: 'first' | 'last' } | null>(null)
 
   /**
+   * 「外链交给系统浏览器后，回来要把插入符还回去」的登记时刻（ADR-0069 D4）。
+   *
+   * 打开外链必然把前台交给浏览器：本窗口失焦期间插入符不渲染，用户切回来若不先点一下
+   * 就等于光标丢了（敲字没反应）——而这正是「点链接顺手进编辑态」的意义所在。所以在
+   * 打开那一刻登记，窗口重新获得焦点时（App.vue 的 window focus 监听）交还焦点。
+   * 带时效：过了两分钟才回来，更可能是用户自己有别的落点，别硬塞光标。用完即清。
+   */
+  const caretRestoreSince = ref<number | null>(null)
+
+  /**
    * 撤销/重做恢复的选区范围。撤销要恢复的不只是「光标在哪」，还有「选中了哪段」——
    * 用户选中 D 删掉再撤销，必须回到「D 被选中」。单独一个 ref 而非复用 pendingCursorPos：
    * 后者是单点语义（点击/方向键/分块都在用），改它会污染所有既有落点。
@@ -123,6 +133,18 @@ export const useEditorStore = defineStore('editor', () => {
     const v = pendingArrowFocus.value
     pendingArrowFocus.value = null
     return v
+  }
+
+  /** 登记「刚把外链交给系统浏览器」，等窗口回来时把插入符交还给活动块 */
+  function requestCaretRestore() {
+    caretRestoreSince.value = Date.now()
+  }
+
+  /** 消费登记：2 分钟内有效（窗口回来得够快才认为用户还想接着编辑） */
+  function consumeCaretRestore(): boolean {
+    const since = caretRestoreSince.value
+    caretRestoreSince.value = null
+    return since !== null && Date.now() - since < 120_000
   }
 
   /** 设置撤销/重做要恢复的选区范围（null = 清除） */
@@ -429,6 +451,8 @@ export const useEditorStore = defineStore('editor', () => {
     consumeClickCoords,
     setArrowFocus,
     consumeArrowFocus,
+    requestCaretRestore,
+    consumeCaretRestore,
     setSelectionRange,
     consumeSelectionRange,
     setTableCellFocus,
