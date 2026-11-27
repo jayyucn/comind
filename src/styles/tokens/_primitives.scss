@@ -30,7 +30,8 @@ $color-tag-bg: #EEF2FF;
 $color-success: #059669;
 $color-warning: #D97706;
 $color-error: #DC2626;
-$color-external: #64748B;
+// 外链用标准链接蓝（blue-600）：醒目、符合「外部链接=蓝」惯例，与 wiki 链接的 indigo 区分
+$color-external: #2563EB;
 
 // 透明度变体
 $accent-03: rgba(99, 102, 241, 0.03);

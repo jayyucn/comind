@@ -676,6 +676,12 @@ $callout-tones: (
     color: var(--accent-hover);
   }
 
+  // hover 下划线只给真链接（wiki / external）：tag chip 有底色 + 圆角，
+  // 画下划线形态很怪（tag 的兜底渲染也挂 block-link 类，必须排除）
+  &:not(.block-tag):hover {
+    text-decoration: underline;
+  }
+
   &.external {
     color: var(--color-external);
   }
