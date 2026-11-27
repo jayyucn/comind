@@ -19,6 +19,7 @@
     "barcode-scanner:allow-cancel",
     "notification:default",
     "os:default",
+    "opener:allow-open-url",
     "opener:allow-default-urls"
   ]
 }
