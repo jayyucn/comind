@@ -8,6 +8,7 @@ import { useBlockStore } from '../stores/blocks'
 import { useEditorStore } from '../stores/editor'
 import { DEFAULT_PREVIEW_HEIGHT, domainOf, patchWebLink, WEB_LINK_TYPE, type WebLinkView } from '../utils/web-link'
 import { chipAliasForView, findWebLinkChip, findWebLinkChips, replaceWebLinkChip, webLinkChipMarkdown, webLinkChipOnly } from '../utils/web-link-chip'
+import { buildMergedChipSegments, patchChipRewrite, splitChipSegments } from '../utils/web-link-segments'
 import { planCardToChip, planChipToCard } from './web-link-split'
 
 /** 定位目标 chip 的锚：悬浮条手里只有从 DOM 读来的 url / 标题 */
@@ -29,8 +30,16 @@ export async function editChipLink(
   if (!block) return false
   const chip = locateChip(block.content, match)
   if (!chip) return false
-  const next = replaceWebLinkChip(block.content, chip, webLinkChipMarkdown(title || url, url))
-  if (next !== block.content) await store.updateBlockContent(blockId, next)
+  const literal = webLinkChipMarkdown(title || url, url)
+  const next = replaceWebLinkChip(block.content, chip, literal)
+  if (next !== block.content) {
+    // 本地补段：改写后的 chip 段与 content 同拍写入，读态不闪裸 markdown
+    // （save 返回的 Rust 段随后覆盖；补段失败返回 undefined = 保持清段回退）
+    const segs = block.renderSegments
+      ? patchChipRewrite(block.renderSegments, chip.start, chip.end, literal, next.length, { url, displayText: title || url })
+      : null
+    await store.updateBlockContent(blockId, next, segs ? { renderSegments: segs } : undefined)
+  }
   return true
 }
 
@@ -41,7 +50,11 @@ export async function removeChipLink(blockId: string, start: number, end: number
   if (!block) return false
   const chip = findWebLinkChips(block.content).find(c => c.start === start && c.end === end)
   if (!chip) return false
-  await store.updateBlockContent(blockId, replaceWebLinkChip(block.content, chip, title))
+  const next = replaceWebLinkChip(block.content, chip, title)
+  const segs = block.renderSegments
+    ? patchChipRewrite(block.renderSegments, start, end, title, next.length)
+    : null
+  await store.updateBlockContent(blockId, next, segs ? { renderSegments: segs } : undefined)
   return true
 }
 
@@ -83,10 +96,14 @@ export async function convertChipToCard(
     url: chip.url,
     pos: block.pos,
   })
+  // 本地补段：拆出的前/后文本块段由旧段按 chip 边界切出（null = 补不了，保持清段回退）
+  const split = block.renderSegments
+    ? splitChipSegments(block.renderSegments, chip.start, chip.end)
+    : null
 
   // 前文本：保留原块（如有子块/字段，跟着原块走）或清空 content
   if (plan.keepAsBefore) {
-    await store.updateBlockContent(blockId, plan.before)
+    await store.updateBlockContent(blockId, plan.before, split ? { renderSegments: split.before } : undefined)
   }
   // web-link 块插在原块之后
   const cardFormat = {
@@ -113,6 +130,7 @@ export async function convertChipToCard(
       type: 'text',
       format: { ...block.format },
       pos: plan.pos + 2,
+      renderSegments: split ? split.after : undefined,
     })
   }
   // 整块正文都搬进了卡片：原块只剩空壳，必须收拾掉，否则页面上会同时留下
@@ -158,9 +176,19 @@ export async function convertCardToChip(
   })
 
   editor.deactivateBlock()
+  // 本地补段：合并 content 的段 = 前文本段 + 新 chip 段 + 后文本段（邻居缺段则 null 回退）
+  const chipLiteral = `[${title}](${url})`
+  const mergedSegs = buildMergedChipSegments(
+    before ? { segs: before.renderSegments, length: before.content.length } : undefined,
+    after ? { segs: after.renderSegments, length: after.content.length } : undefined,
+    chipLiteral,
+    url,
+    title,
+    plan.content.length,
+  )
   // 用原 web-link 块就地改回 text：保住 id / 反链 / 位置
   await store.updateBlockType(blockId, 'text')
-  await store.updateBlockContent(blockId, plan.content)
+  await store.updateBlockContent(blockId, plan.content, mergedSegs ? { renderSegments: mergedSegs } : undefined)
   await store.updateBlockFormat(blockId, {})
   for (const id of plan.removeIds) await store.deleteBlocks([id])
   return blockId
@@ -177,7 +205,12 @@ export async function fillChipAliasIfUnlocked(blockId: string, url: string, fetc
   const domain = new URL(url).hostname.replace(/^www\./, '')
   if (chip.title !== domain && chip.title !== url) return
   if (chip.title === fetchedTitle) return
-  await store.updateBlockContent(blockId, replaceWebLinkChip(block.content, chip, webLinkChipMarkdown(fetchedTitle, url)))
+  const literal = webLinkChipMarkdown(fetchedTitle, url)
+  const next = replaceWebLinkChip(block.content, chip, literal)
+  const segs = block.renderSegments
+    ? patchChipRewrite(block.renderSegments, chip.start, chip.end, literal, next.length, { url, displayText: fetchedTitle })
+    : null
+  await store.updateBlockContent(blockId, next, segs ? { renderSegments: segs } : undefined)
 }
 
 /** 悬浮条视图切换的统入口：chip ↔ 卡片/预览 */
@@ -217,9 +250,11 @@ export async function switchChipTextView(
   if (!chip) return undefined
   const alias = chipAliasForView(chip.url, target)
   if (alias === chip.title) return blockId
-  await store.updateBlockContent(
-    blockId,
-    replaceWebLinkChip(block.content, chip, webLinkChipMarkdown(alias, chip.url)),
-  )
+  const literal = webLinkChipMarkdown(alias, chip.url)
+  const next = replaceWebLinkChip(block.content, chip, literal)
+  const segs = block.renderSegments
+    ? patchChipRewrite(block.renderSegments, chip.start, chip.end, literal, next.length, { url: chip.url, displayText: alias })
+    : null
+  await store.updateBlockContent(blockId, next, segs ? { renderSegments: segs } : undefined)
   return blockId
 }
