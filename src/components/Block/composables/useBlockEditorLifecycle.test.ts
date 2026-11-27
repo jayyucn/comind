@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { ref } from 'vue'
 import type { Ref } from 'vue'
@@ -60,9 +60,16 @@ vi.mock('../../../composables/useRelationshipMenu', () => ({
   useRelationshipMenu: () => relMenuMock
 }))
 
+// 外链打开：单点收口在 utils/external-link（ADR-0069 D1），单测只断言「是否打开、
+// 用什么 URL」，真实系统浏览器调用由 external-link.test.ts 覆盖。
+const { openExternalUrlMock } = vi.hoisted(() => ({ openExternalUrlMock: vi.fn() }))
+
+vi.mock('../../../utils/external-link', () => ({
+  openExternalUrl: openExternalUrlMock,
+}))
+
 // useDateRefClickListener 内部调用 onMounted/onBeforeUnmount；
-// 单元测试不在组件 setup 中运行，mock 掉以避免 Vue 警告。
-// useDateTimePickerPanel 的 open 也换为 spy —— 渲染态 date-ref 点击断言它收到的
+// 单元测试不在组件 setup 中运行，mock 掉以避免 Vue 警告。// useDateTimePickerPanel 的 open 也换为 spy —— 渲染态 date-ref 点击断言它收到的
 // from/to（真实 open 会去写 editorStore.dateRefEditor，与断言无关）。
 const { openDateRefPanelMock } = vi.hoisted(() => ({
   openDateRefPanelMock: vi.fn()
@@ -1108,6 +1115,152 @@ describe('useBlockEditorLifecycle', () => {
     })
   })
 
+  // ── 外链 chip：按下落光标 / 抬起开链接（ADR-0069 D4）──
+  describe('外链 chip 打开协议', () => {
+    /** 内容区鼠标事件；chipUrl 给 null 表示不是外链 chip（wiki link 用 wikiPage 模拟） */
+    function chipEvent(opts: {
+      chipUrl?: string | null
+      wikiPage?: string
+      hidden?: boolean
+      inEditor?: boolean
+      x?: number
+      y?: number
+      detail?: number
+      button?: number
+    } = {}): MouseEvent {
+      const {
+        chipUrl = 'https://example.com',
+        wikiPage,
+        hidden = false,
+        inEditor = false,
+        x = 10,
+        y = 20,
+        detail = 1,
+        button = 0,
+      } = opts
+      const chipEl = chipUrl === null ? null : { dataset: { chipUrl } }
+      return {
+        target: {
+          closest: (sel: string) => {
+            if (sel === '.web-link-chip') return chipEl
+            // 真实 DOM 里 chip 本身挂着 .block-link；隐藏语法格在 chip 内部
+            if (sel === '.block-link') return chipEl ?? (wikiPage ? { dataset: { page: wikiPage } } : null)
+            if (sel === '.pm-prefix-hidden') return hidden ? {} : null
+            if (sel === '.ProseMirror') return inEditor ? {} : null
+            return null
+          },
+        },
+        button,
+        detail,
+        clientX: x,
+        clientY: y,
+        ctrlKey: false,
+        metaKey: false,
+        shiftKey: false,
+        preventDefault: () => {},
+      } as unknown as MouseEvent
+    }
+
+    /** 折叠选区（默认）；传入文本即「拖选/选词后抬起」 */
+    function stubSelection(text = '') {
+      vi.spyOn(window, 'getSelection').mockReturnValue({
+        isCollapsed: text === '',
+        toString: () => text,
+      } as unknown as Selection)
+    }
+
+    afterEach(() => {
+      vi.restoreAllMocks()
+    })
+
+    it('读态可见别名：按下仍走激活路径（落光标），抬起打开一次', () => {
+      stubSelection()
+      const startTextTracking = vi.fn()
+      const { lifecycle, editorStore } = setup({ startTextTracking, toggleBlock: vi.fn() })
+      const setCoordsSpy = vi.spyOn(editorStore, 'setClickCoords').mockImplementation(() => {})
+      blockOffsetFromPointMock.mockReturnValue({ blockId: 'b1', offset: 3 })
+
+      lifecycle.handleContentMousedown(chipEvent())
+      // 旧守卫对 .block-link 直接 return，读态点 chip 永远不会激活块
+      expect(setCoordsSpy).toHaveBeenCalledWith(10, 20)
+      expect(startTextTracking).toHaveBeenCalled()
+
+      lifecycle.handleContentMouseup(chipEvent())
+      expect(openExternalUrlMock).toHaveBeenCalledTimes(1)
+      expect(openExternalUrlMock).toHaveBeenCalledWith('https://example.com')
+    })
+
+    it('编辑态（.ProseMirror 在场）同样抬起打开：两态同形', () => {
+      stubSelection()
+      const { lifecycle, editorStore } = setup({ startTextTracking: vi.fn(), toggleBlock: vi.fn() })
+      const setCoordsSpy = vi.spyOn(editorStore, 'setClickCoords').mockImplementation(() => {})
+      editorStore.activateBlock('b1')
+
+      lifecycle.handleContentMousedown(chipEvent({ inEditor: true }))
+      expect(setCoordsSpy).not.toHaveBeenCalled() // 光标归 ProseMirror
+      lifecycle.handleContentMouseup(chipEvent({ inEditor: true }))
+      expect(openExternalUrlMock).toHaveBeenCalledWith('https://example.com')
+    })
+
+    it('按下后拖动超过 4px：算起手拖选，不打开', () => {
+      stubSelection()
+      const { lifecycle } = setup({ startTextTracking: vi.fn(), toggleBlock: vi.fn() })
+
+      lifecycle.handleContentMousedown(chipEvent({ x: 10, y: 20 }))
+      lifecycle.handleContentMouseup(chipEvent({ x: 30, y: 20 }))
+      expect(openExternalUrlMock).not.toHaveBeenCalled()
+    })
+
+    it('抬起时已有选区（双击选词 / 拖选）：不打开', () => {
+      stubSelection('example')
+      const { lifecycle } = setup({ startTextTracking: vi.fn(), toggleBlock: vi.fn() })
+
+      lifecycle.handleContentMousedown(chipEvent())
+      lifecycle.handleContentMouseup(chipEvent())
+      expect(openExternalUrlMock).not.toHaveBeenCalled()
+    })
+
+    it('双击的第二下（detail=2）不重复打开，且登记已被第一下消费', () => {
+      stubSelection()
+      const { lifecycle } = setup({ startTextTracking: vi.fn(), toggleBlock: vi.fn() })
+
+      lifecycle.handleContentMousedown(chipEvent())
+      lifecycle.handleContentMouseup(chipEvent())
+      lifecycle.handleContentMousedown(chipEvent())
+      lifecycle.handleContentMouseup(chipEvent({ detail: 2 }))
+      expect(openExternalUrlMock).toHaveBeenCalledTimes(1)
+    })
+
+    it('点在隐藏语法格（.pm-prefix-hidden）：不算点链接，不激活也不打开', () => {
+      stubSelection()
+      const { lifecycle, editorStore } = setup({ startTextTracking: vi.fn(), toggleBlock: vi.fn() })
+      const setCoordsSpy = vi.spyOn(editorStore, 'setClickCoords').mockImplementation(() => {})
+
+      lifecycle.handleContentMousedown(chipEvent({ hidden: true }))
+      expect(setCoordsSpy).not.toHaveBeenCalled()
+      lifecycle.handleContentMouseup(chipEvent({ hidden: true }))
+      expect(openExternalUrlMock).not.toHaveBeenCalled()
+    })
+
+    it('没有按下就抬起（无登记）：不打开', () => {
+      stubSelection()
+      const { lifecycle } = setup({ startTextTracking: vi.fn(), toggleBlock: vi.fn() })
+      lifecycle.handleContentMouseup(chipEvent())
+      expect(openExternalUrlMock).not.toHaveBeenCalled()
+    })
+
+    it('wiki link（.block-link 但不是 .web-link-chip）：读态仍一步跳转，不登记打开', () => {
+      stubSelection()
+      const { lifecycle, editorStore } = setup({ startTextTracking: vi.fn(), toggleBlock: vi.fn() })
+      const setCoordsSpy = vi.spyOn(editorStore, 'setClickCoords').mockImplementation(() => {})
+
+      lifecycle.handleContentMousedown(chipEvent({ chipUrl: null, wikiPage: 'Some Page' }))
+      expect(setCoordsSpy).not.toHaveBeenCalled()
+      lifecycle.handleContentMouseup(chipEvent({ chipUrl: null, wikiPage: 'Some Page' }))
+      expect(openExternalUrlMock).not.toHaveBeenCalled()
+    })
+  })
+
   describe('handleContentClick', () => {
     it('navigates to page on wiki link click', () => {
       const { lifecycle } = setup()
@@ -1142,7 +1295,8 @@ describe('useBlockEditorLifecycle', () => {
       expect(navigateToPageMock).not.toHaveBeenCalled()
     })
 
-    it('opens external link via window.open', () => {
+    it('外链 chip 的 click 不再打开（已上移到 mouseup，避免双开）', () => {
+      // 打开协议见「外链 chip 打开协议」：click 只保留 wiki link 的页面导航
       const { lifecycle } = setup()
       const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
       const link: any = {
@@ -1155,7 +1309,8 @@ describe('useBlockEditorLifecycle', () => {
         stopPropagation: () => {}
       } as any
       lifecycle.handleContentClick(e)
-      expect(openSpy).toHaveBeenCalledWith('https://example.com', '_blank', 'noopener,noreferrer')
+      expect(openSpy).not.toHaveBeenCalled()
+      expect(openExternalUrlMock).not.toHaveBeenCalled()
     })
 
     it('opens relationship switch menu on rel-type-label click', () => {

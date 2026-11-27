@@ -58,6 +58,8 @@ export interface BlockTypeHooks {
   onContentMousedown?: (e: MouseEvent) => boolean | void
   /** return true 阻止 index.vue 默认 click 行为 */
   onContentClick?: (e: MouseEvent) => boolean | void
+  /** return true 阻止 index.vue 默认 mouseup 行为（外链 chip 打开协议，ADR-0069 D4） */
+  onContentMouseup?: (e: MouseEvent) => boolean | void
   onLanguageChange?: (lang: string) => Promise<void>
   /** return true 阻止默认 dragover 行为 */
   onDragOver?: (e: DragEvent) => boolean | void

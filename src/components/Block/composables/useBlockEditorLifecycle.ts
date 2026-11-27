@@ -620,6 +620,13 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
   }
 
   // ── 鼠标交互 ──
+  /**
+   * 外链 chip 的按下记录（ADR-0069 D4）。URL 必须在 mousedown 就定住：读态一激活块，
+   * `BulletRender` 就被换成 `Editor`，之后 click 的 target 会退到公共祖先，那时已经
+   * 找不到 chip 了。落在隐藏语法格（`.pm-prefix-hidden`）不算点链接——视觉上那是链接外。
+   */
+  let linkPress: { url: string; x: number; y: number } | null = null
+
   /** mousedown：捕获点击坐标，在 tiptap 挂载前通知 editor store */
   function handleContentMousedown(e: MouseEvent) {
     const target = e.target as HTMLElement
@@ -629,6 +636,13 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
     // 不起文本选区，也不记录光标坐标——否则下拉/复制按钮会把块拉进编辑态，
     // 且 clickCoords 之后被 posAtCoords 换算成 header 处的错误光标位。
     if (target.closest(SELECTION_IGNORE_SELECTOR)) return
+    {
+      const chipEl = target.closest('.web-link-chip') as HTMLElement | null
+      const url = chipEl?.dataset.chipUrl
+      linkPress = chipEl && url && !target.closest('.pm-prefix-hidden')
+        ? { url, x: e.clientX, y: e.clientY }
+        : null
+    }
     // 表格块自带格选区（TableBlock 内实现）：内部拖拽不得进入跨块文本选区。
     // 表格的字符偏移是「所有单元格按行优先拼接」，跨格没有语义——从 A 格往下拖到
     // A 下方的格，在偏移坐标里已经越过整行后面的 B 格，于是 B 凭空入选；
@@ -645,7 +659,9 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
     // 本守卫只在**渲染态**生效：块激活后编辑器（.ProseMirror）在场，inline tag /
     // date-ref / wiki link 的编辑态装饰同样挂着这些类名 —— 此时提前 return 会跳过
     // 下方的 startTextTracking，从装饰字符内起拖将无法跨块选区（ADR-0035 老 bug 形态）。
-    if (!target.closest('.ProseMirror')) {
+    // 外链 chip 是例外（ADR-0069 D4）：读态点击同样要落光标（激活块）+ 抬起时打开，
+    // 因此 `linkPress` 命中时放行到下面的激活路径；wiki link 等其余 chip 仍走原来的一步跳转。
+    if (!target.closest('.ProseMirror') && !linkPress) {
       if (target.closest('.block-link')) return
       if (target.closest('.rel-type-label')) return
       if (target.closest('.date-ref')) return
@@ -711,6 +727,23 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
         selection.startTextTracking(anchor, { x: e.clientX, y: e.clientY })
       }
     }
+  }
+
+  /**
+   * 外链 chip 的抬起语义（ADR-0069 D4）：按下时登记的 chip 在抬起时才决定要不要打开。
+   * 四道门全过才开：左键、位移 ≤ 4px（起手拖选/跨块选区）、抬起时无选区（选词/拖选）、
+   * 按下落在可见别名上（隐藏语法格在 mousedown 时已排除）。
+   */
+  function handleContentMouseup(e: MouseEvent) {
+    const press = linkPress
+    linkPress = null
+    if (!press || e.button !== 0) return
+    // 双击的第二下（以及三击）：这一下是选词手势，不再重复打开
+    if (e.detail > 1) return
+    if (Math.abs(e.clientX - press.x) > 4 || Math.abs(e.clientY - press.y) > 4) return
+    const sel = window.getSelection()
+    if (sel && !sel.isCollapsed) return
+    void openExternalUrl(press.url)
   }
 
   function handleContentClick(e: MouseEvent) {
@@ -848,11 +881,8 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
     const link = target.closest('.block-link') as HTMLElement | null
     if (!link) return
 
-    if (link.dataset.external) {
-      // 单点收口：桌面端 window.open 会被 WebView2 静默取消（ADR-0069 D1）
-      void openExternalUrl(link.dataset.external)
-      return
-    }
+    // 外链 chip 的打开已上移到 mouseup（ADR-0069 D4）：这里再开一次会变成双开。
+    // wiki link 的导航仍在 click 处理。
     const pageName = link.dataset.page
     if (pageName) {
       // 对称 pane（ADR-0059）：Ctrl+Click（Mac ⌘+Click）→ 目标页在另一栏打开；
@@ -889,6 +919,7 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
     handleClear,
     handleCursorChange,
     handleContentMousedown,
+    handleContentMouseup,
     handleContentClick,
   }
 }

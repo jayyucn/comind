@@ -31,3 +31,21 @@
 ### D3 协议白名单与失败策略
 
 只放行 `http(s)`：`javascript:` / `file:` / `tauri:` 不进系统打开器。打开失败只 `console.error`，不弹提示——外链打不开是环境问题（无默认浏览器、系统拒绝），提示比不打开更吵。
+
+### D4 点击协议：按下落光标，抬起才打开
+
+读态与编辑态同一套语义：`mousedown` 记录目标 chip 的 URL 与落点，`mouseup` 四道门全过才打开——左键、位移 ≤ 4px、抬起时选区为空、按下落在**可见别名**上。
+
+三个实现约束：
+
+- **URL 必须在 mousedown 就取到**。读态一激活块，`BulletRender` 就被换成 `Editor`，`click` 的 target 会退到公共祖先，那时已经找不到 chip。这也是旧实现「`.block-link` 在 mousedown 一律提前 return」存在的原因；外链 chip 现在放行到激活路径，wiki link 等其余 chip 维持一步跳转。
+- **隐藏语法格不算点链接**。编辑态里 `[`、`](url)` 两截零宽 span 也挂着 `.web-link-chip`，它们与可见别名像素重合；`target.closest('.pm-prefix-hidden')` 命中即不登记，点那里就只落光标（`handleClick` 的既有映射）。
+- **`click` 不再打开**。打开动作上移到 `mouseup` 后，`handleContentClick` 里的 `data-external` 分支必须删除，否则一次点击会打开两遍；wiki link 的页面导航仍在 `click`。
+
+读态点击因此会**激活整块**：光标落进 chip，从浏览器回来能直接接着敲字。这与读态 wiki link（一步导航、不激活）不同，理由是外链打开不离开当前页，页面应当保持可编辑。
+
+已接受的代价：别名改字不能用鼠标单击进入（每次单击都会打开浏览器），只能用双击选词或拖选后再操作，或用方向键走进别名。双击的第二下（`detail > 1`）不重复打开，但第一下仍按单击处理——与浏览器里双击链接会开一次标签页一致。
+
+### D5 `window.open` 在应用代码里是反模式
+
+新增外链打开一律走 `openExternalUrl`。任何地方再写 `window.open(…, '_blank')` 都会在桌面端静默失效，而浏览器与 e2e 都看不出来。
