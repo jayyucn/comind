@@ -1147,6 +1147,16 @@ pub async fn open_workspace_path(
     open_path_in_explorer(&workspace)
 }
 
+/// 把主窗口抢回前台（ADR-0069 D6）。
+///
+/// 外链交系统浏览器后浏览器会抢走前台，前端在浏览器冷启动窗口期内补调几次本命令，
+/// 让 comind 保持焦点、链接实际在后台打开。Windows 的前台锁需 `AttachThreadInput`
+/// 才能绕过（实现见 `window_focus.rs`）。
+#[tauri::command]
+pub fn focus_main_window(app_handle: AppHandle) -> Result<(), String> {
+    super::window_focus::focus_main(&app_handle)
+}
+
 /// 用系统文件管理器打开指定目录（Windows 资源管理器 / macOS Finder / Linux 文件管理器）
 fn open_path_in_explorer(path: &std::path::Path) -> Result<(), String> {
     #[cfg(target_os = "android")]
