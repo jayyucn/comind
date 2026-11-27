@@ -37,7 +37,8 @@ function contentRoot(blockEl: HTMLElement): HTMLElement {
  * ③ `textContent` 偏移被 header 文本撑长 ⇒ 复制/删除切错字符。
  * 标记在 DOM 上（而非按块类型硬判），新增同类 chrome 只需加属性。
  */
-export const SELECTION_IGNORE_SELECTOR = '[data-text-selection-ignore]'
+export const SELECTION_IGNORE_SELECTOR =
+  '[data-text-selection-ignore], .pm-prefix-hidden'
 
 /** 节点是否位于选择忽略区内（含忽略区元素自身） */
 function isInSelectionIgnoreZone(node: Node): boolean {
@@ -557,9 +558,15 @@ export function selectionClientRects(anchor: BlockOffset, head: BlockOffset, sco
     range.setStart(from ? from.startContainer : first, from ? from.startOffset : 0)
     range.setEnd(to ? to.startContainer : last, to ? to.startOffset : last.length)
 
-    const rects = Array.from(range.getClientRects())
-      .filter((r) => r.width > 0 && r.height > 0)
-      .map((r) => ({ left: r.left, top: r.top, width: r.width, height: r.height }))
+    // jsdom 没有 Range.getClientRects（未处理 rejection 噪音源）；真浏览器恒有。
+    let rects: SelectionRect[] = []
+    try {
+      rects = Array.from(range.getClientRects())
+        .filter((r) => r.width > 0 && r.height > 0)
+        .map((r) => ({ left: r.left, top: r.top, width: r.width, height: r.height }))
+    } catch {
+      // 保持空数组
+    }
     if (rects.length > 0) perBlock.push({ root, rects })
   }
 
