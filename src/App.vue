@@ -38,6 +38,7 @@ import FieldSettingsModal from './components/Tags/FieldSettingsModal.vue'
 import Toast from './components/Toast.vue'
 import ViewHost from './components/ViewHost.vue'
 import { useBlockQueryRegistry } from './composables/useBlockQueryRegistry'
+import { setupCaretPersistence } from './composables/useCaretPersistence'
 import { useDateTimePickerPanel } from './composables/useDateTimePickerPanel'
 import { provideLayoutShell } from './composables/useLayoutShell'
 import { useNotificationScheduler } from './composables/useNotificationScheduler'
@@ -123,8 +124,8 @@ provideLayoutShell({ sidebarEl, contentBodyEl, pageMainContentEl })
 /** 布局根（.content-body）尺寸观察器：尺寸变化即广播布局变更（见 onMounted） */
 let stopLayoutObserver: (() => void) | null = null
 
-/** Tauri 窗口焦点监听注销函数（外链打开后回窗口补光标，见 handleWindowFocus） */
-let unlistenWindowFocus: (() => void) | null = null
+/** 光标持久化（ADR-0070，setupCaretPersistence）的注销函数 */
+let stopCaretPersistence: (() => void) | null = null
 
 /** 分隔条拖拽：实时写 splitRatio（夹取 0.1~0.9）；按布局方向取对应轴；关闭 pane 走头部 ✕ 按钮 */
 function onDividerMousedown(e: MouseEvent) {
@@ -219,16 +220,9 @@ onMounted(async () => {
   stopLayoutObserver = observeLayoutRoot(contentBodyEl.value)
   // 外链锚点改道（捕获阶段，先于卡片/字段自身的 click 处理）：阅读器窗口也要装
   document.addEventListener('click', handleGlobalExternalAnchorClick, true)
-  // 外链交给系统浏览器后回窗口补光标：阅读器没有块编辑器，装了也只是空转，一并装上
-  window.addEventListener('focus', handleWindowFocus)
-  // WebView2 里窗口重新获得焦点未必派发 DOM focus（实测窗口激活后 hasFocus 仍为 false），
-  // 桌面端补一条 Tauri 的窗口焦点事件；两条都走同一个消费入口，重复触发只看第一次。
-  if (isTauriEnvironment()) {
-    const { getCurrentWindow } = await import('@tauri-apps/api/window')
-    unlistenWindowFocus = await getCurrentWindow().onFocusChanged(({ payload }) => {
-      if (payload) handleWindowFocus()
-    })
-  }
+  // 光标持久化（ADR-0070）：记录上次编辑落点，窗口回前台/空白点击时把光标还回去。
+  // 阅读器没有块编辑器，记录天然为空、恢复自然走空，一并装上。
+  stopCaretPersistence = setupCaretPersistence()
   // 阅读器窗口不做主窗口初始化（页面预载/图谱预取/Ctrl+A 兜底：
   // 阅读器正文允许浏览器默认全选，为后续高亮选区铺路）
   if (isReaderWindow) return
@@ -254,9 +248,8 @@ onBeforeUnmount(() => {
   stopLayoutObserver?.()
   stopLayoutObserver = null
   document.removeEventListener('click', handleGlobalExternalAnchorClick, true)
-  window.removeEventListener('focus', handleWindowFocus)
-  unlistenWindowFocus?.()
-  unlistenWindowFocus = null
+  stopCaretPersistence?.()
+  stopCaretPersistence = null
   document.removeEventListener('keydown', handleGlobalKeydownCapture, true)
   document.removeEventListener('keydown', handleGlobalUndoRedoKeyDown, true)
   document.removeEventListener('keydown', handlePaneNavKeydown)
@@ -294,34 +287,6 @@ function handleGlobalUndoRedoKeyDown(e: KeyboardEvent) {
   const takeover = takeOverUndoRedo(e, resolveUndoScopeBlockPage)
   if (!takeover) return
   runUndoOrRedo(takeover.pageId, takeover.chord).catch((err) => console.error('[undo] 恢复失败:', err))
-}
-
-/**
- * 外链打开后「把插入符还回来」（ADR-0069 D4）。
- *
- * 打开外链 = 前台交给系统浏览器：本窗口失焦期间 Chromium 不渲染插入符，用户切回来
- * 若不先点一下，光标等于丢了（敲字没反应）——那「点链接顺手进编辑态」就白做了。
- * 只在**刚开过外链**后的两分钟内生效（`requestCaretRestore` 在 mouseup 打开那一刻登记），
- * 其余窗口聚焦一概不动，避免把焦点从用户自己想去的输入框里拽走。
- */
-function handleWindowFocus() {
-  if (!editorStore.consumeCaretRestore()) return
-  const editor = editorStore.activeEditor
-  if (!editor) return
-  // 等一帧：focus 事件先于窗口真正激活到达，此刻抢焦点可能被浏览器忽略
-  requestAnimationFrame(() => {
-    // 这一帧内用户可能已经点了别处 / 换了活动块，认身份不认 id
-    if (editorStore.activeEditor === editor) editor.commands.focus()
-  })
-}
-
-function handleMainClick(e: MouseEvent) {
-  const target = e.target as HTMLElement
-  if (!document.contains(target)) return
-  if (target.closest('.block')) return
-  // 点击右侧面板时保持当前 Block 激活状态（版本历史等面板需要依赖 activeBlockId）
-  if (target.closest('.right-sidebar')) return
-  editorStore.deactivateBlock()
 }
 
 /**
@@ -453,10 +418,7 @@ function handleGlobalExternalAnchorClick(e: MouseEvent) {
     <div class="app-main">
       <Sidebar @open-search="showSearchPanel = true" />
 
-      <div
-        class="page-scroll-wrapper"
-        @click="handleMainClick"
-      >
+      <div class="page-scroll-wrapper">
         <div class="page-content-wrapper">
           <div
             ref="contentBodyEl"

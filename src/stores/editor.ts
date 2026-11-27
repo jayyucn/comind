@@ -33,14 +33,32 @@ export const useEditorStore = defineStore('editor', () => {
   const pendingArrowFocus = ref<{ x: number | null; line: 'first' | 'last' } | null>(null)
 
   /**
-   * 「外链交给系统浏览器后，回来要把插入符还回去」的登记时刻（ADR-0069 D4）。
+   * 上一次编辑落点（ADR-0070）：「光标始终聚焦在块上」的恢复真源，常驻记录。
    *
-   * 打开外链必然把前台交给浏览器：本窗口失焦期间插入符不渲染，用户切回来若不先点一下
-   * 就等于光标丢了（敲字没反应）——而这正是「点链接顺手进编辑态」的意义所在。所以在
-   * 打开那一刻登记，窗口重新获得焦点时（App.vue 的 window focus 监听）交还焦点。
-   * 带时效：过了两分钟才回来，更可能是用户自己有别的落点，别硬塞光标。用完即清。
+   * - `pm`：活动块的 ProseMirror 编辑器。字符偏移**信任 PM 内部选区**——实例活着时
+   *   `commands.focus()` 就还原到光标最后所在字符位，不另记 pos（避免引入一份会随
+   *   撤销/粘贴过期的真源）。
+   * - `input`：pane 内的原生可编辑（字段输入框等）。DOM input 失焦后 selectionStart
+   *   虽也保留，但显式记录并回设，跨浏览器行为一致。元素用 WeakRef 防泄漏。
+   *
+   * paneId 用于「只在已激活的 pane 恢复」；作废由恢复门控隐式保证（块已不激活 /
+   * 元素已摘除 / pane 不匹配一律不恢复），显式清除只有 Esc 退出块激活这一处。
    */
-  const caretRestoreSince = ref<number | null>(null)
+  const lastEditPoint = ref<
+    | { kind: 'pm'; paneId: string | null; blockId: string; editor: unknown }
+    | { kind: 'input'; paneId: string | null; el: WeakRef<HTMLElement>; start: number | null; end: number | null }
+    | null
+  >(null)
+
+  /** 记录上一次编辑落点（focusin 时由 useCaretPersistence 调用） */
+  function setLastEditPoint(point: NonNullable<typeof lastEditPoint.value>) {
+    lastEditPoint.value = point
+  }
+
+  /** 清除记录（Esc 退出块激活时调用） */
+  function clearLastEditPoint() {
+    lastEditPoint.value = null
+  }
 
   /**
    * 撤销/重做恢复的选区范围。撤销要恢复的不只是「光标在哪」，还有「选中了哪段」——
@@ -133,18 +151,6 @@ export const useEditorStore = defineStore('editor', () => {
     const v = pendingArrowFocus.value
     pendingArrowFocus.value = null
     return v
-  }
-
-  /** 登记「刚把外链交给系统浏览器」，等窗口回来时把插入符交还给活动块 */
-  function requestCaretRestore() {
-    caretRestoreSince.value = Date.now()
-  }
-
-  /** 消费登记：2 分钟内有效（窗口回来得够快才认为用户还想接着编辑） */
-  function consumeCaretRestore(): boolean {
-    const since = caretRestoreSince.value
-    caretRestoreSince.value = null
-    return since !== null && Date.now() - since < 120_000
   }
 
   /** 设置撤销/重做要恢复的选区范围（null = 清除） */
@@ -451,8 +457,9 @@ export const useEditorStore = defineStore('editor', () => {
     consumeClickCoords,
     setArrowFocus,
     consumeArrowFocus,
-    requestCaretRestore,
-    consumeCaretRestore,
+    lastEditPoint,
+    setLastEditPoint,
+    clearLastEditPoint,
     setSelectionRange,
     consumeSelectionRange,
     setTableCellFocus,

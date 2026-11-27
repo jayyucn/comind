@@ -1190,30 +1190,28 @@ describe('useBlockEditorLifecycle', () => {
       expect(openExternalUrlMock).toHaveBeenCalledWith('https://example.com')
     })
 
-    it('打开外链时登记「回窗口补光标」，且只登记一次', () => {
+    it('打开外链只打开一次，不做任何光标登记（恢复归 useCaretPersistence 管）', () => {
       stubSelection()
       const { lifecycle, editorStore } = setup({ startTextTracking: vi.fn(), toggleBlock: vi.fn() })
-      const restoreSpy = vi.spyOn(editorStore, 'requestCaretRestore')
 
       lifecycle.handleContentMousedown(chipEvent())
-      expect(restoreSpy).not.toHaveBeenCalled() // 按下不登记：拖选/双击不能留下痕迹
       lifecycle.handleContentMouseup(chipEvent())
       expect(openExternalUrlMock).toHaveBeenCalledTimes(1)
-      expect(restoreSpy).toHaveBeenCalledTimes(1)
+      // 旧登记制（requestCaretRestore）已废弃，store 上不应再有该方法
+      expect((editorStore as unknown as Record<string, unknown>).requestCaretRestore).toBeUndefined()
     })
 
-    it('被门控掉的点击（拖动 / 选区）不登记补光标', () => {
+    it('被门控掉的点击（拖动 / 选区）同样只走打开门控', () => {
       stubSelection('example')
-      const { lifecycle, editorStore } = setup({ startTextTracking: vi.fn(), toggleBlock: vi.fn() })
-      const restoreSpy = vi.spyOn(editorStore, 'requestCaretRestore')
+      const { lifecycle } = setup({ startTextTracking: vi.fn(), toggleBlock: vi.fn() })
 
       lifecycle.handleContentMousedown(chipEvent({ x: 10, y: 20 }))
       lifecycle.handleContentMouseup(chipEvent({ x: 30, y: 20 }))
-      expect(restoreSpy).not.toHaveBeenCalled()
+      expect(openExternalUrlMock).not.toHaveBeenCalled()
 
       lifecycle.handleContentMousedown(chipEvent())
       lifecycle.handleContentMouseup(chipEvent())
-      expect(restoreSpy).not.toHaveBeenCalled()
+      expect(openExternalUrlMock).not.toHaveBeenCalled()
     })
 
     it('编辑态（.ProseMirror 在场）同样抬起打开：两态同形', () => {

@@ -477,8 +477,15 @@ async function handleDocKeyDown(e: KeyboardEvent) {
       if (editorStore.activeBlockId === blockId) editorStore.deactivateBlock()
       return
     }
+    // 无格选区：Esc 层层退出——先撤跨块/文本选区；原本就没有选区时，退出块激活。
+    // （ADR-0070：点块外空白不再取消激活，Esc 是唯一的键盘退出出口，必须在这里补上。）
+    const hadCrossSelection = selection.anchorIds.size > 0
     selection.clearSelection()
     selection.clearTextSelection()
+    if (!hadCrossSelection && editorStore.activeBlockId) {
+      editorStore.clearLastEditPoint()
+      editorStore.deactivateBlock()
+    }
     return
   }
   if (e.key === 'Enter') {

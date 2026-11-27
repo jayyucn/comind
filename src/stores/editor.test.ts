@@ -1,5 +1,5 @@
 import { createPinia, setActivePinia } from 'pinia'
-import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
+import { beforeEach, describe, expect, test } from 'vitest'
 import { useEditorStore } from './editor'
 
 beforeEach(() => {
@@ -321,33 +321,34 @@ describe('useEditorStore', () => {
     })
   })
 
-  describe('外链打开后的光标归还（ADR-0069 D4）', () => {
-    afterEach(() => {
-      vi.useRealTimers()
+  describe('上一次编辑落点（ADR-0070 光标持久化）', () => {
+    test('初始为 null，clearLastEditPoint 幂等', () => {
+      const store = useEditorStore()
+      expect(store.lastEditPoint).toBeNull()
+      store.clearLastEditPoint()
+      expect(store.lastEditPoint).toBeNull()
     })
 
-    test('未登记时消费为 false', () => {
+    test('setLastEditPoint 记录 pm 落点，clear 后回到 null', () => {
       const store = useEditorStore()
-      expect(store.consumeCaretRestore()).toBe(false)
+      store.setLastEditPoint({ kind: 'pm', paneId: 'p1', blockId: 'b1', editor: {} })
+      expect(store.lastEditPoint).toEqual({ kind: 'pm', paneId: 'p1', blockId: 'b1', editor: {} })
+      store.clearLastEditPoint()
+      expect(store.lastEditPoint).toBeNull()
     })
 
-    test('登记后消费一次为 true，再次消费为 false（用完即清）', () => {
+    test('记录可被覆盖：pm 与 input 落点互替（WeakRef 存元素）', () => {
       const store = useEditorStore()
-      store.requestCaretRestore()
-      expect(store.consumeCaretRestore()).toBe(true)
-      expect(store.consumeCaretRestore()).toBe(false)
-    })
-
-    test('两分钟内有效：119s 仍归还，121s 作废', () => {
-      vi.useFakeTimers()
-      const store = useEditorStore()
-      store.requestCaretRestore()
-      vi.advanceTimersByTime(119_000)
-      expect(store.consumeCaretRestore()).toBe(true)
-
-      store.requestCaretRestore()
-      vi.advanceTimersByTime(121_000)
-      expect(store.consumeCaretRestore()).toBe(false)
+      const el = document.createElement('input')
+      store.setLastEditPoint({ kind: 'pm', paneId: 'p1', blockId: 'b1', editor: {} })
+      store.setLastEditPoint({ kind: 'input', paneId: 'p1', el: new WeakRef(el), start: 2, end: 5 })
+      const point = store.lastEditPoint
+      expect(point?.kind).toBe('input')
+      if (point?.kind === 'input') {
+        expect(point.el.deref()).toBe(el)
+        expect(point.start).toBe(2)
+        expect(point.end).toBe(5)
+      }
     })
   })
 })
