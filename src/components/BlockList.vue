@@ -34,7 +34,7 @@ import {
 } from '../services/render-text'
 import { blockOffsetFromPoint, mergeSelectionRects, selectionClientRects, type SelectionRect } from '../services/selection-geometry'
 import { normalizeTextRange } from '../services/text-range'
-import { fillChipAliasIfUnlocked } from '../services/web-link-actions'
+import { applyFetchedChipMeta } from '../services/web-link-actions'
 import { fetchWebLinkMeta } from '../services/web-link-meta'
 import { useBlockStore } from '../stores/blocks'
 import { useEditorStore } from '../stores/editor'
@@ -789,13 +789,13 @@ function resolvePasteAnchor(): string | null {
   return editorStore.activeBlockId
 }
 
-/** 落 chip 后异步抓网页标题换 alias（ADR-0067 D8：用户改过则不覆盖） */
+/** 落 chip 后异步抓网页标题换 alias（ADR-0067 D8：用户改过则不覆盖；meta.title 同时存档） */
 async function fillChipAliasAsync(blockId: string, url: string): Promise<void> {
   const { autoFetch } = useWebLinkSettings()
   if (!autoFetch.value) return
   try {
     const { meta } = await fetchWebLinkMeta(url)
-    if (meta?.title) await fillChipAliasIfUnlocked(blockId, url, meta.title)
+    if (meta?.title) await applyFetchedChipMeta(blockId, url, meta.title)
   } catch {
     // 抓取失败：chip 保留域名 alias，不阻塞输入（失败是常态分支）
   }

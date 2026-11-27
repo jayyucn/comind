@@ -96,7 +96,7 @@ chip 正好在块尾时别名末尾就是这一行的最后一个可见字符，
 
 四个菜单项都必须真的改变展示形态，判定与落地规则如下：
 
-- **chip 的两种文本视图是别名字面本身**，不存 `format` 开关。切链接视图把别名写成 URL 原文（`[url](url)`），切标题视图写成域名（`title` 的回退链第二档，无域名时退回 URL）。手写别名被覆盖后靠撤销找回。编辑态走 ProseMirror 事务就地改，避免 store 改写被编辑器防抖回写冲掉。
+- **chip 的两种文本视图是别名字面本身**，不存 `format` 开关。切链接视图把别名写成 URL 原文（`[url](url)`）；切标题视图按回退链 **meta.title → 域名 → URL** 取别名（存档见 D12；meta.title 恰为 URL 时跳过落域名，标题视图不产出 `title === url` 的字面）。手写别名被覆盖后靠撤销找回。编辑态走 ProseMirror 事务就地改，避免 store 改写被编辑器防抖回写冲掉。
 - **卡片/预览切回文本**时，落到哪个文本视图由点击项决定：链接视图写 URL 原文，标题视图写 `meta.title`（退域名），不再一律取 `meta.title`。
 - **拆旧建新必须收拾原块**：chip 整块正文都搬进卡片时，原 text 块若没有子块就删除，有子块则清空内容；只保留前文本的做法会在页面上留下重复的 chip。
 - **抓取失败不清空既有 meta**：失败只盖 `error` 与 `domain`，保留 chip 带过来的标题/摘要，否则卡片切回文本时别名会退化成域名。
@@ -119,6 +119,15 @@ chip 正好在块尾时别名末尾就是这一行的最后一个可见字符，
 理由：缺 `allow-same-origin` 时 iframe 处于 opaque origin，页面脚本读 `localStorage` 抛 `SecurityError: The document is sandboxed and lacks the 'allow-same-origin' flag`，`indexedDB.open` 同样被拒。首屏依赖存储的站点（豆包等）因此直接白屏、控制台满屏红；补上后正常渲染。跨源隔离并不因此失效——父文档仍读不到 iframe 的 DOM 与 location。
 
 反过来，同源地址必须继续不加：`allow-scripts` + `allow-same-origin` 的组合能让页面脚本访问父文档、甚至摘掉自己的 sandbox。笔记里贴本站地址做预览时宁可能白屏，也不交出父文档。
+
+### D12 标题视图别名的单源：meta.title 存档
+
+标题视图别名不再固定取域名，改用抓取到的页面标题，存档在 text 块 `format.webLinkMetas[url]`（chip 宿主可含多颗不同 URL 的 chip，按 URL 键控；无存档的旧 chip 自然落回域名档）。
+
+- **抓取收口 `applyFetchedChipMeta`**：存档无条件更新；alias 本身只在「占位」时跟随抓取结果——占位 = 域名 / URL / 上次存档的 meta.title。用户手动改过的别名不属于占位，重抓永不覆盖；占位含旧存档意味着站点改标题而用户未动别名时，重抓会跟踪到新标题。
+- **卡片切回 chip 时带入存档**：卡片 `format.link.meta.title` 非空且不为 URL 时写入 `webLinkMetas`，chip↔卡片往返不丢 meta。
+- **链接视图下标题不可改**：编辑弹层在链接视图隐藏标题行（标题 = URL，无信息量），焦点落链接输入框；编辑态键入/删除在链接视图下两截同步重建或拆成纯文本（见 D10 的键入口径），本就不产生「标题 ≠ URL」的字面，无需额外拦截。
+- 别名改写沿用同拍补段（读态零裸文本窗口）。
 
 ## 已否决的替代方案
 | 方案 | 否决理由 |

@@ -7,7 +7,7 @@
 import { useBlockStore } from '../stores/blocks'
 import { useEditorStore } from '../stores/editor'
 import { DEFAULT_PREVIEW_HEIGHT, domainOf, patchWebLink, WEB_LINK_TYPE, type WebLinkView } from '../utils/web-link'
-import { chipAliasForView, findWebLinkChip, findWebLinkChips, replaceWebLinkChip, webLinkChipMarkdown, webLinkChipOnly } from '../utils/web-link-chip'
+import { chipAliasForView, chipMetaTitleOf, findWebLinkChip, findWebLinkChips, replaceWebLinkChip, webLinkChipMarkdown, webLinkChipOnly } from '../utils/web-link-chip'
 import { buildMergedChipSegments, patchChipRewrite, splitChipSegments } from '../utils/web-link-segments'
 import { planCardToChip, planChipToCard } from './web-link-split'
 
@@ -161,10 +161,9 @@ export async function convertCardToChip(
   const before = idx > 0 && siblings[idx - 1].type === 'text' ? siblings[idx - 1] : undefined
   const after = idx >= 0 && idx < siblings.length - 1 && siblings[idx + 1].type === 'text' ? siblings[idx + 1] : undefined
   const meta = (block.format?.link as { meta?: { title?: string } } | undefined)?.meta
-  // 落到哪个文本视图由这次点击决定：链接视图写 URL 原文，标题视图写网页标题（退域名）
-  const title = target === 'link'
-    ? url
-    : (meta?.title?.trim() || domainOf(url) || url)
+  // 落到哪个文本视图由这次点击决定；别名与 chip 视图同一条回退链（meta.title → 域名 → URL）
+  const archiveTitle = meta?.title?.trim()
+  const title = chipAliasForView(url, target, archiveTitle)
 
   const plan = planCardToChip({
     url,
@@ -189,22 +188,40 @@ export async function convertCardToChip(
   // 用原 web-link 块就地改回 text：保住 id / 反链 / 位置
   await store.updateBlockType(blockId, 'text')
   await store.updateBlockContent(blockId, plan.content, mergedSegs ? { renderSegments: mergedSegs } : undefined)
-  await store.updateBlockFormat(blockId, {})
+  // meta.title 存档进 chip 侧格式：之后切标题视图从这里取（meta.title === URL 不入档，
+  // 字面 title === url 会被判成链接视图，见 chipAliasForView）
+  const webLinkMetas = archiveTitle && archiveTitle !== url
+    ? { ...((block.format?.webLinkMetas as Record<string, string> | undefined) ?? {}), [url]: archiveTitle }
+    : ((block.format?.webLinkMetas as Record<string, string> | undefined) ?? {})
+  await store.updateBlockFormat(blockId, { webLinkMetas })
   for (const id of plan.removeIds) await store.deleteBlocks([id])
   return blockId
 }
 
-/** 标题视图 alias 的异步填充：抓取成功才换，用户改过则不覆盖 */
-export async function fillChipAliasIfUnlocked(blockId: string, url: string, fetchedTitle: string): Promise<void> {
+/**
+ * 抓取成功的收口：存档 meta.title + 占位别名跟随。
+ *
+ * 存档（`format.webLinkMetas[url]`）无条件更新——它是之后切标题视图的别名单源。
+ * alias 本身只在仍是「占位」时跟随抓取结果：占位 = 域名 / URL / 上次存档的
+ * meta.title。用户手动改过任何字都不属于占位，抓取永不覆盖（ADR-0067 锁定）。
+ * 占位含旧存档意味着：站点改了标题、用户没动过别名时，重抓会跟踪新标题。
+ */
+export async function applyFetchedChipMeta(blockId: string, url: string, fetchedTitle: string): Promise<void> {
   const store = useBlockStore()
   const block = store.getBlock(blockId)
   if (!block) return
+
+  const archive = chipMetaTitleOf(block.format, url)
+  const existingMetas = (block.format.webLinkMetas as Record<string, string> | undefined) ?? {}
+  if (archive !== fetchedTitle) {
+    await store.updateBlockFormat(blockId, { webLinkMetas: { ...existingMetas, [url]: fetchedTitle } })
+  }
+
   const chip = findWebLinkChip(block.content, { url })
   if (!chip) return
-  // 只有 alias 仍是「域名占位」时才填网页标题；用户改过任何字都保住
-  const domain = new URL(url).hostname.replace(/^www\./, '')
-  if (chip.title !== domain && chip.title !== url) return
-  if (chip.title === fetchedTitle) return
+  const domain = domainOf(url)
+  const isPlaceholder = chip.title === domain || chip.title === url || (archive !== undefined && chip.title === archive)
+  if (!isPlaceholder || chip.title === fetchedTitle) return
   const literal = webLinkChipMarkdown(fetchedTitle, url)
   const next = replaceWebLinkChip(block.content, chip, literal)
   const segs = block.renderSegments
@@ -248,7 +265,8 @@ export async function switchChipTextView(
   if (!block) return undefined
   const chip = locateChip(block.content, match)
   if (!chip) return undefined
-  const alias = chipAliasForView(chip.url, target)
+  // 标题视图别名走存档回退链 meta.title → 域名 → URL（ADR-0067）
+  const alias = chipAliasForView(chip.url, target, chipMetaTitleOf(block.format, chip.url))
   if (alias === chip.title) return blockId
   const literal = webLinkChipMarkdown(alias, chip.url)
   const next = replaceWebLinkChip(block.content, chip, literal)

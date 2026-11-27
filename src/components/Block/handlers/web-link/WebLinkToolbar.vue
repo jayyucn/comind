@@ -28,7 +28,7 @@ import {
   WEB_LINK_VIEWS,
   type WebLinkView,
 } from '../../../../utils/web-link'
-import { chipAliasForView, findWebLinkChip, webLinkChipMarkdown } from '../../../../utils/web-link-chip'
+import { chipAliasForView, chipMetaTitleOf, findWebLinkChip, webLinkChipMarkdown } from '../../../../utils/web-link-chip'
 
 const { target, hide, cancelHide, scheduleHide, setPinned, viewMenuOpen } = useWebLinkChipToolbar()
 
@@ -36,6 +36,7 @@ const editing = ref(false)
 const draftTitle = ref('')
 const draftUrl = ref('')
 const titleInputEl = ref<HTMLInputElement | null>(null)
+const urlInputEl = ref<HTMLInputElement | null>(null)
 
 watch(target, (t) => {
   editing.value = false
@@ -49,6 +50,12 @@ const isChip = computed(() => target.value?.kind === 'chip')
 function chipViewOf(t: { title: string; url: string }): WebLinkView {
   return t.title === t.url ? 'link' : 'title'
 }
+
+/** 链接视图下标题 = URL 无信息量，编辑弹层隐藏标题行（标题不可改，ADR-0067） */
+const hideTitleRow = computed(() => {
+  const t = target.value
+  return !!t && isChip.value && chipViewOf(t) === 'link'
+})
 
 async function run(action: () => unknown | Promise<unknown>): Promise<void> {
   await action()
@@ -77,8 +84,9 @@ async function openEdit(): Promise<void> {
   draftTitle.value = target.value.title
   draftUrl.value = target.value.url
   await nextTick()
-  titleInputEl.value?.focus()
-  titleInputEl.value?.select()
+  // 链接视图下标题行隐藏，焦点落到链接输入框
+  ;(titleInputEl.value ?? urlInputEl.value)?.focus()
+  ;(titleInputEl.value ?? urlInputEl.value)?.select()
 }
 
 /** 取消编辑并整块收起（Esc / 点击弹窗外）：不回浏览态菜单，避免「关了又冒出来」 */
@@ -151,7 +159,8 @@ async function switchTo(view: WebLinkView): Promise<void> {
     // chip 的「链接视图/标题视图」就是别名字面本身：编辑态必须就地改文档，
     // 否则 store 的改写会被编辑器的防抖回写覆盖，看起来「点了没反应」。
     if (isChip.value && (view === 'link' || view === 'title')) {
-      const alias = chipAliasForView(t.url, view)
+      const metaTitle = chipMetaTitleOf(useBlockStore().getBlock(t.blockId)?.format, t.url)
+      const alias = chipAliasForView(t.url, view, metaTitle)
       if (alias === t.title) return
       if (replaceActiveChip(t.blockId, { url: t.url, title: t.title }, webLinkChipMarkdown(alias, t.url))) {
         await flushActiveChipBlock(t.blockId)
@@ -192,22 +201,25 @@ async function switchTo(view: WebLinkView): Promise<void> {
           v-if="editing"
           class="wl-edit"
         >
-          <label class="wl-edit-row">
-            <span class="wl-edit-label">文本</span>
-            <input
-              ref="titleInputEl"
-              v-model="draftTitle"
-              class="wl-edit-input"
-              placeholder="https://…"
-              @keydown.enter="commitEdit"
-              @keydown.esc.prevent.stop="cancelEdit"
-            >
-          </label>
-          <!-- 占位：保证第一行的输入框只占中间一列，与第二行等宽（右侧留给按钮槽位） -->
-          <span aria-hidden="true" />
+          <template v-if="!hideTitleRow">
+            <label class="wl-edit-row">
+              <span class="wl-edit-label">标题</span>
+              <input
+                ref="titleInputEl"
+                v-model="draftTitle"
+                class="wl-edit-input"
+                placeholder="https://…"
+                @keydown.enter="commitEdit"
+                @keydown.esc.prevent.stop="cancelEdit"
+              >
+            </label>
+            <!-- 占位：保证第一行的输入框只占中间一列，与第二行等宽（右侧留给按钮槽位） -->
+            <span aria-hidden="true" />
+          </template>
           <label class="wl-edit-row">
             <span class="wl-edit-label">链接</span>
             <input
+              ref="urlInputEl"
               v-model="draftUrl"
               class="wl-edit-input"
               placeholder="https://…"

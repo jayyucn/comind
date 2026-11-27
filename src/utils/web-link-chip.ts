@@ -71,15 +71,36 @@ export function webLinkChipMarkdown(title: string, url: string): string {
  * chip 两种文本视图对应的别名（ADR-0067：视图 = 显示文字是否等于 URL）。
  *
  * - 链接视图 = URL 原文，字面 `[url](url)`；
- * - 标题视图 = 域名（`webLinkTitle` 回退链的第二档），无域名时退回 URL。
+ * - 标题视图 = 回退链 **meta.title → 域名 → URL**（与卡片 `webLinkTitle` 同链），
+ *   meta.title 取自本块 `format.webLinkMetas[url]` 存档（抓取成功时写入）。
  *
  * 这两个「视图」不是独立存储的开关，切换就是改写别名字面；用户手写的别名
- * 在切到链接视图时会被 URL 覆盖，靠撤销恢复。
+ * 在切换时被覆盖（重抓跟随见 `applyFetchedChipMeta` 的占位判定）。
+ *
+ * meta.title 恰好等于 URL 时跳过它落域名：字面 title === url 会被
+ * `chipViewOf` 判成链接视图，标题视图不能产出这种字面。
  */
-export function chipAliasForView(url: string, view: 'link' | 'title'): string {
+export function chipAliasForView(url: string, view: 'link' | 'title', metaTitle?: string | null): string {
   if (view === 'link') return url
+  if (metaTitle && metaTitle !== url) return metaTitle
   const domain = domainOf(url)
   return domain || url
+}
+
+/**
+ * 读块 format 里按 URL 存档的网页标题（`format.webLinkMetas[url]`）。
+ *
+ * chip 宿主是 text 块，一个块可含多颗 chip（URL 各异），所以按 URL 键控。
+ * 旧 chip 与未抓到的 chip 没有存档——返回 undefined，`chipAliasForView`
+ * 自然落回域名档，行为与旧版一致。
+ */
+export function chipMetaTitleOf(
+  format: Record<string, unknown> | null | undefined,
+  url: string,
+): string | undefined {
+  const metas = format?.webLinkMetas as Record<string, string> | undefined
+  const title = metas?.[url]
+  return typeof title === 'string' && title.trim() ? title : undefined
 }
 
 /** 替换 content 里第一个匹配 chip 的字面（按 start/end，避免误伤同串文本） */

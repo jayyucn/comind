@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   chipAliasForView,
   chipAliasLocked,
+  chipMetaTitleOf,
   findWebLinkChip,
   findWebLinkChips,
   replaceWebLinkChip,
@@ -74,10 +75,24 @@ describe('markdown 外链 chip 字面读写（ADR-0067）', () => {
     expect(chipAliasLocked(chip, undefined)).toBe(false)
   })
 
-  it('文本视图互换的别名：链接视图=URL 原文，标题视图=域名', () => {
+  it('文本视图互换的别名：链接视图=URL 原文，标题视图走回退链', () => {
     expect(chipAliasForView('https://www.feishu.cn/docx/abc', 'link')).toBe('https://www.feishu.cn/docx/abc')
+    // 无存档：域名（旧 chip 行为不变）
     expect(chipAliasForView('https://www.feishu.cn/docx/abc', 'title')).toBe('feishu.cn')
+    // 有存档：meta.title 优先
+    expect(chipAliasForView('https://www.feishu.cn/docx/abc', 'title', '飞书文档')).toBe('飞书文档')
+    // meta.title 恰为 URL：跳过落域名，不能产出 title === url 的字面（会被判成链接视图）
+    expect(chipAliasForView('https://www.feishu.cn/docx/abc', 'title', 'https://www.feishu.cn/docx/abc')).toBe('feishu.cn')
     // 无主机名的脏值退回 URL，不能产生空别名（空别名会让 chip 语法直接失效）
     expect(chipAliasForView('https://', 'title')).toBe('https://')
+  })
+
+  it('chipMetaTitleOf：按 URL 读存档，空值/脏值忽略', () => {
+    const format = { webLinkMetas: { 'https://a.com': 'A 标题', 'https://b.com': '   ' } }
+    expect(chipMetaTitleOf(format, 'https://a.com')).toBe('A 标题')
+    expect(chipMetaTitleOf(format, 'https://b.com')).toBeUndefined()
+    expect(chipMetaTitleOf(format, 'https://c.com')).toBeUndefined()
+    expect(chipMetaTitleOf(null, 'https://a.com')).toBeUndefined()
+    expect(chipMetaTitleOf({}, 'https://a.com')).toBeUndefined()
   })
 })
