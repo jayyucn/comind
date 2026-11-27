@@ -23,7 +23,8 @@ test('外链 chip：编辑态只露别名，隐藏语法字符；Escape 后读�
 
   const editing = await page.evaluate(() => {
     const chip = document.querySelector('.ProseMirror .web-link-chip:not(.pm-prefix-hidden)')
-    const hidden = document.querySelector('.ProseMirror .pm-prefix-hidden[contenteditable="false"]')
+    // 两截语法都靠零宽 CSS 隐藏（没有 contenteditable=false），取第一个 = 前缀 `[`
+    const hidden = document.querySelector('.ProseMirror .pm-prefix-hidden')
     return {
       label: chip?.textContent ?? null,
       url: chip?.getAttribute('data-chip-url'),

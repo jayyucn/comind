@@ -46,6 +46,15 @@ async function caretOffsetFromChipEnd(page: Page) {
   })
 }
 
+/** 插入符的横向像素位置（判断「按一次右有没有真的动」） */
+async function caretX(page: Page) {
+  return page.evaluate(() => {
+    const sel = window.getSelection()
+    const rect = sel?.rangeCount ? sel.getRangeAt(0).getClientRects()[0] : null
+    return rect ? Math.round(rect.left) : -1
+  })
+}
+
 test('链接之后退格删光正文：插入符留在链接末尾，既不回跳也不吞网址', async ({ page }) => {
   await boot(page)
   await page.keyboard.type('https://www.doubao.com', { delay: 30 })
@@ -347,4 +356,177 @@ test('标题视图：链接右侧按 → 一次就前进，隐藏尾巴不占一
 
   // 曾经第一次按键只是从「别名末尾」挪到「链接之后」（同一像素 ⇒ 肉眼不动），要按两次才看到移动
   expect(after! - before!).toBeGreaterThan(10)
+})
+
+test('从块首一路按右：光标能逐字穿过链接，不在隐藏的 `[` 前打转', async ({ page }) => {
+  await boot(page)
+  await page.keyboard.insertText('前[飞书](https://a.com)后')
+  await wait(500)
+  await page.keyboard.press('Escape')
+  await wait(500)
+
+  await page.locator('.block').first().click()
+  await wait(500)
+  await page.keyboard.press('Home')
+  await wait(200)
+
+  const seq: number[] = []
+  for (let i = 0; i < 4; i++) {
+    await page.keyboard.press('ArrowRight')
+    await wait(150)
+    seq.push(await caretX(page))
+  }
+  // 前缀 `[` 曾带 contenteditable=false：插入符停不住，被 Chromium 甩回块首，
+  // 在「前缀」里 0→1→2→3→0 循环，键盘永远进不了别名的第一个字
+  for (let i = 1; i < seq.length; i++) expect(seq[i]).toBeGreaterThan(seq[i - 1])
+})
+
+test('前缀格（链接最左缘）打字：字落进链接前面的正文，链接结构不动', async ({ page }) => {
+  await boot(page)
+  await page.keyboard.insertText('前[飞书](https://a.com)后')
+  await wait(500)
+  await page.keyboard.press('Escape')
+  await wait(500)
+
+  await page.locator('.block').first().click()
+  await wait(500)
+  await page.keyboard.press('Home')
+  await wait(200)
+  // Home 在块首，→ 落到「前」与「飞」之间：`[` 零宽，这一格语义上是「链接之前」
+  await page.keyboard.press('ArrowRight')
+  await wait(200)
+  await page.keyboard.type('新', { delay: 30 })
+  await wait(400)
+
+  const editing = await state(page)
+  expect(editing.texts[0]).toBe('前新[飞书](https://a.com)后')
+  expect(editing.chips).toEqual(['飞书'])
+
+  await page.keyboard.press('Escape')
+  await wait(400)
+  // 读态仍是可点的链接，没有方括号漏出来
+  expect((await state(page)).texts[0]).toBe('前新飞书后')
+})
+
+test('块首链接前打空格：链接不被拆成纯文本（用户报障回归）', async ({ page }) => {
+  await boot(page)
+  await page.keyboard.insertText('[https://www.doubao.com](https://www.doubao.com)  正文')
+  await wait(500)
+  await page.keyboard.press('Escape')
+  await wait(500)
+
+  await page.locator('.block').first().click()
+  await wait(500)
+  await page.keyboard.press('Home')
+  await wait(200)
+  await page.keyboard.type(' ', { delay: 30 })
+  await wait(400)
+
+  const editing = await state(page)
+  // 老行为：空格被当成「改别名」塞进网址 ⇒ 字面不再合法 ⇒ 整段退化成纯文本、链接消失
+  expect(editing.texts[0]).toBe(' [https://www.doubao.com](https://www.doubao.com)  正文')
+  expect(editing.chips).toEqual(['https://www.doubao.com'])
+})
+
+test('块首链接上按退格：按键不再被吞（发出块级 merge 信号）', async ({ page }) => {
+  await boot(page)
+  await page.keyboard.insertText('[https://www.doubao.com](https://www.doubao.com)  正文')
+  await wait(500)
+  await page.keyboard.press('Escape')
+  await wait(500)
+
+  await page.locator('.block').first().click()
+  await wait(500)
+  await page.keyboard.press('Home')
+  await wait(200)
+  await page.evaluate(() => {
+    (window as unknown as { __blockEvents: unknown[] }).__blockEvents = []
+    document.addEventListener('enter-as-block', (e) => {
+      (window as unknown as { __blockEvents: unknown[] }).__blockEvents.push((e as CustomEvent).detail)
+    })
+  })
+  await page.keyboard.press('Backspace')
+  await wait(500)
+
+  // 老实现：前缀格上的退格 return true 吞掉整次按键，块级 merge/delete 收不到信号，
+  // 用户看到的就是「按退格没反应」
+  const events = await page.evaluate(
+    () => (window as unknown as { __blockEvents: unknown[] }).__blockEvents,
+  )
+  expect(events.length).toBeGreaterThan(0)
+  expect((await state(page)).chips).toEqual(['https://www.doubao.com'])
+})
+
+/** 光标前的可见文字（含隐藏语法，按 ProseMirror 文档文本量） */
+async function textBeforeCaret(page: Page) {
+  return page.evaluate(() => {
+    const dom = document.querySelector('.ProseMirror')
+    const sel = window.getSelection()
+    if (!dom || !sel || !sel.rangeCount) return null
+    const pre = sel.getRangeAt(0).cloneRange()
+    pre.selectNodeContents(dom)
+    pre.setEnd(sel.getRangeAt(0).startContainer, sel.getRangeAt(0).startOffset)
+    return pre.toString()
+  })
+}
+
+test('链接视图别名中间打字：光标紧跟新字，不往前多跳一格（用户报障回归）', async ({ page }) => {
+  await boot(page)
+  await page.keyboard.type('https://www.doubao.com', { delay: 30 })
+  await wait(600)
+  await page.keyboard.press('Escape')
+  await wait(400)
+
+  await page.locator('.block').first().click()
+  await wait(400)
+  // Home = 字面之前（前缀格），→ 一次进到别名首字之后
+  await page.keyboard.press('Home')
+  await wait(200)
+  await page.keyboard.press('ArrowRight')
+  await wait(200)
+  expect(await textBeforeCaret(page)).toBe('[h')
+
+  // 老实现：插入位置对，但光标多走一格 —— `h|ttps` 打 `z` 得 `hzt|tps`
+  await page.keyboard.type('z', { delay: 40 })
+  await wait(300)
+  expect(await textBeforeCaret(page)).toBe('hz')
+
+  // 接着打第二个字仍要落在正确位置（光标不累积漂移）
+  await page.keyboard.type('y', { delay: 40 })
+  await wait(300)
+  expect(await textBeforeCaret(page)).toBe('hzy')
+})
+
+test('链接视图改坏后把错字改回来：链接自动恢复（用户报障回归）', async ({ page }) => {
+  await boot(page)
+  await page.keyboard.type('https://www.doubao.com', { delay: 30 })
+  await wait(600)
+  await page.keyboard.press('Escape')
+  await wait(400)
+
+  await page.locator('.block').first().click()
+  await wait(400)
+  await page.keyboard.press('Home')
+  await wait(200)
+  await page.keyboard.press('ArrowRight')
+  await wait(200)
+  // 打一个错字：网址不再合法，字面按 ADR-0067 D8 拆成纯文本（视觉文字不变）
+  await page.keyboard.type('z', { delay: 40 })
+  await wait(300)
+  expect((await state(page)).chips).toEqual([])
+
+  // 把错字删掉：文本重新合法 ⇒ 原位恢复成 chip（旧实现只管「光标前那截」，
+  // 光标在网址中间时永远命中不了，链接再也回不来）
+  await page.keyboard.press('Backspace')
+  await wait(400)
+  const editing = await page.evaluate(() => document.querySelector('.ProseMirror')?.textContent ?? '')
+  expect(editing).toBe('[https://www.doubao.com](https://www.doubao.com)')
+  expect((await state(page)).chips).toEqual(['https://www.doubao.com'])
+
+  await page.keyboard.press('Escape')
+  await wait(400)
+  // 读态：仍是可点链接（读态外链渲染成 `.web-link-chip` span），没有方括号漏出来
+  expect((await state(page)).texts[0]).toBe('https://www.doubao.com')
+  expect(await page.locator('.block .web-link-chip[data-external="https://www.doubao.com"]').count())
+    .toBeGreaterThan(0)
 })
