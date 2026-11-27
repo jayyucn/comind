@@ -22,6 +22,7 @@ import { useTagsStore } from '../../../stores/tags'
 import type { BlockTypeEditorExposed } from '../../../types/block-type'
 import { calloutToneOf } from '../../../utils/callout'
 import { DATE_REF_AT_REGEX, type DateRefKind, normalizeRecurrence, type RecurrenceRule, serializeDateRef } from '../../../utils/date-ref'
+import { openExternalUrl } from '../../../utils/external-link'
 import type { InlineMarkRange } from '../../../utils/inline-marks'
 import { mapInlineMarkOffsets, readInlineMarks } from '../../../utils/inline-marks'
 import {
@@ -848,7 +849,8 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
     if (!link) return
 
     if (link.dataset.external) {
-      window.open(link.dataset.external, '_blank', 'noopener,noreferrer')
+      // 单点收口：桌面端 window.open 会被 WebView2 静默取消（ADR-0069 D1）
+      void openExternalUrl(link.dataset.external)
       return
     }
     const pageName = link.dataset.page

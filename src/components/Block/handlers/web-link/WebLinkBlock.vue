@@ -18,6 +18,7 @@ import { useWebLinkPanelReveal, useWebLinkSettings } from '../../../../composabl
 import { fetchWebLinkMeta } from '../../../../services/web-link-meta'
 import { useBlockStore } from '../../../../stores/blocks'
 import { assetStorage } from '../../../../utils/asset'
+import { openExternalUrl } from '../../../../utils/external-link'
 import {
   clampPreviewHeight,
   DEFAULT_PREVIEW_HEIGHT,
@@ -210,8 +211,8 @@ onBeforeUnmount(() => {
 })
 
 function openExternal(): void {
-  // 与正文外链一致：交给系统/浏览器新窗口，不在应用内导航
-  if (url.value) window.open(url.value, '_blank', 'noopener,noreferrer')
+  // 与正文外链一致：单点收口在 openExternalUrl（桌面端 window.open 会被 WebView2 静默取消）
+  if (url.value) void openExternalUrl(url.value)
 }
 
 const showCard = computed(() => view.value === 'card')

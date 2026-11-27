@@ -52,6 +52,7 @@ import { emitLayoutChange, observeLayoutRoot } from './services/layout-change'
 import { useEditorStore } from './stores/editor'
 import { usePageStore } from './stores/pages'
 import { currentView, usePanesStore } from './stores/panes'
+import { openExternalUrl } from './utils/external-link'
 import { resolveUndoScopeBlockPage, takeOverUndoRedo } from './utils/undo-chord'
 import { isTauriEnvironment } from './wasm/tauri-platform'
 
@@ -213,6 +214,8 @@ onMounted(async () => {
   // 布局变更广播：.content-body 尺寸变化（折叠侧栏 ctrl+b / 右侧栏开合）→ 缓存视口矩形
   // 的浮层与覆盖层重测（见 services/layout-change.ts）。阅读器窗口同样有布局壳，一并装。
   stopLayoutObserver = observeLayoutRoot(contentBodyEl.value)
+  // 外链锚点改道（捕获阶段，先于卡片/字段自身的 click 处理）：阅读器窗口也要装
+  document.addEventListener('click', handleGlobalExternalAnchorClick, true)
   // 阅读器窗口不做主窗口初始化（页面预载/图谱预取/Ctrl+A 兜底：
   // 阅读器正文允许浏览器默认全选，为后续高亮选区铺路）
   if (isReaderWindow) return
@@ -237,6 +240,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   stopLayoutObserver?.()
   stopLayoutObserver = null
+  document.removeEventListener('click', handleGlobalExternalAnchorClick, true)
   document.removeEventListener('keydown', handleGlobalKeydownCapture, true)
   document.removeEventListener('keydown', handleGlobalUndoRedoKeyDown, true)
   document.removeEventListener('keydown', handlePaneNavKeydown)
@@ -283,6 +287,27 @@ function handleMainClick(e: MouseEvent) {
   // 点击右侧面板时保持当前 Block 激活状态（版本历史等面板需要依赖 activeBlockId）
   if (target.closest('.right-sidebar')) return
   editorStore.deactivateBlock()
+}
+
+/**
+ * 外链锚点兜底（ADR-0069 D2）：字段 richtext / reader 里由 markdown 渲染出的
+ * `<a target="_blank" href="http…">` 走的是浏览器原生导航，桌面端同样撞上
+ * WebView2 取消 `NewWindowRequested`（表现为点了没反应）。这里把它改道到
+ * `openExternalUrl`；**浏览器环境原样放行**——原生新标签页语义最完整，接管只会
+ * 让 e2e 多一层噪音。
+ */
+function handleGlobalExternalAnchorClick(e: MouseEvent) {
+  if (!isTauriEnvironment()) return
+  if (e.detail > 1) return // 双击/三击是选词手势，不当作打开
+  const target = e.target as HTMLElement | null
+  const anchor = target?.closest?.('a[href]') as HTMLAnchorElement | null
+  if (!anchor) return
+  // 组件自己已经走 openExternalUrl 的锚点（字段 url 特化）不再二次打开
+  if (anchor.hasAttribute('data-external-handled')) return
+  const href = anchor.getAttribute('href') ?? ''
+  if (!/^https?:\/\//i.test(href)) return
+  e.preventDefault()
+  void openExternalUrl(href)
 }
 </script>
 

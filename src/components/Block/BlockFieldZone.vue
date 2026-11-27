@@ -46,6 +46,7 @@ import { numberSpecialization, pageSpecialization, specHeadOf, stringSpecializat
 import type { FieldValue } from '../../types/field-value'
 import { isSystemField } from '../../types/tag'
 import type { PersistedFieldDefinition } from '../../types/tag-persisted'
+import { openExternalUrl } from '../../utils/external-link'
 import { type DisplayFormKind, ICON_CHARS, resolveDisplayForm, typeDefaultForm } from '../../utils/field-display-form'
 import { effectiveNumberBounds, formatCurrency, parseCurrencySpec } from '../../utils/field-number-format'
 import { displayFieldType } from '../../utils/field-type-icons'
@@ -661,9 +662,9 @@ function urlHrefOf(def: PersistedFieldDefinition): string | null {
   return toExternalHref(valueText(def))
 }
 
-/** 外链打开：跟随仓库既有做法（Backlinks / useBlockEditorLifecycle）——window.open + noopener。 */
+/** 外链打开：单点收口在 openExternalUrl（桌面端 window.open 会被 WebView2 静默取消）。 */
 function openExternal(url: string) {
-  window.open(url, '_blank', 'noopener,noreferrer')
+  void openExternalUrl(url)
 }
 
 /** 正在就地理编辑的 richtext 字段 id（null = 无；至多一个）。 */
@@ -1614,6 +1615,7 @@ function allFormOf(fv: FieldValue): DisplayFormKind {
               class="block-field-zone-link"
               :href="urlHrefOf(def) ?? undefined"
               :title="`打开链接：${valueText(def)}`"
+              data-external-handled
               @click.stop.prevent="openExternal(urlHrefOf(def) as string)"
             >{{ valueText(def) }}</a>
             <span

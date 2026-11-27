@@ -14,6 +14,7 @@ import { useTagsStore } from '../stores/tags'
 import type { Block } from '../types/block'
 import type { FieldValueData } from '../types/field-definition'
 import { buildDocumentOrder } from '../utils/block-helpers'
+import { openExternalUrl } from '../utils/external-link'
 import { extractFieldBacklinks } from '../utils/field-backlinks'
 import { decodeFieldValueData } from '../utils/field-value-codec'
 import BlockFieldZone from './Block/BlockFieldZone.vue'
@@ -194,7 +195,7 @@ function handleContentClick(e: MouseEvent) {
   if (!link) return
 
   if (link.dataset.external) {
-    window.open(link.dataset.external, '_blank', 'noopener,noreferrer')
+    void openExternalUrl(link.dataset.external)
     return
   }
   const pageName = link.dataset.page

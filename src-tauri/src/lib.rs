@@ -25,7 +25,9 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_os::init())
-        .plugin(tauri_plugin_fs::init());
+        .plugin(tauri_plugin_fs::init())
+        // 外链交系统默认浏览器（ADR-0069 D1）：前端统一走 openExternalUrl
+        .plugin(tauri_plugin_opener::init());
 
     // Dev-only AI debug bridge (tauri-plugin-mcp). Registered only in debug
     // builds; never registered in release builds (the crate itself compiles in

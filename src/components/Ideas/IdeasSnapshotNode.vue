@@ -17,6 +17,7 @@ import { useTagsStore } from '../../stores/tags'
 import type { TreeNode } from '../../types/block'
 import { getFieldDefinition } from '../../types/field-definition'
 import type { FieldValue } from '../../types/field-value'
+import { openExternalUrl } from '../../utils/external-link'
 import { decodeFieldValueData } from '../../utils/field-value-codec'
 import BulletRender from '../Block/handlers/bullet/BulletRender.vue'
 import TableBlock from '../Block/handlers/table/TableBlock.vue'
@@ -113,7 +114,7 @@ function onContentClick(e: MouseEvent) {
   const link = target.closest('.block-link') as HTMLElement | null
   if (!link) return
   if (link.dataset.external) {
-    window.open(link.dataset.external, '_blank', 'noopener,noreferrer')
+    void openExternalUrl(link.dataset.external)
     return
   }
   const pageName = link.dataset.page
