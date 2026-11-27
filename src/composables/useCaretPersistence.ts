@@ -191,10 +191,77 @@ export function setupCaretPersistence(): () => void {
 
   if (isTauriEnvironment()) {
     // WebView2 的窗口激活未必派发 DOM focus（实测），桌面端补 Tauri 的窗口焦点事件
-    void import('@tauri-apps/api/window')
-      .then(({ getCurrentWindow }) => getCurrentWindow().onFocusChanged(({ payload }) => {
-        if (payload) tryRestore({ requireLostFocus: true })
-      }))
+    /**
+     * WebView2 焦点链卡死自愈（2026-11-27 真机取证）：打开外链把前台让给浏览器后，
+     * Chromium 的焦点认知会被冻结——DOM focus/blur 零广播、activeElement 停在旧元素
+     * 上、document.hasFocus() 恒 true。窗口重新激活时键盘焦点不会回到 webview 的子
+     * HWND：鼠标走命中路由一切正常，键盘走焦点链全军覆没（0 个 keydown 到达页面，
+     * 连 document 捕获层都没有）。MoveFocus(Programmatic) 是官方解法。
+     *
+     * 两个实测约束（第三/四轮取证）：
+     * 1. 窗口重新激活时 WebView2 抛的是一串 focus↔blur 抖动（85ms 内 4 条、以 blur
+     *    收尾）。kick 必须等抖动**平息后拖尾**补出——在串中第一个 focus 上就踢会被
+     *    收尾的 blur 打回去，等于没踢。
+     * 两个实测约束（第二~四轮取证）：
+     * 1. 窗口重新激活时 WebView2 抛的是一串 focus↔blur 抖动（85ms 内 4 条、以 blur
+     *    收尾）。kick 必须等抖动**平息后拖尾**补出——在串中第一个 focus 上就踢会被
+     *    收尾的 blur 打回去，等于没踢。
+     * 2. MoveFocus 会反向触发 WebView2 的 GotFocus/LostFocus 合成事件（focus↔blur
+     *    每 ~6ms 一对、无限循环，输入法工具栏因此持续闪烁）。kick 后设冷却期：冷却
+     *    内到达的反射事件一律不再排程，自激环即断；真实返回（人级间隔）时冷却早已
+     *    过期，不受影响。
+     * 3. 冷却不能一刀切吞事件：真实返回若恰好落在冷却内（快速 alt-tab 往返）会被
+     *    永久吞掉、键盘仍死。故按「反射带」区分——kick 后 200ms 内到达的事件（实测
+     *    反射延迟 0~130ms）视为自激反射吞掉；带外事件视为真实抖动，推迟到冷却期满
+     *    + SETTLE 再补踢。既断循环，又不吞真实返回。
+     */
+    const KICK_SETTLE_MS = 120
+    const KICK_COOLDOWN_MS = 800
+    const KICK_REFLECTION_BAND_MS = 200
+    let kickTimer: ReturnType<typeof setTimeout> | null = null
+    let lastKickAt = 0
+
+    void Promise.all([
+      import('@tauri-apps/api/window'),
+      import('@tauri-apps/api/webview'),
+    ])
+      .then(([{ getCurrentWindow }, { getCurrentWebview }]) => {
+        const fireKick = () => {
+          kickTimer = null
+          lastKickAt = Date.now()
+          getCurrentWebview().setFocus().catch(() => {
+            // 权限缺失或平台不支持时静默（与 external-link 同口径）
+          })
+        }
+        /** 抖动平息后拖尾补踢；冷却期内反射带内吞掉、带外推迟补踢 */
+        const scheduleTrailingKick = () => {
+          if (kickTimer) {
+            clearTimeout(kickTimer)
+            kickTimer = null
+          }
+          const sinceKick = Date.now() - lastKickAt
+          if (sinceKick < KICK_COOLDOWN_MS) {
+            if (sinceKick >= KICK_REFLECTION_BAND_MS) {
+              kickTimer = setTimeout(
+                fireKick,
+                KICK_COOLDOWN_MS - sinceKick + KICK_SETTLE_MS,
+              )
+            }
+            return
+          }
+          kickTimer = setTimeout(fireKick, KICK_SETTLE_MS)
+        }
+        cleanups.push(() => {
+          if (kickTimer) clearTimeout(kickTimer)
+        })
+
+        return getCurrentWindow().onFocusChanged(({ payload }) => {
+          // 任何焦点事件都视为一次抖动：清掉挂起的 kick，平息后重新排程
+          // （payload=false 也排程——激活串以 blur 收尾是实测常态）
+          scheduleTrailingKick()
+          if (payload) tryRestore({ requireLostFocus: true })
+        })
+      })
       .then((unlisten) => {
         if (typeof unlisten === 'function') cleanups.push(unlisten)
       })

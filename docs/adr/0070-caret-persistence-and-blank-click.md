@@ -52,10 +52,33 @@
 
 ### D5 已接受的代价
 
-1. 本机 WebView2 不发焦点事件：alt-tab 回来**不点击就不会恢复**（无事件可用；第一次点击即恢复）。轮询 `document.hasFocus()` 可覆盖但被否决——300ms 轮询换一个低频场景不值。
+1. （已被 D6 覆盖）本机 WebView2 不发 DOM 焦点事件的问题，由 D6 的 Tauri 窗口事件路径 + 焦点链自愈解决。轮询 `document.hasFocus()` 仍被否决——300ms 轮询换一个低频场景不值。
 2. 「点空白退出编辑」的旧习惯改为 Esc。
 3. BlockModal 关闭后点空白不恢复（见 D3）。
 4. 顶部 48px 死区、分隔条等非可编辑 chrome 上单击同样会把光标带回块（符合「始终聚焦」的字面语义）。
+
+### D6 WebView2 焦点链卡死自愈（桌面端）
+
+真机取证：打开外链把前台让给浏览器后，本机 WebView2 的 Chromium 焦点认知被冻结——DOM focus/blur 零广播、`activeElement` 停在旧元素上、`document.hasFocus()` 恒 true；窗口重新激活时键盘焦点不会回到 webview 子 HWND，键盘事件全部丢失（0 个 keydown 到达页面，连 `document` 捕获层都没有）。D4 的焦点事件路径在本机因此失效，且键盘整体不可用远重于「光标不恢复」。
+
+决策：桌面端在 Tauri `onFocusChanged`（Rust 侧窗口事件，实测可达）上做焦点链自愈——抖动平息后（拖尾 debounce 120ms）调用 `getCurrentWebview().setFocus()`（映射 WebView2 `MoveFocus(Programmatic)`，官方解法），同时维持 D4 的 `tryRestore({ requireLostFocus })`。MoveFocus 只动 Win32 键盘焦点链，不改页内 DOM 选区 / activeElement。
+
+两个必须处理的实测约束：
+
+1. **激活抖动串**：窗口重新激活时 WebView2 抛出一串 focus↔blur 抖动（85ms 内 4 条、以 blur 收尾）。kick 必须等抖动平息后拖尾补出——在串中第一个 focus 上即踢会被收尾 blur 打回。
+2. **MoveFocus 自激反射**：kick 会反向触发 GotFocus/LostFocus 合成事件（focus↔blur 每 ~6ms 一对、无限循环，输入法工具栏持续闪烁）。kick 后设 800ms 冷却期；冷却内按 200ms 反射带区分——带内事件（实测反射延迟 0~130ms）视为自激反射吞掉，带外事件视为真实抖动、推迟到冷却期满 + SETTLE 补踢。快速 alt-tab 往返落在冷却内也不丢自愈。
+
+已否决提案存档：
+
+- 每个 focus 事件直接 kick——自激死循环，且 kick 在抖动串中被收尾 blur 打回，键盘仍死。
+- 纯死人间隔判别（距上次 blur ≥600ms 才 kick）——抖动串以 blur 收尾，串首 kick 被打回，键盘仍死。
+- 窗口抢前台（AttachThreadInput 强制置前）——强制抢占系统前台侵入性过强，撤回。
+
+后果：
+
+- capabilities 新增 `core:webview:allow-set-webview-focus`（`default.json` / `mobile.json`，自愈代码在所有 Tauri 平台分支内运行）。
+- 实现：`useCaretPersistence.ts` Tauri 分支（拖尾 debounce + 冷却 + 反射带）。
+- 真机验证：修复后 59 个真实 keydown 到达页面、13 分钟窗口切换 35 条焦点事件全为人级间隔、无自激对、输入法不闪。
 
 ## 后果
 
