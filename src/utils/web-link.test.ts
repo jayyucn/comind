@@ -6,6 +6,7 @@ import {
   MIN_PREVIEW_HEIGHT,
   clampPreviewHeight,
   domainOf,
+  isPlaceholderWebLinkTitle,
   patchWebLink,
   previewSandboxFor,
   readWebLink,
@@ -114,6 +115,18 @@ describe('展示回退链', () => {
   it('markdown 降级始终产出链接文本', () => {
     expect(webLinkMarkdown('https://example.com/x', { title: '标题' })).toBe('[标题](https://example.com/x)')
     expect(webLinkMarkdown('https://example.com/x', null)).toBe('[example.com](https://example.com/x)')
+  })
+
+  it('占位标题判定与回退链同源：空 / URL / 域名 都不算抓到', () => {
+    const url = 'https://www.example.com/a'
+    expect(isPlaceholderWebLinkTitle(url, undefined)).toBe(true)
+    expect(isPlaceholderWebLinkTitle(url, '  ')).toBe(true)
+    expect(isPlaceholderWebLinkTitle(url, url)).toBe(true)
+    expect(isPlaceholderWebLinkTitle(url, 'example.com')).toBe(true)
+    // 真标题（哪怕只有一个字）不算占位
+    expect(isPlaceholderWebLinkTitle(url, '示例站点')).toBe(false)
+    // 查询串不同但域名相同，同样视为占位
+    expect(isPlaceholderWebLinkTitle('https://www.example.com/b', 'example.com')).toBe(true)
   })
 })
 

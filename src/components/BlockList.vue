@@ -23,7 +23,7 @@ import { UNDO_FLASH_MS, useRestoreFlash } from '../composables/useRestoreFlash'
 import { ensureStack } from '../composables/useUndoHistory'
 import { linkCrossPageMove, runUndoOrRedo } from '../composables/useUndoRestore'
 import { useWebLinkChipToolbar } from '../composables/useWebLinkChipToolbar'
-import { useWebLinkSettings } from '../composables/useWebLinkSettings'
+import { CHIP_CREATED_EVENT } from '../extensions/WebLinkChipExtension'
 import { COMIND_BLOCK_MIME, resolveClipboardPayload } from '../services/external-paste-parse'
 import { onLayoutChange } from '../services/layout-change'
 import { ensureWikiLinkTargets, notifyCreatedPages } from '../services/paste-ensure-wiki-targets'
@@ -34,8 +34,7 @@ import {
 } from '../services/render-text'
 import { blockOffsetFromPoint, mergeSelectionRects, selectionClientRects, type SelectionRect } from '../services/selection-geometry'
 import { normalizeTextRange } from '../services/text-range'
-import { applyFetchedChipMeta } from '../services/web-link-actions'
-import { fetchWebLinkMeta } from '../services/web-link-meta'
+import { fetchAndApplyChipMeta } from '../services/web-link-actions'
 import { useBlockStore } from '../stores/blocks'
 import { useEditorStore } from '../stores/editor'
 import { usePageStore } from '../stores/pages'
@@ -791,14 +790,22 @@ function resolvePasteAnchor(): string | null {
 
 /** 落 chip 后异步抓网页标题换 alias（ADR-0067 D8：用户改过则不覆盖；meta.title 同时存档） */
 async function fillChipAliasAsync(blockId: string, url: string): Promise<void> {
-  const { autoFetch } = useWebLinkSettings()
-  if (!autoFetch.value) return
-  try {
-    const { meta } = await fetchWebLinkMeta(url)
-    if (meta?.title) await applyFetchedChipMeta(blockId, url, meta.title)
-  } catch {
-    // 抓取失败：chip 保留域名 alias，不阻塞输入（失败是常态分支）
-  }
+  await fetchAndApplyChipMeta(blockId, url)
+}
+
+/**
+ * 键入裸网址成 chip 后抓标题（WebLinkChipExtension 派发 `web-link-chip-created`，
+ * 冒泡到列表根）。此前只有粘贴路径抓取，键入的 chip 永远顶着 URL/域名占位别名
+ * （ADR-0067 D8 的缺口，2026-11-27 用户报障：baidu 的标题抓不到）。
+ */
+function onChipCreatedFromTyping(e: Event): void {
+  const url = (e as CustomEvent<{ url?: string }>).detail?.url
+  if (!url) return
+  // 块锚点取事件源头（编辑器 DOM 就在块内）：比读「当前活动块」稳——事件派发到
+  // 冒泡完之间焦点完全可能已经迁走（Enter 建块、多栏切换），锚错块会把标题存到别人头上
+  const host = (e.target as Element | null)?.closest?.('[data-block-id]')
+  const blockId = host?.getAttribute('data-block-id') || editorStore.activeBlockId
+  if (blockId) void fetchAndApplyChipMeta(blockId, url)
 }
 
 async function handleDocPaste(e: ClipboardEvent) {
@@ -1354,6 +1361,7 @@ onMounted(() => {
   document.addEventListener('paste', handleDocPaste, true)
   rootEl.value?.addEventListener('mouseover', onChipMouseOver)
   rootEl.value?.addEventListener('mouseout', onChipMouseOut)
+  rootEl.value?.addEventListener(CHIP_CREATED_EVENT, onChipCreatedFromTyping)
   // 文本选区覆盖层高亮需随滚动/缩放重绘（视口矩形会失效）
   document.addEventListener('scroll', handleViewportChange, true)
   window.addEventListener('resize', handleViewportChange)
@@ -1372,6 +1380,7 @@ onBeforeUnmount(() => {
   document.removeEventListener('paste', handleDocPaste, true)
   rootEl.value?.removeEventListener('mouseover', onChipMouseOver)
   rootEl.value?.removeEventListener('mouseout', onChipMouseOut)
+  rootEl.value?.removeEventListener(CHIP_CREATED_EVENT, onChipCreatedFromTyping)
   document.removeEventListener('scroll', handleViewportChange, true)
   window.removeEventListener('resize', handleViewportChange)
   offLayoutChange?.()

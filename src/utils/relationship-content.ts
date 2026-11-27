@@ -286,3 +286,29 @@ export function encodeRelationshipContentWithMeta(
   result += content.slice(lastIndex)
   return { text: result, spans }
 }
+
+/**
+ * 编辑态（decoded）文本偏移 → 存储（encoded）文本偏移。
+ *
+ * `encodeRelationshipContentWithMeta` 的配套换算：spans 之外的两边逐字对应，
+ * 只把落在替换段（`((中文label))` ↔ `((type))`）内部的偏移吸附到较近一端 ——
+ * 拆分/合并这类结构操作绝不能切进关系段内部，否则字面残缺、链接失效。
+ * （`inline-marks.mapOffset` 的按比例插值服务于格式区间，二者语义不同、不可混用。）
+ */
+export function mapDecodedOffsetToEncoded(
+  spans: OffsetSpan[],
+  offset: number,
+  encodedLength: number,
+): number {
+  let delta = 0
+  for (const span of spans) {
+    if (offset <= span.from) return Math.min(offset + delta, encodedLength)
+    if (offset < span.to) {
+      const within = offset - span.from
+      const snapped = within >= Math.ceil((span.to - span.from) / 2) ? span.newTo : span.newFrom
+      return Math.min(snapped, encodedLength)
+    }
+    delta = span.newTo - span.to
+  }
+  return Math.min(offset + delta, encodedLength)
+}

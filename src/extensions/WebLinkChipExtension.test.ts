@@ -7,6 +7,7 @@ import { TextSelection } from '@tiptap/pm/state'
 import type { EditorView } from '@tiptap/pm/view'
 
 import {
+  CHIP_CREATED_EVENT,
   scanWebLinkChipsInDoc,
   WebLinkChipExtension,
 } from './WebLinkChipExtension'
@@ -655,6 +656,18 @@ describe('WebLinkChipExtension — 键入裸网址即成 chip', () => {
       const end = editor.state.doc.content.size - 1
       expect(textInput(editor, end, end, 'o')).toBe(true)
       expect(editor.getText()).toBe('明天看 [https://a.co](https://a.co)')
+    })
+  })
+
+  it('成 chip 的同一拍派发 web-link-chip-created（宿主据此抓标题）', () => {
+    withEditor('https://a.co', (editor) => {
+      const seen: string[] = []
+      const onCreated = (e: Event) => seen.push((e as CustomEvent<{ url: string }>).detail.url)
+      editor.view.dom.addEventListener(CHIP_CREATED_EVENT, onCreated)
+      const end = editor.state.doc.content.size - 1
+      textInput(editor, end, end, 'm')
+      editor.view.dom.removeEventListener(CHIP_CREATED_EVENT, onCreated)
+      expect(seen).toEqual(['https://a.com'])
     })
   })
 

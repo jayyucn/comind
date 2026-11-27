@@ -61,34 +61,6 @@ export function patchChipRewrite(
 }
 
 /**
- * 卡片/预览 → chip 的三段合并段（ADR-0067 D3）：前文本段 + 新 chip 段 + 后文本段。
- *
- * 前后邻居块缺段（任一存在但 renderSegments 为 undefined）→ null：合并 content
- * 的分区无法拼完整，宁可回退裸文本也不丢字。
- */
-export function buildMergedChipSegments(
-  before: { segs?: RenderSegment[]; length: number } | undefined,
-  after: { segs?: RenderSegment[]; length: number } | undefined,
-  chipLiteral: string,
-  url: string,
-  title: string,
-  newTotalLength: number,
-): RenderSegment[] | null {
-  if (before && !before.segs) return null
-  if (after && !after.segs) return null
-  const beforeLen = before?.length ?? 0
-  const chipStart = beforeLen
-  const chipEnd = chipStart + chipLiteral.length
-  const out: RenderSegment[] = [...(before?.segs ?? [])]
-  out.push({ type: 'external_link', start: chipStart, end: chipEnd, url, display_text: title })
-  for (const seg of after?.segs ?? []) {
-    out.push({ ...seg, start: seg.start + chipEnd, end: seg.end + chipEnd })
-  }
-  if (!isExactPartition(out, newTotalLength)) return null
-  return out
-}
-
-/**
  * chip → 卡片/预览 的拆分段（ADR-0067 D3）：旧段按 chip 边界切成前/后两份，
  * 后份平移到「后文本块」的坐标系。web-link 块自身不渲染 BulletRender，不需要段。
  */

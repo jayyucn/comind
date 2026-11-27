@@ -13,7 +13,6 @@ import { useNavigateToPage } from '../../../composables/useNavigateToPage'
 import { useNavigateToTag } from '../../../composables/useNavigateToTag'
 import { useOpenPageInOtherPane } from '../../../composables/useOpenPageInOtherPane'
 import { useRelationshipMenu } from '../../../composables/useRelationshipMenu'
-import { renderedOffsetToEncodedOffset } from '../../../services/render-text'
 import { blockOffsetFromPoint, caretBlockOffsetFromDomSelection, SELECTION_IGNORE_SELECTOR } from '../../../services/selection-geometry'
 import type { useBlockStore } from '../../../stores/blocks'
 import type { useEditorStore } from '../../../stores/editor'
@@ -22,11 +21,13 @@ import { useTagsStore } from '../../../stores/tags'
 import type { BlockTypeEditorExposed } from '../../../types/block-type'
 import { calloutToneOf } from '../../../utils/callout'
 import { DATE_REF_AT_REGEX, type DateRefKind, normalizeRecurrence, type RecurrenceRule, serializeDateRef } from '../../../utils/date-ref'
+import { docToText } from '../../../utils/editor-text'
 import { openExternalUrl } from '../../../utils/external-link'
 import type { InlineMarkRange } from '../../../utils/inline-marks'
 import { mapInlineMarkOffsets, readInlineMarks } from '../../../utils/inline-marks'
 import {
   encodeRelationshipContentWithMeta,
+  mapDecodedOffsetToEncoded,
   takeRelationshipSnapshot,
 } from '../../../utils/relationship-content'
 
@@ -346,25 +347,29 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
         await blockStore.flushSave(blockId.value)
       }
 
-      // ── 坐标转换：ProseMirror 坐标基于编辑器显示的 decoded 文本，
-      //    但 block.content 是 encoded 文本。type/label 长度不同时偏移不匹配。
-      //    将 decoded 偏移转换为 encoded 偏移，确保拆分位置正确。
+      // ── 坐标转换：ProseMirror 坐标基于编辑器 doc 文本，block.content 是 encoded 文本。
+      //    换算必须走与 handleSave 同一条 encode 链（doc 文本 → encodeRelationship），
+      //    因为 chip / wiki link 的完整字面本就躺在 doc 里（与 content 一致），只有
+      //    关系单元的「中文 label ↔ 英文 type」长度不同。旧实现把 PM 坐标喂给了
+      //    render-text 的渲染坐标换算——chip 的渲染别名远短于字面，光标恒被判越界
+      //    钳到行尾，Enter 拆分就变成了「全部留在原块 + 下方多一个空块」。
       let effectivePos = cursorPosArg
       if (editorRef.value) {
-        const decodedText = editorRef.value.getText()
+        const ed = editorRef.value.getEditor?.()
+        const docText = ed ? docToText(ed.state.doc) : editorRef.value.getText()
         const decodedOffset = cursorPosArg > 0 ? cursorPosArg - 1 : 0  // pmPosToTextOffset
         const encodedContent = blockStore.getBlock(blockId.value)?.content ?? ''
-        if (decodedOffset >= decodedText.length) {
+        if (decodedOffset >= docText.length) {
           // 行尾：直接设为 encoded content 的行尾
           effectivePos = encodedContent.length + 1
         } else if (decodedOffset === 0) {
           // 行首：无需转换
           effectivePos = 1
         } else {
-          // 中间：decoded 文本即界面渲染文本（textContent），经 render-text.ts 单一 seam 换算为 encoded 偏移
-          const segments = blockStore.getBlock(blockId.value)?.renderSegments
-          const encodedOffset = renderedOffsetToEncodedOffset(encodedContent, segments, decodedOffset)
-          effectivePos = encodedOffset + 1  // 转回 ProseMirror 坐标
+          // 中间：doc 文本经 encode 链换算到 content 坐标；落进关系单元内部的
+          // 偏移吸附到段边界（与 render-text 的吸附规则同语义），不切残字面
+          const { spans } = encodeRelationshipContentWithMeta(docText, takeRelationshipSnapshot(blockId.value))
+          effectivePos = mapDecodedOffsetToEncoded(spans, decodedOffset, encodedContent.length) + 1  // 转回 ProseMirror 坐标
         }
       }
 

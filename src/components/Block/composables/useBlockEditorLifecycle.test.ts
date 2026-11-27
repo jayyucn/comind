@@ -86,24 +86,25 @@ vi.mock('../../../composables/useDateTimePickerPanel', async () => {
   }
 })
 
-// 中间拆分的 decoded→encoded 偏移换算必须走 render-text.ts 单一 seam。单测环境里关系类型
-// 注册表为空（label 回退成 type、可见长度恰等于存储长度），真实换算退化为恒等 —— 无法用
-// 真实值区分「走了 seam」与「直通 decodedOffset」。故把 seam 换成可断言的转发桩：
-// 默认转发真实实现（不改变其它用例语义），中间拆分用例里再覆写返回值以钉住路由与参数接线。
-const { renderedOffsetSpy, actualRenderedOffset } = vi.hoisted(() => ({
-  renderedOffsetSpy: vi.fn(),
-  actualRenderedOffset: { fn: null as null | ((content: string, segments: unknown, offset: number) => number) }
+// 中间拆分的 decoded→encoded 偏移换算必须走「保存同款 encode 链」的 spans 吸附
+// （utils/relationship-content）。单测环境里关系类型注册表为空（label 回退成 type），
+// 真实 spans 为空、换算退化为恒等 —— 无法用真实值区分「走了这条 seam」与「直通 decodedOffset」。
+// 故把该 seam 换成可断言的转发桩：默认转发真实实现（不改变其它用例语义），
+// 中间拆分用例里再覆写返回值以钉住路由与参数接线。
+const { mapOffsetSpy, actualMapOffset } = vi.hoisted(() => ({
+  mapOffsetSpy: vi.fn(),
+  actualMapOffset: { fn: null as null | ((spans: unknown, offset: number, length: number) => number) }
 }))
 
-vi.mock('../../../services/render-text', async () => {
-  const actual = await vi.importActual<typeof import('../../../services/render-text')>(
-    '../../../services/render-text'
+vi.mock('../../../utils/relationship-content', async () => {
+  const actual = await vi.importActual<typeof import('../../../utils/relationship-content')>(
+    '../../../utils/relationship-content'
   )
-  actualRenderedOffset.fn = actual.renderedOffsetToEncodedOffset
+  actualMapOffset.fn = actual.mapDecodedOffsetToEncoded
   return {
     ...actual,
-    renderedOffsetToEncodedOffset: (content: string, segments: unknown, offset: number) =>
-      renderedOffsetSpy(content, segments, offset)
+    mapDecodedOffsetToEncoded: (spans: unknown, offset: number, length: number) =>
+      mapOffsetSpy(spans, offset, length)
   }
 })
 
@@ -129,7 +130,7 @@ describe('useBlockEditorLifecycle', () => {
     // 标签树视为已加载：兜底 tag 点击会按需 ensureLoaded，短路掉以免用例触达真 IPC
     useTagsStore().loaded = true
     // 默认转发真实实现：只有显式覆写的用例才改变换算结果
-    renderedOffsetSpy.mockImplementation(actualRenderedOffset.fn!)
+    mapOffsetSpy.mockImplementation(actualMapOffset.fn!)
   })
 
   function setup(selection?: { startTextTracking: (a: unknown, p: unknown) => void; toggleBlock: () => void }) {
@@ -481,17 +482,16 @@ describe('useBlockEditorLifecycle', () => {
       expect(flushSpy).not.toHaveBeenCalled()
     })
 
-    it('中间拆分（typed link）：偏移经 render-text 单一 seam 吸附换算（非恒等）', async () => {
+    it('中间拆分（typed link）：偏移经 encode 链 spans 吸附换算（非恒等）', async () => {
       const { blockStore, editorStore } = setup()
       const encodedContent = '((part-of))[[D]]sd'  // 18 chars（存储态）
-      const segments = [
-        { start: 0, end: 16, type: 'typed_link', display_text: 'D', relationship_type: 'part-of' },
-        { start: 16, end: 18, type: 'text' },
-      ]
       blockStore.blocks = [{
         id: 'b1', pageId: 'p1', parentId: null, pos: 0,
         content: encodedContent, format: {}, type: 'text', createdAt: 0, updatedAt: 0,
-        renderSegments: segments as any
+        renderSegments: [
+          { start: 0, end: 16, type: 'typed_link', display_text: 'D', relationship_type: 'part-of' },
+          { start: 16, end: 18, type: 'text' },
+        ] as any
       }]
       vi.spyOn(blockStore, 'getBlock').mockReturnValue(blockStore.blocks[0] as any)
       const insertSpy = vi.spyOn(blockStore, 'insertBlockAtCursor').mockResolvedValue({
@@ -517,14 +517,17 @@ describe('useBlockEditorLifecycle', () => {
 
       const decodedOffset = 8              // 落在 typed_link 的可见文本内（非行首/行尾）
       const SEAM_RESULT = 16               // 桩返回值：encoded 偏移（真实实现会吸附到标记边界）
-      renderedOffsetSpy.mockReturnValue(SEAM_RESULT)
+      mapOffsetSpy.mockReturnValue(SEAM_RESULT)
 
       await lifecycle2.handleSplit(decodedOffset + 1)
 
-      // 中间分支必须把 (encoded content, 该块的 renderSegments, decoded 偏移) 交给 seam，
-      // 并以返回值 + 1 作为 effectivePos —— 直通 decodedOffset 或漏传 segments 都会被钉住
-      expect(renderedOffsetSpy).toHaveBeenCalledTimes(1)
-      expect(renderedOffsetSpy).toHaveBeenCalledWith(encodedContent, segments, decodedOffset)
+      // 中间分支必须把 (encode 链产出的 spans, decoded 偏移, encoded 长度) 交给吸附换算，
+      // 并以返回值 + 1 作为 effectivePos —— 直通 decodedOffset 或拿 renderSegments 顶替都会被钉住
+      expect(mapOffsetSpy).toHaveBeenCalledTimes(1)
+      const [spans, offset, length] = mapOffsetSpy.mock.calls[0]
+      expect(Array.isArray(spans)).toBe(true)
+      expect(offset).toBe(decodedOffset)
+      expect(length).toBe(encodedContent.length)
       expect(insertSpy.mock.calls[0][1]).toBe(SEAM_RESULT + 1)
     })
 

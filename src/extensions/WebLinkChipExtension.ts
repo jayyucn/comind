@@ -73,6 +73,13 @@ export interface WebLinkChipMatch {
   url: string
 }
 
+/**
+ * 键入路径新建 chip 后派发（bubbles 冒泡到块列表根），detail 携带 `{ url }`。
+ * 宿主（BlockList）据此走与粘贴相同的抓取收口换 alias——ADR-0016 的
+ * 「TipTap 扩展够不到父组件实例」约束下，DOM CustomEvent 是既定传输通道。
+ */
+export const CHIP_CREATED_EVENT = 'web-link-chip-created'
+
 /** 扫描当前文档里的外链 chip；行内代码里的字面不认（与读态掩白同口径） */
 export function scanWebLinkChipsInDoc(doc: PMNode): WebLinkChipMatch[] {
   const out: WebLinkChipMatch[] = []
@@ -420,6 +427,8 @@ export const WebLinkChipExtension = Extension.create({
      * 会把历史里的裸网址全部改写。
      */
     let pendingEdit: PendingEdit | null = null
+    /** appendTransaction 的签名里没有 view；微任务派发事件时要经 editor 拿 */
+    const extensionEditor = this.editor
 
     return [
       new Plugin({
@@ -735,6 +744,11 @@ export const WebLinkChipExtension = Extension.create({
             )
             tr.setSelection(TextSelection.create(tr.doc, wrap.start + 1 + wrap.url.length))
             view.dispatch(tr)
+            // 新 chip 落地 → 通知宿主抓网页标题换 alias（ADR-0067 D8；与粘贴路径同一条收口）
+            view.dom.dispatchEvent(new CustomEvent(CHIP_CREATED_EVENT, {
+              bubbles: true,
+              detail: { url: wrap.url },
+            }))
             return true
           },
 
@@ -927,6 +941,21 @@ export const WebLinkChipExtension = Extension.create({
             Math.max(1, Math.min(mapped, next.doc.content.size - 1)),
           ))
           next.setMeta(AUTO_LINK_META, true)
+          // 「改回网址」重建的 chip 同样要抓标题；appendTransaction 返回后交易才真正
+          // 应用，微任务排在应用之后派发，宿主拿到的是已成形的文档
+          const createdUrl = hit.url
+          queueMicrotask(() => {
+            try {
+              const view = extensionEditor?.view
+              if (!view || view.isDestroyed) return
+              view.dom.dispatchEvent(new CustomEvent(CHIP_CREATED_EVENT, {
+                bubbles: true,
+                detail: { url: createdUrl },
+              }))
+            } catch {
+              // 编辑器已卸载（teardown / 块被切走）：事件无人接收，放弃即可
+            }
+          })
           return next
         },
       }),

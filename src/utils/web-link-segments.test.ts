@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { RenderSegment } from '../wasm/types'
-import { buildMergedChipSegments, patchChipRewrite, splitChipSegments } from './web-link-segments'
+import { patchChipRewrite, splitChipSegments } from './web-link-segments'
 
 /** 便捷构造 */
 const text = (start: number, end: number): RenderSegment => ({ type: 'text', start, end })
@@ -77,45 +77,6 @@ describe('patchChipRewrite（单 chip 字面改写）', () => {
     const old = [text(0, 2), ext(2, 28, URL_, URL_)]
     // 真实 content 还有 " 结束"（6 字），旧段没覆盖 → 分区校验失败
     expect(patchChipRewrite(old, 2, 28, 'x', 2 + 1 + 6)).toBeNull()
-  })
-})
-
-describe('buildMergedChipSegments（卡片 → chip 三段合并）', () => {
-  it('前+chip+后：段拼接并平移，覆盖合并 content', () => {
-    const beforeSegs = sampleSegs('起始', '旧链', '') // 前邻居自身含 chip 的场景也成立
-    const beforeLen = `起始[旧链](${URL_})`.length
-    const afterLen = 4 // " 结束"
-    const chipLit = `[${URL_}](${URL_})`
-    const total = beforeLen + chipLit.length + afterLen
-    const merged = buildMergedChipSegments(
-      { segs: beforeSegs, length: beforeLen },
-      { segs: [text(0, afterLen)], length: afterLen },
-      chipLit,
-      URL_,
-      URL_,
-      total,
-    )
-    expect(merged).not.toBeNull()
-    const last = merged![merged!.length - 1]
-    expect(last.end).toBe(total)
-  })
-
-  it('无邻居：纯 chip 一段', () => {
-    const merged = buildMergedChipSegments(undefined, undefined, `[t](${URL_})`, URL_, 't', `[t](${URL_})`.length)
-    expect(merged).toEqual([ext(0, `[t](${URL_})`.length, URL_, 't')])
-  })
-
-  it('邻居存在但缺段 → null', () => {
-    expect(
-      buildMergedChipSegments(
-        { segs: undefined, length: 5 },
-        undefined,
-        `[t](${URL_})`,
-        URL_,
-        't',
-        5 + `[t](${URL_})`.length,
-      ),
-    ).toBeNull()
   })
 })
 

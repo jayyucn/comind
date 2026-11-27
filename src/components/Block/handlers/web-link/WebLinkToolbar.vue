@@ -15,6 +15,7 @@ import { useWebLinkChipToolbar } from '../../../../composables/useWebLinkChipToo
 import {
   copyWebLinkUrl,
   editChipLink,
+  ensureChipTitle,
   removeChipLink,
   switchWebLinkView,
 } from '../../../../services/web-link-actions'
@@ -159,6 +160,9 @@ async function switchTo(view: WebLinkView): Promise<void> {
     // chip 的「链接视图/标题视图」就是别名字面本身：编辑态必须就地改文档，
     // 否则 store 的改写会被编辑器的防抖回写覆盖，看起来「点了没反应」。
     if (isChip.value && (view === 'link' || view === 'title')) {
+      // 切标题视图但还没抓到标题：先补抓一次，落地后别名由 applyFetchedChipMeta 升级
+      // （切视图本身不触发抓取，不补的话这里只能退到域名并永久停住）
+      if (view === 'title') ensureChipTitle(t.blockId, t.url)
       const metaTitle = chipMetaTitleOf(useBlockStore().getBlock(t.blockId)?.format, t.url)
       const alias = chipAliasForView(t.url, view, metaTitle)
       if (alias === t.title) return

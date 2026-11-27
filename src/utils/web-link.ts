@@ -163,6 +163,18 @@ export function webLinkTitle(url: string, meta: WebLinkMeta | null | undefined):
   return domain || url
 }
 
+/**
+ * 「标题」是否只是占位（空 / URL 原文 / 域名）——等于没抓到。
+ *
+ * 判据必须与 `webLinkTitle` 的回退链同源：回退链能走到的值都不是真标题。
+ * 典型场景：从还没抓到标题的 chip 切成卡片，`meta.title` 被沿用成 URL 原文；
+ * 若只看「meta 存在」就当作抓过，卡片会永远顶着网址当标题。
+ */
+export function isPlaceholderWebLinkTitle(url: string, title: string | null | undefined): boolean {
+  const trimmed = title?.trim()
+  return !trimmed || trimmed === url.trim() || trimmed === domainOf(url)
+}
+
 /** 摘要：只保留抓取值，抓不到返回空串（由调用方渲染失败文案，不在此处编造） */
 export function webLinkSummary(meta: WebLinkMeta | null | undefined): string {
   return meta?.desc?.trim() ?? ''
