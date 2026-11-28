@@ -704,4 +704,70 @@ mod tests {
         );
         Ok(())
     }
+
+    #[test]
+    fn test_markdown_external_link_segment() -> Result<(), Box<dyn Error>> {
+        let mut adapter = SQLiteAdapter::open_in_memory()?;
+        let page = PageService::create(&mut adapter, "", "Test", None, None, None, None, None)?;
+
+        // 前文本 + markdown 外链 chip + 后文本（ADR-0067：content 存 [标题](url)）
+        let content = "参见 [飞书文档](https://www.feishu.cn/docx/abc) 了解更多";
+        let block = BlockService::create(
+            &mut adapter, &page.id, None,
+            content,
+            "{}", "text", None,
+            true,
+        )?;
+
+        let segments = build_segments_for_block(&mut adapter, &block)?;
+        let ext: Vec<&RenderSegment> = segments.iter()
+            .filter(|s| matches!(s, RenderSegment::ExternalLink { .. }))
+            .collect();
+        assert_eq!(ext.len(), 1, "应产出一个 external_link 段，实际 {:?}", segments);
+        match ext[0] {
+            RenderSegment::ExternalLink { url, display_text, start, end } => {
+                assert_eq!(url, "https://www.feishu.cn/docx/abc");
+                assert_eq!(display_text, "飞书文档");
+                let raw: String = content.chars().take(*end).skip(*start).collect();
+                assert_eq!(raw, "[飞书文档](https://www.feishu.cn/docx/abc)");
+            }
+            _ => unreachable!(),
+        }
+
+        // 严格划分：0..utf16_len 无空洞、无重叠
+        let span = |s: &RenderSegment| match s {
+            RenderSegment::Text { start, end }
+            | RenderSegment::Link { start, end, .. }
+            | RenderSegment::TypedLink { start, end, .. }
+            | RenderSegment::ExternalLink { start, end, .. }
+            | RenderSegment::Tag { start, end, .. }
+            | RenderSegment::DateRef { start, end, .. } => (*start, *end),
+        };
+        let mut cursor = 0usize;
+        for seg in &segments {
+            let (start, end) = span(seg);
+            assert_eq!(start, cursor, "段间有空洞/重叠");
+            cursor = end;
+        }
+        assert_eq!(cursor, content.encode_utf16().count());
+        Ok(())
+    }
+
+    #[test]
+    fn test_markdown_link_inside_inline_code_is_literal() -> Result<(), Box<dyn Error>> {
+        let mut adapter = SQLiteAdapter::open_in_memory()?;
+        let page = PageService::create(&mut adapter, "", "Test", None, None, None, None, None)?;
+        let content = r"代码 `[不是链接](https://a.com)` 之后";
+        let format = r#"{"inlineMarks":[{"start":4,"end":30,"code":true}]}"#;
+        let block = BlockService::create(
+            &mut adapter, &page.id, None, content, format, "text", None, true,
+        )?;
+        let segments = build_segments_for_block(&mut adapter, &block)?;
+        assert!(
+            segments.iter().all(|s| !matches!(s, RenderSegment::ExternalLink { .. })),
+            "行内代码里的 markdown 链接不得生成段"
+        );
+        Ok(())
+    }
+
 }

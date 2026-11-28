@@ -13,11 +13,14 @@
     "core:window:allow-is-maximized",
     "core:window:allow-maximize",
     "core:window:allow-unmaximize",
+    "core:webview:allow-set-webview-focus",
     "dialog:default",
     "barcode-scanner:default",
     "barcode-scanner:allow-scan",
     "barcode-scanner:allow-cancel",
     "notification:default",
-    "os:default"
+    "os:default",
+    "opener:allow-open-url",
+    "opener:allow-default-urls"
   ]
 }

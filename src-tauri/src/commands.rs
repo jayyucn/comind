@@ -2096,6 +2096,25 @@ pub async fn manage_window(
     }
 }
 
+/// 网页链接块元数据抓取（ADR-0065 D3）。
+///
+/// 资产（favicon / 封面）在 Rust 侧直接落进 workspace assets，只把 asset id 交给前端，
+/// 避免几 MB 图片过 IPC。失败以 `network` / `status` / `timeout` / `decode` 四种错误码返回，
+/// 由前端渲染卡片上的确定文案 —— 这不是异常，是常态分支。
+#[tauri::command]
+pub async fn fetch_web_link_metadata(
+    config_manager: State<'_, super::state::ConfigManager>,
+    app_handle: AppHandle,
+    url: String,
+) -> Result<crate::web_link::WebLinkMetadata, String> {
+    let config = config_manager.get_config()?.clone();
+    let workspace = super::config::get_workspace_path(&app_handle, &config);
+    let assets_dir = super::config::get_assets_path(&workspace);
+    std::fs::create_dir_all(&assets_dir)
+        .map_err(|_| crate::web_link::ERR_NETWORK.to_string())?;
+    crate::web_link::fetch_metadata(&url, &assets_dir).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -8,6 +8,7 @@ import { useEditorSettings } from '../../composables/useEditorSettings'
 import { popModal, pushModal } from '../../composables/useModalKeyboard'
 import { useSettingsModal } from '../../composables/useSettingsModal'
 import { useTheme } from '../../composables/useTheme'
+import { useWebLinkSettings } from '../../composables/useWebLinkSettings'
 import { useEditorStore } from '../../stores/editor'
 import { useNotificationStore } from '../../stores/notification'
 import { exportToMarkdown, getSyncConfig, getWorkspacePath, importFromMarkdown, openWorkspacePath, resetWorkspacePath, setSyncConfig, setWorkspacePath, syncNow } from '../../wasm/client'
@@ -30,6 +31,7 @@ watch(isOpen, (visible) => {
 onUnmounted(() => popModal('settings-modal'))
 const { theme, setTheme } = useTheme()
 const { editorFontSize, setEditorFontSize } = useEditorSettings()
+const { autoFetch, setAutoFetch } = useWebLinkSettings()
 const notificationStore = useNotificationStore()
 const editorStore = useEditorStore()
 
@@ -363,6 +365,18 @@ onUnmounted(() => {
                       {{ option.label }}
                     </button>
                   </div>
+                </div>
+                <div class="setting-item">
+                  <div class="setting-info">
+                    <span class="setting-label">自动获取网页信息</span>
+                    <span class="setting-desc">粘贴网页链接时自动抓取标题、摘要与图标（本机将主动访问该网址）</span>
+                  </div>
+                  <input
+                    type="checkbox"
+                    :checked="autoFetch"
+                    aria-label="自动获取网页信息"
+                    @change="setAutoFetch(($event.target as HTMLInputElement).checked)"
+                  >
                 </div>
                 <div class="setting-item setting-item--column">
                   <div class="setting-info">

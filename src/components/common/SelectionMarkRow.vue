@@ -8,12 +8,16 @@
  * 因此顺序、字形、尺寸、hover/激活态、二级箭头的形状全部收口到这里，
  * 宿主只负责「这批选区是什么格式、写回到哪」。
  *
+ * 唯一的例外是「添加链接」（`link`）：它插在公共段内部（行内代码左侧），
+ * 但**默认不渲染**，只由正文浮层开启。表格宿主尚未实现链接写回，先长出按钮
+ * 就是长出个死按钮 —— 等表格那一侧补上写入，再把门控放开。
+ *
  * 根节点是**片段**（多根）：按钮直接参与宿主的 flex 排布，宿主的 gap / wrap / 对齐照旧生效，
  * 不需要再套一层容器。宿主追加的结构项经默认插槽接在 A 之后，
  * 它们的样式由本组件的 `:slotted()` 提供（插槽内容按 CSS 归属算在宿主作用域，
  * 普通 scoped 选择器够不到，`:slotted()` 正是为此存在）。
  */
-import { ChevronDown, Code } from 'lucide-vue-next'
+import { ChevronDown, Code, Link } from 'lucide-vue-next'
 import { computed } from 'vue'
 
 import { BLOCK_ALIGN_OPTIONS, type BlockAlign } from '../../utils/block-align'
@@ -42,7 +46,15 @@ const props = defineProps<{
   /** 当前对齐（未设置即默认左对齐） */
   align?: BlockAlign | null
   /** 当前展开的二级浮层，只用于按钮的 `is-open` 态；状态仍由宿主持有 */
-  open?: 'align' | 'palette' | null
+  open?: 'align' | 'palette' | 'link' | null
+  /**
+   * 「添加链接」这一项（与 `wrapPageRef` 同一套三态口径）。
+   *
+   * - `null` / 不传：不渲染。表格宿主尚未接链接写回，长出按钮就是长出个点不动的按钮；
+   * - `{ enabled: false, hint }`：置灰 + 透出具体原因；
+   * - `{ enabled: true }`：可点。
+   */
+  link?: { enabled: boolean; hint?: string } | null
 }>()
 
 const emit = defineEmits<{
@@ -51,6 +63,8 @@ const emit = defineEmits<{
   (e: 'toggle-align', anchor: HTMLElement): void
   /** 宿主自己开/收取色面板 */
   (e: 'toggle-palette', anchor: HTMLElement): void
+  /** 宿主自己开链接编辑浮层（按钮作为锚点） */
+  (e: 'add-link', anchor: HTMLElement): void
 }>()
 
 const currentAlign = computed<BlockAlign>(() => props.align ?? 'left')
@@ -134,6 +148,22 @@ function anchorOf(e: MouseEvent): HTMLElement {
     @click="emit('apply-mark', 'strike', null)"
   >
     <s>S</s>
+  </button>
+  <!-- 添加链接：行内代码左侧（`<>` 左边）。三态门控见 props.link 的注释 -->
+  <button
+    v-if="props.link"
+    type="button"
+    class="sel-btn"
+    :class="{ 'is-open': props.open === 'link' }"
+    :disabled="!props.link.enabled"
+    :title="props.link.enabled ? '添加链接 (Ctrl+K)' : (props.link.hint ?? '当前选区不能添加链接')"
+    aria-label="添加链接"
+    @click="emit('add-link', anchorOf($event))"
+  >
+    <Link
+      :size="14"
+      :stroke-width="2"
+    />
   </button>
   <button
     type="button"

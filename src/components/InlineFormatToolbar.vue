@@ -6,11 +6,13 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { SelectionRect } from '../services/selection-geometry'
 import type { TextRange } from '../services/text-range'
 import type { BlockAlign } from '../utils/block-align'
+import { extractHttpUrl } from '../utils/inline-link'
 import type { InlineMarkAttrs, InlineMarkKey } from '../utils/inline-marks'
 import FloatingSubmenu from './common/FloatingSubmenu.vue'
 import SelectionMarkRow from './common/SelectionMarkRow.vue'
 import InlineAlignMenu from './InlineAlignMenu.vue'
 import InlineColorPalette from './InlineColorPalette.vue'
+import InlineLinkEditor from './InlineLinkEditor.vue'
 
 const props = defineProps<{
   editor?: Editor | null | undefined
@@ -40,6 +42,14 @@ const props = defineProps<{
    * - `{ enabled: true }`：可点。
    */
   wrapPageRef?: { enabled: boolean; hint?: string } | null
+  /**
+   * 「添加链接」这一个行内项的状态（三态口径与 `wrapPageRef` 完全一致）。
+   *
+   * - `null` / 不传：不渲染。
+   * - `{ enabled: false, hint }`：单块内但选区不合规 → 置灰 + 提示判据。
+   * - `{ enabled: true, text }`：可点；`text` 是选区肉眼可见的文本，作面板的标题预填。
+   */
+  link?: { enabled: boolean; hint?: string; text: string } | null
 }>()
 
 const emit = defineEmits<{
@@ -47,16 +57,20 @@ const emit = defineEmits<{
   (e: 'apply-align', value: BlockAlign): void
   /** 把当前单块选区包裹为 `[[页名]]`；页名解析与建页由宿主负责 */
   (e: 'wrap-page-ref'): void
+  /** 把当前单块选区包裹为 `[文字](url)`；校验与写回由宿主负责 */
+  (e: 'add-link', title: string, url: string): void
 }>()
 
 const visible = ref(false)
 const position = ref({ left: 0, top: 0 })
 const toolbarEl = ref<HTMLElement | null>(null)
 
-/** 二级浮层：同一时刻最多开一个（对齐下拉 / 取色面板），定位与 Esc 收口在 FloatingSubmenu */
-type SubmenuKind = 'align' | 'palette'
+/** 二级浮层：同一时刻最多开一个（对齐下拉 / 取色面板 / 链接面板），定位与 Esc 收口在 FloatingSubmenu */
+type SubmenuKind = 'align' | 'palette' | 'link'
 const submenu = ref<SubmenuKind | null>(null)
 const submenuAnchor = ref<HTMLElement | null>(null)
+/** 链接面板的 URL 预填（剪贴板里已有 http(s) 链接时） */
+const linkDraftUrl = ref('')
 
 /** 首帧尚未挂载时的兜底尺寸（真实尺寸在 nextTick 后补测） */
 const FALLBACK_WIDTH = 290
@@ -137,7 +151,12 @@ function updatePosition() {
     anchorTop = rect.top
   } else {
     const editor = props.editor
-    if (!editor || !info.focused) {
+    // 焦点落进自己的一级面板（链接输入框）时，编辑器 `isFocused` 必然为 false ——
+    // 但选区还在、用户正在面板里填 URL。照「失焦即收起」处理会把刚打开的面板
+    // 立刻收回（挂载时自动聚焦 URL 框 → blur → revision 变 → 这里 hide），
+    // 于是编辑态点「添加链接」只闪一下。
+    const focusInSubmenu = !!document.activeElement?.closest('.floating-submenu')
+    if (!editor || (!info.focused && !focusInSubmenu)) {
       hide()
       return
     }
@@ -250,6 +269,46 @@ function toggleSubmenu(kind: SubmenuKind, anchor: HTMLElement) {
   submenu.value = kind
 }
 
+/**
+ * 链接面板的剪贴板预填：只读一次，且只在 URL 框还空着时回填。
+ *
+ * 无权限 / 无剪贴板（窗口失焦等）静默留空 —— 手填永远可用，不该因为读不到剪贴板
+ * 就阻断整个入口。
+ */
+async function prefillFromClipboard() {
+  try {
+    const text = await navigator.clipboard.readText()
+    const url = extractHttpUrl(text)
+    if (url && submenu.value === 'link' && !linkDraftUrl.value) linkDraftUrl.value = url
+  } catch {
+    /* 剪贴板不可读：留空 */
+  }
+}
+
+/**
+ * 打开链接面板。按钮点击与 Ctrl+K 共用这一个入口。
+ *
+ * 快捷键触发时浮层可能已被滚动收起（`visible === false`），先按当前选区重新定位再开二级。
+ */
+function openLinkEditor(anchor?: HTMLElement) {
+  if (!props.link?.enabled) return
+  const el = anchor ?? toolbarEl.value
+  if (!el) return
+  if (!visible.value) updatePosition()
+  if (!visible.value) return
+  linkDraftUrl.value = ''
+  submenuAnchor.value = el
+  submenu.value = 'link'
+  void prefillFromClipboard()
+}
+
+function applyLink(title: string, url: string) {
+  hide()
+  emit('add-link', title, url)
+}
+
+defineExpose({ openLinkEditor })
+
 function pickAlign(value: BlockAlign) {
   submenu.value = null
   emit('apply-align', value)
@@ -285,9 +344,11 @@ onBeforeUnmount(() => {
         :format="state"
         :align="currentAlign"
         :open="submenu"
+        :link="props.link"
         @apply-mark="onApplyMark"
         @toggle-align="(anchor: HTMLElement) => toggleSubmenu('align', anchor)"
         @toggle-palette="(anchor: HTMLElement) => toggleSubmenu('palette', anchor)"
+        @add-link="(anchor: HTMLElement) => openLinkEditor(anchor)"
       >
         <!-- 结构项（正文专属，经插槽追加；表格浮层不走本组件，故不会长出来）：
              格式 → 结构 之间加一道分隔，与公共段明确分组。 -->
@@ -330,6 +391,21 @@ onBeforeUnmount(() => {
         :background="state?.background"
         @apply="applyColor"
         @reset="resetColors"
+      />
+    </FloatingSubmenu>
+
+    <!-- 链接面板：标题预填选区文字，URL 框按剪贴板预填。
+         `:key` 跟着预填值走 —— 剪贴板是异步读到的，换 key 让面板重建一次把新值塞进输入框。 -->
+    <FloatingSubmenu
+      :open="submenu === 'link'"
+      :anchor="submenuAnchor"
+      @close="submenu = null"
+    >
+      <InlineLinkEditor
+        :key="linkDraftUrl"
+        :title="props.link?.text ?? ''"
+        :url="linkDraftUrl"
+        @apply="applyLink"
       />
     </FloatingSubmenu>
   </Teleport>

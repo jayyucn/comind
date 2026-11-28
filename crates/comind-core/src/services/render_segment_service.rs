@@ -6,6 +6,7 @@ use crate::{
 use regex::Regex;
 use std::collections::HashMap;
 use std::error::Error;
+use std::sync::OnceLock;
 
 /// Build RenderSegment[] for a single block (for save-block-tree hot path).
 /// Queries links + pages + relationship_types — all already in cache after BlockService::update/create.
@@ -178,6 +179,28 @@ fn build_segments(
     // byte_end 与原文一一对应，后面的字节→UTF-16 换算照旧。
     let visible = crate::services::inline_literal::visible_text(content, Some(&block.format));
     let mut anchors: Vec<(usize, RenderSegment)> = Vec::new();
+
+    // --- 0. Markdown 外链 `[标题](url)`（ADR-0067）---
+    // 不过 links 表（外链不建 Link 行）：直接从 content 字面扫描。
+    // 段覆盖整个 `[标题](url)`，display_text = 标题；渲染侧只显示标题、点击跳 url。
+    static RE_MD_LINK: OnceLock<Regex> = OnceLock::new();
+    let md_link_re = RE_MD_LINK.get_or_init(|| {
+        // 标题不含 `]`/`[`；url 不含 `)`/空白。行内代码已在 visible 里被掩成空白。
+        Regex::new(r"\[([^\[\]]+)\]\((https?://[^\s)]+)\)").unwrap()
+    });
+    for caps in md_link_re.captures_iter(visible.as_ref()) {
+        let Some(m) = caps.get(0) else { continue };
+        let title = caps.get(1).map_or("", |c| c.as_str());
+        let url = caps.get(2).map_or("", |c| c.as_str());
+        let char_start = byte_to_utf16_idx(content, m.start());
+        let char_end = byte_to_utf16_idx(content, m.end());
+        anchors.push((char_start, RenderSegment::ExternalLink {
+            start: char_start,
+            end: char_end,
+            url: url.to_string(),
+            display_text: title.to_string(),
+        }));
+    }
 
     // --- 1. Date refs ---
     let date_refs = DateRefService::extract_date_refs(visible.as_ref());

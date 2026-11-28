@@ -617,6 +617,11 @@ describe('BlockList 多选删除落点（#122）', () => {
 
     const wrapper = mountBlockList(pageId)
     const selection = getSelection(wrapper)
+    // 末尾空块由 BlockList 自动补齐：它才是「最后一块」，全选删除后保留并激活的就是它
+    await flushAsync()
+    const blank = store.getBlocksByPage(pageId).find(x => x.content.trim() === '')
+    expect(blank).toBeDefined()
+
     selection.selectAll(pageId)
 
     dispatchDeleteKey('Backspace')
@@ -624,8 +629,9 @@ describe('BlockList 多选删除落点（#122）', () => {
     await flushAsync()
 
     expect(store.blocks.find(x => x.id === a.id)).toBeUndefined()
-    expect(store.blocks.find(x => x.id === b.id)).toBeDefined()
-    expect(editor.activeBlockId).toBe(b.id)
+    expect(store.blocks.find(x => x.id === b.id)).toBeUndefined()
+    expect(store.blocks.find(x => x.id === blank!.id)).toBeDefined()
+    expect(editor.activeBlockId).toBe(blank!.id)
 
     wrapper.unmount()
   })

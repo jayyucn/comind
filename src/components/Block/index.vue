@@ -20,6 +20,7 @@ import './handlers/embed'
 import './handlers/image'
 import './handlers/query'
 import './handlers/table'
+import './handlers/web-link'
 
 import type { EditorView } from '@codemirror/view'
 import type { Editor } from '@tiptap/core'
@@ -509,6 +510,7 @@ const {
   handleClear,
   handleCursorChange,
   handleContentMousedown,
+  handleContentMouseup,
   handleContentClick,
   syncBlockContent,
 } = useBlockEditorLifecycle({
@@ -798,6 +800,11 @@ function onContentClick(e: MouseEvent) {
   handleContentClick(e)
 }
 
+function onContentMouseup(e: MouseEvent) {
+  if (typeHooks.value?.onContentMouseup?.(e) === true) return
+  handleContentMouseup(e)
+}
+
 /** 内容区以外的「自交互」元素：保留自身点击语义，Ctrl/Cmd+Click 不接管 */
 const SELF_INTERACTIVE_SELECTOR =
   '.block-link, .rel-type-label, .date-ref, .property-item, .property-inline-item'
@@ -1077,6 +1084,7 @@ watch(isActive, (active) => {
             }"
             :style="contentAlignStyle"
             @mousedown="onContentMousedown"
+            @mouseup="onContentMouseup"
           >
             <!-- 语义图标：既是"这是哪种语义"的标签，也是切换入口。
                  与正文同处一个 flex 行 —— 让位 20px，正文因此比普通块右移 28px（含间隙）。

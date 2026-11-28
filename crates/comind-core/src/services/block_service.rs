@@ -67,11 +67,46 @@ impl BlockService {
         id: Option<&str>,
         create_missing_tags: bool,
     ) -> Result<Block, Box<dyn Error>> {
+        Self::create_with_pos(
+            storage,
+            page_id,
+            parent_id,
+            content,
+            format,
+            r#type,
+            id,
+            create_missing_tags,
+            None,
+        )
+    }
+
+    /// `create` 的显式位置版本：`explicit_pos = Some(_)` 表示调用方给的 pos 是权威值。
+    ///
+    /// 保存路径（`BlockWriteService::save_blocks`）新建块时**必须**走这个分支 ——
+    /// 客户端已算好插在哪（打字拆分、粘贴、视图切换新建等），gap 位置只服务
+    /// 「没说放哪儿」的插入。若忽略显式 pos，新块会落到 `positions[0] / 2`
+    /// （即页首），而本地 store 仍是正确位置，表现为刷新后整页重排。
+    pub fn create_with_pos(
+        storage: &mut dyn StorageAdapter,
+        page_id: &str,
+        parent_id: Option<&str>,
+        content: &str,
+        format: &str,
+        r#type: &str,
+        id: Option<&str>,
+        create_missing_tags: bool,
+        explicit_pos: Option<i64>,
+    ) -> Result<Block, Box<dyn Error>> {
         let now = chrono::Utc::now().timestamp_millis();
-        let pos = if let Some(pid) = parent_id {
-            Self::calculate_gap_sort_pos(storage, pid)?
-        } else {
-            Self::calculate_gap_sort_pos_for_root(storage, page_id)?
+        let pos = match explicit_pos {
+            Some(p) => p,
+            None => {
+                if let Some(pid) = parent_id {
+                    Self::calculate_gap_sort_pos(storage, pid)?
+                } else {
+                    Self::calculate_gap_sort_pos_for_root(storage, page_id)?
+                }
+            }
         };
 
         let block = Block {

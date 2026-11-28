@@ -105,7 +105,10 @@ impl BlockWriteService {
                             updated
                         }
                     }
-                    Err(_) => BlockService::create(
+                    // 新建分支必须沿用传入 pos：保存路径的 pos 是权威值（客户端已算好
+                    // 插在哪）。走 `create` 会让 gap 位置覆盖它（恒为 positions[0]/2 = 页首），
+                    // 本地 store 却仍是正确位置 → 刷新后新块整页重排。
+                    Err(_) => BlockService::create_with_pos(
                         storage,
                         &block.page_id,
                         block.parent_id.as_deref(),
@@ -114,6 +117,7 @@ impl BlockWriteService {
                         &block.r#type,
                         Some(&block.id),
                         create_missing_tags,
+                        Some(block.pos),
                     )?,
                 };
 
@@ -619,6 +623,44 @@ mod tests {
         let children = BlockService::get_children(&mut adapter, "b1").unwrap();
         assert_eq!(children.len(), 1);
         assert_eq!(children[0].id, "b2");
+    }
+
+    /// 新建块落库必须沿用传入的 pos（gap 位置只服务「没说放哪儿」的插入）。
+    /// 回归：客户端算好的 pos（打字拆分 / 粘贴 / 视图切换新建）被 gap 算法覆盖成
+    /// `positions[0] / 2`（页首），而本地 store 仍是正确位置 —— 刷新后新块整体跳到页顶。
+    #[test]
+    fn save_blocks_new_block_keeps_explicit_pos() {
+        let mut adapter = SQLiteAdapter::open_in_memory().unwrap();
+        let p1 = seed_page(&mut adapter, "p1");
+        save(
+            &mut adapter,
+            vec![
+                block_with_content("b1", &p1, None, 1000, "上"),
+                block_with_content("b3", &p1, None, 3000, "下"),
+            ],
+        )
+        .unwrap();
+
+        // 两块之间插入：gap 算法会给 500（页首），显式 pos 必须胜出
+        save(&mut adapter, vec![block_with_content("b2", &p1, None, 2000, "中")]).unwrap();
+        assert_eq!(
+            BlockService::get_by_id(&mut adapter, "b2").unwrap().pos,
+            2000
+        );
+
+        // 紧凑连插（卡片拆分：一个事务里连着建两个新块），位置不得被挤到页首
+        save(&mut adapter, vec![block_with_content("b4", &p1, None, 3001, "后")]).unwrap();
+        assert_eq!(
+            BlockService::get_by_id(&mut adapter, "b4").unwrap().pos,
+            3001
+        );
+
+        let ids: Vec<String> = BlockService::get_by_page_id(&mut adapter, &p1)
+            .unwrap()
+            .into_iter()
+            .map(|b| b.id)
+            .collect();
+        assert_eq!(ids, vec!["b1", "b2", "b3", "b4"]);
     }
 
     #[test]

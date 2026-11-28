@@ -72,7 +72,8 @@ export function segmentVisibleText(content: string, seg: RenderSegment): string 
     case 'typed_link':
       return `((${resolveRelationshipLabel(seg.relationship_type)}))[[${seg.display_text}]]`
     case 'external_link':
-      return seg.url
+      // ADR-0067：chip 显示标题；旧数据 display_text 缺省时回退 url
+      return seg.display_text || seg.url
     case 'date_ref':
       // 渲染器直接显示存储原文，长度天然一致
       return content.slice(seg.start, seg.end)

@@ -161,6 +161,15 @@ const stubGlobal = {
 }
 
 async function mountBlockList(pageId: string): Promise<VueWrapper> {
+  // 末尾空块是产品不变量（BlockList 进页会补齐）。夹具先显式补出它，让块集合在
+  // mount 之前就稳定：否则组件内的异步补块会落在断言之后，且空块 id 在用例里取不到。
+  const store = useBlockStore()
+  const order = docOrder(pageId)
+  const lastId = order[order.length - 1]
+  const last = lastId ? store.getBlock(lastId) : undefined
+  if (last && last.content.trim() !== '') {
+    await store.createBlock({ pageId, content: '' })
+  }
   const wrapper = mount(BlockList, {
     props: { pageId },
     attachTo: document.body,
@@ -341,6 +350,7 @@ describe('BlockList 手势编排（#92）', () => {
     // 固化：拖拽中的 selectedIds 让位给 committed anchorIds
     dispatchMouse('mouseup', blockEl(b.id).querySelector('.block-properties')!, q.x, q.y)
     expect(selection.isDragging.value).toBe(false)
+    // 拖拽只覆盖 a→b 这一段，末尾空块不在段内
     expect(Array.from(selection.anchorIds).sort()).toEqual([a.id, b.id].sort())
     expect(Array.from(selection.selectedIds)).toEqual([])
 
@@ -394,7 +404,7 @@ describe('BlockList Ctrl+Shift+A 捕获分派（#92）', () => {
     const ev = dispatchKey('a', { ctrl: true, shift: true }, contentEl)
 
     expect(ev.defaultPrevented).toBe(true)
-    expect(Array.from(selection.anchorIds).sort()).toEqual([a.id, b.id].sort())
+    expect(Array.from(selection.anchorIds).sort()).toEqual(docOrder(pageId).sort())
 
     wrapper.unmount()
   })
@@ -416,7 +426,7 @@ describe('BlockList Ctrl+Shift+A 捕获分派（#92）', () => {
     const ev = dispatchKey('a', { ctrl: true, shift: true }, document.body)
 
     expect(ev.defaultPrevented).toBe(true)
-    expect(Array.from(selection.anchorIds).sort()).toEqual([a.id, b.id].sort())
+    expect(Array.from(selection.anchorIds).sort()).toEqual(docOrder(pageId).sort())
 
     wrapper.unmount()
   })
@@ -594,9 +604,9 @@ describe('BlockList Escape / Enter / Tab 分派（#92）', () => {
 
     expect(ev.defaultPrevented).toBe(true)
     const order = docOrder(pageId)
-    expect(order).toHaveLength(3)
-    // 新块落在 image 之前，其余块序不变
-    const newId = order.find(id => id !== img.id && id !== txt.id)!
+    expect(order).toHaveLength(4)
+    // 新块落在 image 之前，其余块序不变（第 4 块是夹具补的末尾空块）
+    const newId = order[order.indexOf(img.id) - 1]
     expect(order.indexOf(newId)).toBe(order.indexOf(img.id) - 1)
     expect(order.indexOf(txt.id)).toBeGreaterThan(order.indexOf(img.id))
     // 选区让位给新块编辑态
@@ -611,9 +621,10 @@ describe('BlockList Escape / Enter / Tab 分派（#92）', () => {
     const pageId = 'page-enter-bullet'
 
     const a = await store.createBlock({ pageId, content: 'plain' })
-    const before = docOrder(pageId)
 
     const wrapper = await mountBlockList(pageId)
+    // 夹具在 mount 前补了末尾空块，基线必须在 mount 之后取
+    const before = docOrder(pageId)
     const selection = getSelection(wrapper)
     selection.toggleBlock(a.id, pageId)
 
@@ -742,9 +753,10 @@ describe('BlockList 粘贴分发（#92）', () => {
     const pageId = 'page-paste-inline'
 
     const a = await store.createBlock({ pageId, content: 'anchor' })
-    const before = docOrder(pageId)
 
     const wrapper = await mountBlockList(pageId)
+    // 夹具在 mount 前补了末尾空块，基线必须在 mount 之后取
+    const before = docOrder(pageId)
 
     // 行内光标上下文：目标在 contenteditable 内且编辑区有文本
     // （`.ProseMirror` 不被 isInEditableInput 豁免，正是该分支的可达形状）

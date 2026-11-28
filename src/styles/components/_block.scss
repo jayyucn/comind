@@ -31,8 +31,9 @@
 }
 
 // ===== 拖拽容器：VueDraggable wrapper div =====
-// 必须有宽度才能让子元素伸展
-.block-list>div[data-parent-id] {
+// 必须有宽度才能让子元素伸展。注意作用对象是**页面块列表根**（.block-root-list），
+// 不是列表行 .block-list（marker + 正文两列，没有 data-parent-id 子 div）。
+.block-root-list>div[data-parent-id] {
   width: 100%;
 }
 
@@ -674,6 +675,12 @@ $callout-tones: (
 
   &:hover {
     color: var(--accent-hover);
+  }
+
+  // hover 下划线只给真链接（wiki / external）：tag chip 有底色 + 圆角，
+  // 画下划线形态很怪（tag 的兜底渲染也挂 block-link 类，必须排除）
+  &:not(.block-tag):hover {
+    text-decoration: underline;
   }
 
   &.external {

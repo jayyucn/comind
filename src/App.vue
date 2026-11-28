@@ -38,6 +38,7 @@ import FieldSettingsModal from './components/Tags/FieldSettingsModal.vue'
 import Toast from './components/Toast.vue'
 import ViewHost from './components/ViewHost.vue'
 import { useBlockQueryRegistry } from './composables/useBlockQueryRegistry'
+import { setupCaretPersistence } from './composables/useCaretPersistence'
 import { useDateTimePickerPanel } from './composables/useDateTimePickerPanel'
 import { provideLayoutShell } from './composables/useLayoutShell'
 import { useNotificationScheduler } from './composables/useNotificationScheduler'
@@ -52,6 +53,8 @@ import { emitLayoutChange, observeLayoutRoot } from './services/layout-change'
 import { useEditorStore } from './stores/editor'
 import { usePageStore } from './stores/pages'
 import { currentView, usePanesStore } from './stores/panes'
+import { isBlankSurfaceDoubleClick } from './utils/blank-double-click'
+import { openExternalUrl } from './utils/external-link'
 import { resolveUndoScopeBlockPage, takeOverUndoRedo } from './utils/undo-chord'
 import { isTauriEnvironment } from './wasm/tauri-platform'
 
@@ -121,6 +124,9 @@ provideLayoutShell({ sidebarEl, contentBodyEl, pageMainContentEl })
 
 /** 布局根（.content-body）尺寸观察器：尺寸变化即广播布局变更（见 onMounted） */
 let stopLayoutObserver: (() => void) | null = null
+
+/** 光标持久化（ADR-0070，setupCaretPersistence）的注销函数 */
+let stopCaretPersistence: (() => void) | null = null
 
 /** 分隔条拖拽：实时写 splitRatio（夹取 0.1~0.9）；按布局方向取对应轴；关闭 pane 走头部 ✕ 按钮 */
 function onDividerMousedown(e: MouseEvent) {
@@ -213,6 +219,11 @@ onMounted(async () => {
   // 布局变更广播：.content-body 尺寸变化（折叠侧栏 ctrl+b / 右侧栏开合）→ 缓存视口矩形
   // 的浮层与覆盖层重测（见 services/layout-change.ts）。阅读器窗口同样有布局壳，一并装。
   stopLayoutObserver = observeLayoutRoot(contentBodyEl.value)
+  // 外链锚点改道（捕获阶段，先于卡片/字段自身的 click 处理）：阅读器窗口也要装
+  document.addEventListener('click', handleGlobalExternalAnchorClick, true)
+  // 光标持久化（ADR-0070）：记录上次编辑落点，窗口回前台/空白点击时把光标还回去。
+  // 阅读器没有块编辑器，记录天然为空、恢复自然走空，一并装上。
+  stopCaretPersistence = setupCaretPersistence()
   // 阅读器窗口不做主窗口初始化（页面预载/图谱预取/Ctrl+A 兜底：
   // 阅读器正文允许浏览器默认全选，为后续高亮选区铺路）
   if (isReaderWindow) return
@@ -230,6 +241,8 @@ onMounted(async () => {
   document.addEventListener('keydown', handleGlobalUndoRedoKeyDown, true)
   // Alt+←/→ 活动 pane 后退/前进
   document.addEventListener('keydown', handlePaneNavKeydown)
+  // 页面留白双击不选词（见 isBlankSurfaceDoubleClick）
+  document.addEventListener('mousedown', handleBlankSurfaceMousedown, true)
   // 孤儿查询块视图核销：首屏之后空闲时跑（后台数据卫生，不占启动关键路径）
   scheduleOrphanViewCleanup()
 })
@@ -237,15 +250,19 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   stopLayoutObserver?.()
   stopLayoutObserver = null
+  document.removeEventListener('click', handleGlobalExternalAnchorClick, true)
+  stopCaretPersistence?.()
+  stopCaretPersistence = null
   document.removeEventListener('keydown', handleGlobalKeydownCapture, true)
   document.removeEventListener('keydown', handleGlobalUndoRedoKeyDown, true)
   document.removeEventListener('keydown', handlePaneNavKeydown)
+  document.removeEventListener('mousedown', handleBlankSurfaceMousedown, true)
 })
 
 /**
  * 全局 Ctrl+A 兜底（document 捕获阶段，晚于 BlockList 的监听注册顺序执行）。
  * - 目标在 input/textarea/contenteditable（含 CodeMirror 编辑区）→ 放行，保留控件自身全选
- * - 目标在 .block-list 内 → 放行，由 BlockList 捕获监听决定全选/仅屏蔽
+ * - 目标在 .block-root-list 内 → 放行，由 BlockList 捕获监听决定全选/仅屏蔽
  * - 其余区域（页面空白、侧边栏、弹层、图谱画布等）→ 屏蔽浏览器默认，无操作
  */
 function handleGlobalKeydownCapture(e: KeyboardEvent) {
@@ -253,7 +270,7 @@ function handleGlobalKeydownCapture(e: KeyboardEvent) {
   const target = e.target as HTMLElement | null
   if (target && typeof target.closest === 'function') {
     if (target.closest('input, textarea, [contenteditable="true"]')) return
-    if (target.closest('.block-list')) return
+    if (target.closest('.block-root-list')) return
   }
   e.preventDefault()
   e.stopPropagation()
@@ -276,13 +293,36 @@ function handleGlobalUndoRedoKeyDown(e: KeyboardEvent) {
   runUndoOrRedo(takeover.pageId, takeover.chord).catch((err) => console.error('[undo] 恢复失败:', err))
 }
 
-function handleMainClick(e: MouseEvent) {
-  const target = e.target as HTMLElement
-  if (!document.contains(target)) return
-  if (target.closest('.block')) return
-  // 点击右侧面板时保持当前 Block 激活状态（版本历史等面板需要依赖 activeBlockId）
-  if (target.closest('.right-sidebar')) return
-  editorStore.deactivateBlock()
+/**
+ * 外链锚点兜底（ADR-0069 D2）：字段 richtext / reader 里由 markdown 渲染出的
+ * `<a target="_blank" href="http…">` 走的是浏览器原生导航，桌面端同样撞上
+ * WebView2 取消 `NewWindowRequested`（表现为点了没反应）。这里把它改道到
+ * `openExternalUrl`；**浏览器环境原样放行**——原生新标签页语义最完整，接管只会
+ * 让 e2e 多一层噪音。
+ */
+function handleGlobalExternalAnchorClick(e: MouseEvent) {
+  if (!isTauriEnvironment()) return
+  if (e.detail > 1) return // 双击/三击是选词手势，不当作打开
+  const target = e.target as HTMLElement | null
+  const anchor = target?.closest?.('a[href]') as HTMLAnchorElement | null
+  if (!anchor) return
+  // 组件自己已经走 openExternalUrl 的锚点（字段 url 特化）不再二次打开
+  if (anchor.hasAttribute('data-external-handled')) return
+  const href = anchor.getAttribute('href') ?? ''
+  if (!/^https?:\/\//i.test(href)) return
+  e.preventDefault()
+  void openExternalUrl(href)
+}
+
+/**
+ * 页面留白双击不选词（ADR-0070 D7 补丁）。
+ *
+ * 浏览器双击落点不在文本上时，会把选区扩展到「最近的词」：块列表两侧留白双击会选中
+ * 页面标题或「反向链接」里的两个字。底部留白早由 BlockList 的 mousedown 拦截兜住，
+ * 两侧留白没有那层，规律一样地漏。选词从第二次 mousedown 起算，只在这一处能拦住。
+ */
+function handleBlankSurfaceMousedown(e: MouseEvent) {
+  if (isBlankSurfaceDoubleClick(e)) e.preventDefault()
 }
 </script>
 
@@ -393,10 +433,7 @@ function handleMainClick(e: MouseEvent) {
     <div class="app-main">
       <Sidebar @open-search="showSearchPanel = true" />
 
-      <div
-        class="page-scroll-wrapper"
-        @click="handleMainClick"
-      >
+      <div class="page-scroll-wrapper">
         <div class="page-content-wrapper">
           <div
             ref="contentBodyEl"

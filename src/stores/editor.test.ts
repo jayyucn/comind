@@ -320,4 +320,35 @@ describe('useEditorStore', () => {
       expect(store.blockModalSnapshotOf).toBeNull()
     })
   })
+
+  describe('上一次编辑落点（ADR-0070 光标持久化）', () => {
+    test('初始为 null，clearLastEditPoint 幂等', () => {
+      const store = useEditorStore()
+      expect(store.lastEditPoint).toBeNull()
+      store.clearLastEditPoint()
+      expect(store.lastEditPoint).toBeNull()
+    })
+
+    test('setLastEditPoint 记录 pm 落点，clear 后回到 null', () => {
+      const store = useEditorStore()
+      store.setLastEditPoint({ kind: 'pm', paneId: 'p1', blockId: 'b1', editor: {} })
+      expect(store.lastEditPoint).toEqual({ kind: 'pm', paneId: 'p1', blockId: 'b1', editor: {} })
+      store.clearLastEditPoint()
+      expect(store.lastEditPoint).toBeNull()
+    })
+
+    test('记录可被覆盖：pm 与 input 落点互替（WeakRef 存元素）', () => {
+      const store = useEditorStore()
+      const el = document.createElement('input')
+      store.setLastEditPoint({ kind: 'pm', paneId: 'p1', blockId: 'b1', editor: {} })
+      store.setLastEditPoint({ kind: 'input', paneId: 'p1', el: new WeakRef(el), start: 2, end: 5 })
+      const point = store.lastEditPoint
+      expect(point?.kind).toBe('input')
+      if (point?.kind === 'input') {
+        expect(point.el.deref()).toBe(el)
+        expect(point.start).toBe(2)
+        expect(point.end).toBe(5)
+      }
+    })
+  })
 })

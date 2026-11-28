@@ -6,10 +6,34 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
-  min-height: 100%;
-  gap: var(--space-6);
+  // 撑满 .page-container（flex 列容器）：短页时正文区一直延伸到视口底部，
+  // 否则底部那截空白落在容器之外，任何内容元素都点不中。
+  flex: 1 1 auto;
+  // 原 gap: space-6 下移到 .backlinks-panel 的 margin-top：容器之间的间距不属于任何
+  // 元素的盒，点不中；改由 BlockList 的 padding-bottom 与 Backlinks 的 margin-top 分摊，
+  // 块列表底部就成一整片可命中的留白（单击进末尾空行）。
   padding-top: var(--space-6);
   padding-bottom: var(--space-6);
+}
+
+// 无反向链接的活数据页：正文列吃满页面剩余高度，使正文末尾到视口底部整片留白都落在
+// .block-root-list 的盒内。留白单击的目标是根容器自身（target === root），盒外的空白
+// 必然点不中，所以只能靠"把空白收进盒里"而不是加监听。
+.page-body:not(:has(> .backlinks-panel)):has(> .main-content > .block-root-list) {
+  // 底部内边距并入根容器的 padding（下方），留白量不变但变成可命中区域
+  padding-bottom: 0;
+
+  > .main-content {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+  }
+
+  > .main-content > .block-root-list {
+    flex: 1 1 auto;
+    // 自身 40px + 原 gap 位 space-6 + 原 page-body 底部内边距 space-6
+    padding-bottom: calc(40px + 2 * var(--space-6));
+  }
 }
 
 .main-content {

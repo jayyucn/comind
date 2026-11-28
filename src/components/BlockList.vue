@@ -20,8 +20,10 @@ import { buildTree, syncTreeToStore } from '../composables/useBlockTree'
 import type { CrossBlockSelection } from '../composables/useCrossBlockSelection'
 import { useCrossBlockSelection } from '../composables/useCrossBlockSelection'
 import { UNDO_FLASH_MS, useRestoreFlash } from '../composables/useRestoreFlash'
-import { ensureStack } from '../composables/useUndoHistory'
+import { absorbTrailingBlock, ensureStack } from '../composables/useUndoHistory'
 import { linkCrossPageMove, runUndoOrRedo } from '../composables/useUndoRestore'
+import { useWebLinkChipToolbar } from '../composables/useWebLinkChipToolbar'
+import { CHIP_CREATED_EVENT } from '../extensions/WebLinkChipExtension'
 import { COMIND_BLOCK_MIME, resolveClipboardPayload } from '../services/external-paste-parse'
 import { onLayoutChange } from '../services/layout-change'
 import { ensureWikiLinkTargets, notifyCreatedPages } from '../services/paste-ensure-wiki-targets'
@@ -31,13 +33,15 @@ import {
   renderedOffsetToEncodedOffset,
 } from '../services/render-text'
 import { blockOffsetFromPoint, mergeSelectionRects, selectionClientRects, type SelectionRect } from '../services/selection-geometry'
-import { normalizeTextRange } from '../services/text-range'
+import { normalizeTextRange, planTextRangeLinkWrap } from '../services/text-range'
+import { fetchAndApplyChipMeta } from '../services/web-link-actions'
 import { useBlockStore } from '../stores/blocks'
 import { useEditorStore } from '../stores/editor'
 import { usePageStore } from '../stores/pages'
 import type { Block, TreeNode } from '../types/block'
 import { type BlockAlign,blockAlignOf } from '../utils/block-align'
 import { sortByDocumentOrderIds } from '../utils/block-helpers'
+import { linkTitleRejectionHint } from '../utils/inline-link'
 import {
   clearInlineMarkRange,
   type InlineMarkAttrs,
@@ -52,6 +56,8 @@ import {
 import { padUnitForContent } from '../utils/inline-unit-pad'
 import { pageNameRejectionHint, validatePageName } from '../utils/page-name'
 import { resolveUndoScopeBlockPage, takeOverUndoRedo } from '../utils/undo-chord'
+import { webLinkUrlOf } from '../utils/web-link'
+import { webLinkChipMarkdown } from '../utils/web-link-chip'
 import BlockDraggableList from './Block/components/BlockDraggableList.vue'
 import BlockDropIndicator from './Block/components/BlockDropIndicator.vue'
 import TaskProgressBar from './Block/components/TaskProgressBar.vue'
@@ -59,6 +65,7 @@ import type { DragEndIntent } from './Block/composables/useBlockDragDrop'
 import { applyDropTarget, useSharedDropIndicator } from './Block/composables/useBlockDragDrop'
 import { useParentTaskStatusSync } from './Block/composables/useParentTaskStatusSync'
 import { useChildTaskProgress } from './Block/composables/useTaskProgress'
+import WebLinkToolbar from './Block/handlers/web-link/WebLinkToolbar.vue'
 import InlineFormatToolbar from './InlineFormatToolbar.vue'
 
 const props = defineProps<{
@@ -118,18 +125,84 @@ function handleDragEnd(intent?: DragEndIntent | null) {
   blockStore.scheduleOrderedListReindex(props.pageId, { parents: touchedParents })
 }
 
-// ── 双击底部留白区域创建新 block ──
-async function handleCreateBlock() {
-  const newBlock = await blockStore.createBlock({
-    pageId: props.pageId,
-    parentId: rootBlockId.value,
-    content: '',
-    format: {}
-  })
-
-  if (newBlock) {
-    editorStore.activateBlock(newBlock.id, 1)
+// ── 末尾空块（续写入口）与底部留白单击 ──
+// 页面末尾常驻恰一个空块，它是唯一的续写入口：单击底部留白把光标送进去。
+// 不变量：根级末块非空 ⇒ 补一个；末块已空 ⇒ 复用。
+// 恒为普通段落（不继承 ol/ul）：有序列表的序号是 content 字面前缀，若让空块参与列表，
+// 序号写回会把空块变成非空，进而反复触发「补空块」，形成补块循环。
+const trailingState = computed<'loading' | 'empty-page' | 'empty' | 'filled'>(() => {
+  if (!blockStore.isPageFullyLoaded(props.pageId)) return 'loading'
+  const last = tree.value[tree.value.length - 1]
+  if (!last) {
+    // store 已有块而树还没同步（setup 首拍 syncFromStore 尚未跑）不是「空页」：
+    // 按 empty-page 处理会在挂载瞬间多补一个空块。等结构签名把树建起来再判。
+    return blockStore.getBlocksByPage(props.pageId).length === 0 ? 'empty-page' : 'loading'
   }
+  return last.block.content.trim() === '' ? 'empty' : 'filled'
+})
+
+/** 取根级末位的空块；没有就补一个（并发保护：同一拍只建一个） */
+let ensuringTrailing = false
+async function ensureTrailingEmptyBlock(): Promise<Block | null> {
+  const last = tree.value[tree.value.length - 1]
+  if (last && last.block.content.trim() === '') return last.block
+  if (ensuringTrailing) return null
+  ensuringTrailing = true
+  try {
+    const created = await blockStore.createBlock({
+      pageId: props.pageId,
+      parentId: rootBlockId.value,
+      content: '',
+      format: {},
+    })
+    // 程序性补块不是用户动作：只把它追加进栈顶快照，不新增可撤销的一步
+    // （否则撤销一步后 redo 分支被这次补块截断，第一下 Ctrl+Z 撤掉的是用户没见过的空块）。
+    absorbTrailingBlock(props.pageId, created)
+    return created
+  } finally {
+    ensuringTrailing = false
+  }
+}
+
+watch(
+  trailingState,
+  (state, prev) => {
+    // 进页补齐：loading 落定后末块非空 / 页面为空
+    // 写入后补：末块由空转实
+    if (state === 'empty-page' || (state === 'filled' && prev !== 'filled')) {
+      void ensureTrailingEmptyBlock()
+    }
+  },
+  { immediate: true },
+)
+
+/**
+ * 单击底部留白：光标落到末尾空块。
+ * ADR-0070 D7：留白区的单击语义由本函数独占——光标恢复（D4）已把 `.block-root-list`
+ * 排除在可恢复区之外，两者不再竞争同一次点击。
+ */
+async function handleBlankAreaClick(e: MouseEvent) {
+  // 只接管落在根容器自身留白（padding-bottom）上的点击：
+  // 块正文、表格、查询视图、入口胶囊等内部点击一律不抢。
+  if (e.target !== rootEl.value) return
+  const target = await ensureTrailingEmptyBlock()
+  if (target) editorStore.activateBlock(target.id, 1)
+}
+
+/**
+ * 留白按下：拦掉浏览器默认的焦点转移。
+ *
+ * 留白不是可聚焦元素，默认行为会在 mousedown 时把焦点交给 body。若末尾空块**本来就是**
+ * 活动块，`activateBlock` 前后 `isActive` 无变化 ⇒ `focusActiveEditor` 不重跑 ⇒ 光标再也
+ * 回不来（表现为「点第一次进得去，点第二次就失焦」）。焦点根本没离开过编辑器时，
+ * 这里只做「什么也不发生」，反而正是想要的语义。
+ *
+ * 第一次点击不受影响：那时编辑器尚未激活，拦截后由 `activateBlock` 触发的 watch 正常聚焦。
+ * 同理不影响其他可聚焦元素（标题输入框等）的保存——焦点最终被编辑器接管时 blur 照常派发。
+ */
+function handleBlankAreaMousedown(e: MouseEvent) {
+  if (e.target !== rootEl.value) return
+  e.preventDefault()
 }
 
 // ── 跨 Block 选区事件处理 ──
@@ -430,6 +503,17 @@ async function handleDocKeyDown(e: KeyboardEvent) {
   } else {
     pasteShiftHeld = false
   }
+  // Ctrl/Cmd+K = 把当前文本选区包成外链（ADR-0071）。
+  // 编辑态在 Editor 的 wrapper 上就被拦下并 stopPropagation，走不到这里；
+  // 这一支只服务渲染态（编辑器已失活）的单块文本选区。
+  const isLinkKey = (e.key === 'k' || e.key === 'K') && (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey
+  if (isLinkKey) {
+    if (!linkState.value?.enabled) return
+    e.preventDefault()
+    e.stopPropagation()
+    toolbarRef.value?.openLinkEditor()
+    return
+  }
   // Ctrl/Cmd+X（不带 Shift/Alt）：剪切的字面授权只有这一 chord，其余组合交还原生行为
   const isCutKey = (e.key === 'x' || e.key === 'X') && (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey
   if (e.key === 'Backspace' || e.key === 'Delete' || isCutKey) {
@@ -470,8 +554,15 @@ async function handleDocKeyDown(e: KeyboardEvent) {
       if (editorStore.activeBlockId === blockId) editorStore.deactivateBlock()
       return
     }
+    // 无格选区：Esc 层层退出——先撤跨块/文本选区；原本就没有选区时，退出块激活。
+    // （ADR-0070：点块外空白不再取消激活，Esc 是唯一的键盘退出出口，必须在这里补上。）
+    const hadCrossSelection = selection.anchorIds.size > 0
     selection.clearSelection()
     selection.clearTextSelection()
+    if (!hadCrossSelection && editorStore.activeBlockId) {
+      editorStore.clearLastEditPoint()
+      editorStore.deactivateBlock()
+    }
     return
   }
   if (e.key === 'Enter') {
@@ -775,6 +866,26 @@ function resolvePasteAnchor(): string | null {
   return editorStore.activeBlockId
 }
 
+/** 落 chip 后异步抓网页标题换 alias（ADR-0067 D8：用户改过则不覆盖；meta.title 同时存档） */
+async function fillChipAliasAsync(blockId: string, url: string): Promise<void> {
+  await fetchAndApplyChipMeta(blockId, url)
+}
+
+/**
+ * 键入裸网址成 chip 后抓标题（WebLinkChipExtension 派发 `web-link-chip-created`，
+ * 冒泡到列表根）。此前只有粘贴路径抓取，键入的 chip 永远顶着 URL/域名占位别名
+ * （ADR-0067 D8 的缺口，2026-11-27 用户报障：baidu 的标题抓不到）。
+ */
+function onChipCreatedFromTyping(e: Event): void {
+  const url = (e as CustomEvent<{ url?: string }>).detail?.url
+  if (!url) return
+  // 块锚点取事件源头（编辑器 DOM 就在块内）：比读「当前活动块」稳——事件派发到
+  // 冒泡完之间焦点完全可能已经迁走（Enter 建块、多栏切换），锚错块会把标题存到别人头上
+  const host = (e.target as Element | null)?.closest?.('[data-block-id]')
+  const blockId = host?.getAttribute('data-block-id') || editorStore.activeBlockId
+  if (blockId) void fetchAndApplyChipMeta(blockId, url)
+}
+
 async function handleDocPaste(e: ClipboardEvent) {
   // 侧边栏粘贴不进入主文档分发（无编辑上下文，避免误粘到主文档）
   if (isInSidebar(e)) return
@@ -823,6 +934,38 @@ async function handleDocPaste(e: ClipboardEvent) {
   if (!hasInternal && selection.anchorIds.size === 0 && isInlineCaretContext(e)) {
     void ensurePages.then(({ created }) => notifyCreatedPages(created, editorStore.showToast))
     return
+  }
+
+  // 整段恰为一个网址 → 落 text 块里的 markdown 外链 chip（ADR-0067 D7）。
+  // content 存 `[域名](url)`，抓到网页标题后异步换 alias（用户改过则不覆盖）。
+  // 判定要求「整块内容就是一个 URL」—— 前后缀带文字或含换行的粘贴仍走普通文本。
+  if (!hasInternal && forest.length === 1 && selection.anchorIds.size === 0) {
+    const pasted = forest[0]!
+    const url = pasted.type === 'text' ? webLinkUrlOf(pasted.content) : null
+    if (url) {
+      e.preventDefault()
+      const chipContent = webLinkChipMarkdown(new URL(url).hostname.replace(/^www\./, ''), url)
+      const targetId = editorStore.activeBlockId
+      const target = targetId ? blockStore.getBlock(targetId) : null
+      if (
+        target
+        && target.pageId === props.pageId
+        && target.type === 'text'
+        && target.content.trim() === ''
+        && blockStore.getChildren(target.id).length === 0
+      ) {
+        await blockStore.updateBlockContent(target.id, chipContent)
+        editorStore.deactivateBlock()
+        void fillChipAliasAsync(target.id, url)
+        return
+      }
+      const created = await blockStore.pasteBlocks(
+        [{ content: chipContent, type: 'text', format: {}, properties: null, children: [] }],
+        { pageId: props.pageId, anchorBlockId: resolvePasteAnchor(), fallbackParentId: rootBlockId.value },
+      )
+      if (created[0]) void fillChipAliasAsync(created[0].id, url)
+      return
+    }
   }
 
   // 空块就地转表（ADR-0061 D4）：整段只产出一个表格 + 无块选区 + 活动块是空 bullet
@@ -894,7 +1037,7 @@ const highlightRects = ref<SelectionRect[]>([])
 
 function refreshTextHighlight() {
   const tr = selection.textRange.value
-  // 传入本 pane 的 .block-list 根作为作用域：多 pane 同页时同一 data-block-id 有多份 DOM，
+  // 传入本 pane 的 .block-root-list 根作为作用域：多 pane 同页时同一 data-block-id 有多份 DOM，
   // 不限定作用域会经 document.querySelector 命中第一个（左侧）实例，高亮错画到左 pane。
   highlightRects.value = tr ? selectionClientRects(tr.anchor, tr.head, rootEl.value) : []
 }
@@ -949,10 +1092,61 @@ function handleViewportChange() {
   refreshBlockSelection()
 }
 
+/**
+ * 网页链接 chip 的悬浮条触发（ADR-0067 D2）：chip 是 v-html 出来的裸 span，
+ * 没法在组件里绑事件，只能在列表根上做委托。
+ */
+const {
+  show: showChipToolbar,
+  scheduleHide: hideChipToolbar,
+  hide: hideChipToolbarNow,
+  setRangeSelectionActive: setChipRangeSelection,
+} = useWebLinkChipToolbar()
+
+function onChipMouseOver(e: MouseEvent): void {
+  const target = e.target as HTMLElement | null
+  const chip = target?.closest?.('.web-link-chip') as HTMLElement | null
+  if (!chip || !rootEl.value?.contains(chip)) return
+  // 同一 chip 内的 mouseover 冒泡不重复触发定位
+  if (chip.contains(e.relatedTarget as Node | null)) return
+  const blockEl = chip.closest('[data-block-id]') as HTMLElement | null
+  const blockId = blockEl?.dataset.blockId
+  const url = chip.dataset.chipUrl
+  if (!blockId || !url) return
+  const rect = chip.getBoundingClientRect()
+  const title = chip.dataset.chipTitle || url
+  showChipToolbar({
+    blockId,
+    kind: 'chip',
+    url,
+    title,
+    left: rect.left,
+    top: rect.top,
+    view: title === url ? 'link' : 'title',
+  })
+}
+
+function onChipMouseOut(e: MouseEvent): void {
+  const chip = (e.target as HTMLElement | null)?.closest?.('.web-link-chip') as HTMLElement | null
+  if (!chip) return
+  const next = e.relatedTarget as Node | null
+  if (next && chip.contains(next)) return
+  hideChipToolbar()
+}
+
 /** 布局变更（折叠侧栏 / 侧栏开合 / 拖 pane 分隔条）：不派发 window resize，但视口矩形已失效 */
 let offLayoutChange: (() => void) | null = null
 
-watch(() => selection.textRange.value, () => refreshTextHighlight())
+/**
+ * 跨块文本选区：拖选越过 chip 后编辑器已失活，DOM 的 `selectionchange` 不再可靠，
+ * 这条 range 是「选区存在」的唯一信号 —— 同步给悬浮条（选区在则让位给 InlineFormatToolbar），
+ * 并当场收掉可能已浮出的那条。
+ */
+watch(() => selection.textRange.value, (tr) => {
+  refreshTextHighlight()
+  setChipRangeSelection(!!tr)
+  if (tr) hideChipToolbarNow()
+})
 
 // 选中集合变化（含拖拽 tracking 阶段逐帧变化）：块渲染可能同帧还没落地，故 post 刷。
 // 用 id 串做签名而不是 watch 同一个 Set：state 每次转移都换新对象，但只有「哪些块被选中」
@@ -1108,6 +1302,73 @@ function applyRangeMark(key: InlineMarkKey, token: string | null) {  for (const 
   }
 }
 
+/** 选区浮层句柄：Ctrl+K 经它打开链接面板（定位与二级互斥都在浮层内部） */
+const toolbarRef = ref<InstanceType<typeof InlineFormatToolbar> | null>(null)
+
+/**
+ * 「添加链接」的三态（与 wrapPageRefState 同一条判据链）。
+ *
+ * 差别只有两处：标题判据换 `linkTitleRejectionHint`（`|` 在链接标题里合法，页名不行）；
+ * 置灰文案说「链接文字」而不是「页面名」。「覆盖已渲染单元」照旧拦 —— 把一段已有
+ * chip / 标签包进标题位，产出的字面里带语法字符，渲染时必定断链。
+ */
+const linkState = computed<{ enabled: boolean; hint?: string; text: string } | null>(() => {
+  const tr = selection.textRange.value
+  if (!tr) return null
+  if (tr.anchor.blockId !== tr.head.blockId) return null
+
+  const block = blockStore.getBlock(tr.anchor.blockId)
+  if (!block || block.type !== 'text') return null
+
+  const lo = Math.min(tr.anchor.offset, tr.head.offset)
+  const hi = Math.max(tr.anchor.offset, tr.head.offset)
+  if (hi <= lo) return null
+
+  const blocker = firstNonPlainUnitInRange(block.content, block.renderSegments, lo, hi)
+  if (blocker) {
+    const label = NON_PLAIN_UNIT_LABEL[blocker.kind]
+    const named = blocker.visible ? ` ${blocker.visible}` : ''
+    return { enabled: false, hint: `选区覆盖了${label}${named}，不能作为链接文字`, text: '' }
+  }
+
+  // 标题判的是**要写进 `[ ]` 的那份原文**（编码切片），不是屏幕上的渲染字面
+  const encLo = renderedOffsetToEncodedOffset(block.content, block.renderSegments, lo)
+  const encHi = renderedOffsetToEncodedOffset(block.content, block.renderSegments, hi)
+  const raw = block.content.slice(encLo, encHi)
+  const hint = linkTitleRejectionHint(raw)
+  return hint ? { enabled: false, hint, text: raw } : { enabled: true, text: raw }
+})
+
+/**
+ * 把渲染态的单块选区包成 `[文字](url)`。
+ *
+ * 与 wrapRangeAsPageRef 同一条写回链，只把规划器换成 `planTextRangeLinkWrap`
+ * （那个保留选区的行内格式）。收场同样必须 flushSave：写回时 `renderSegments`
+ * 已过时被清掉，不立刻落库的话块会停在裸字面态，用户以为没生效。
+ */
+async function wrapRangeAsInlineLink(title: string, url: string) {
+  const tr = selection.textRange.value
+  if (!tr) return
+  const plan = planTextRangeLinkWrap(blockStore.getBlocksByPage(props.pageId), tr, title, url)
+  if (!plan) return
+
+  await blockStore.updateBlockContent(plan.blockId, plan.content, { inlineMarks: plan.inlineMarks })
+
+  // 收场与 wrapRangeAsPageRef 同口径：结束选区（浮条随之关闭）、光标落 `)` 之后。
+  // `caretOffset` 是**内容偏移**（`lo + 字面长度` = `)` 的下一位），而 `activateBlock`
+  // 收的是 **ProseMirror 文档位置**（首位之前 = 1），所以必须 +1；少这一步光标停在
+  // 隐藏尾巴 `(` 前面，虽看着在 chip 末尾，接着打字却写进了隐藏语法里。
+  //
+  // 先丢掉拖选留下的点击坐标：`focusActiveEditor` 的优先级是「点击坐标 > cursorPos」，
+  // 而这份坐标来自**选区起点那次 mousedown**（渲染态拖选必然留下它，键盘选则没有）。
+  // 不清的话本轮 cursorPos 直接被它顶掉，光标落在鼠标按下处，`consumeCursorPos` 也
+  // 不会被消费（`pendingCursorPos` 一直挂着）。
+  selection.clearTextSelection()
+  editorStore.consumeClickCoords()
+  editorStore.activateBlock(plan.blockId, plan.caretOffset + 1)
+  void blockStore.flushSave(plan.blockId)
+}
+
 /**
  * 「转为页面引用」按钮的状态（D1/D2/D3）。
  *
@@ -1184,8 +1445,10 @@ async function wrapRangeAsPageRef() {
   const result = await blockStore.replaceTextRange(props.pageId, tr, padded)
   if (!result) return
 
-  // 收场：结束选区（浮条随之关闭）、光标落 `]]` 之后，可直接接着写
+  // 收场：结束选区（浮条随之关闭）、光标落 `]]` 之后，可直接接着写。
+  // 丢掉拖选留下的点击坐标：它比 cursorPos 优先，不清会让光标落回鼠标按下处。
   selection.clearTextSelection()
+  editorStore.consumeClickCoords()
   editorStore.activateBlock(result.id, result.cursorPos)
 
   // 立刻落库，不等 300ms 防抖：写回时 `renderSegments` 被清空（索引已过时），
@@ -1257,6 +1520,9 @@ onMounted(() => {
   document.addEventListener('keydown', handleDocKeyDownCapture, true)
   document.addEventListener('keydown', handleDocUndoRedoKeyDown, true)
   document.addEventListener('paste', handleDocPaste, true)
+  rootEl.value?.addEventListener('mouseover', onChipMouseOver)
+  rootEl.value?.addEventListener('mouseout', onChipMouseOut)
+  rootEl.value?.addEventListener(CHIP_CREATED_EVENT, onChipCreatedFromTyping)
   // 文本选区覆盖层高亮需随滚动/缩放重绘（视口矩形会失效）
   document.addEventListener('scroll', handleViewportChange, true)
   window.addEventListener('resize', handleViewportChange)
@@ -1273,6 +1539,9 @@ onBeforeUnmount(() => {
   document.removeEventListener('keydown', handleDocKeyDownCapture, true)
   document.removeEventListener('keydown', handleDocUndoRedoKeyDown, true)
   document.removeEventListener('paste', handleDocPaste, true)
+  rootEl.value?.removeEventListener('mouseover', onChipMouseOver)
+  rootEl.value?.removeEventListener('mouseout', onChipMouseOut)
+  rootEl.value?.removeEventListener(CHIP_CREATED_EVENT, onChipCreatedFromTyping)
   document.removeEventListener('scroll', handleViewportChange, true)
   window.removeEventListener('resize', handleViewportChange)
   offLayoutChange?.()
@@ -1283,7 +1552,9 @@ onBeforeUnmount(() => {
 <template>
   <div
     ref="rootEl"
-    class="block-list"
+    class="block-root-list"
+    @mousedown="handleBlankAreaMousedown"
+    @click="handleBlankAreaClick"
   >
     <!-- 根级任务进度条：顶层 block（页面根 block 的子 block）含任务项时显示在列表顶部 -->
     <TaskProgressBar
@@ -1302,11 +1573,8 @@ onBeforeUnmount(() => {
       :depth="0"
       @drag-end="handleDragEnd"
     />
-    <!-- 底部留白：双击创建新 block -->
-    <div
-      class="block-list-padding"
-      @dblclick="handleCreateBlock"
-    />
+    <!-- 底部留白由根容器自身的 padding-bottom 承担（单击落在根上即进末尾空块），
+         不再单独渲染命中层：单独一层会被根容器的布局压掉宽度。 -->
 
     <!-- 拖放指示器：模块级共享状态，整个 BlockList 只渲染一次。
          由各 Block 的 useBlockDragDrop.handleDragMove 写入共享 ref。 -->
@@ -1315,6 +1583,9 @@ onBeforeUnmount(() => {
       :css-class="indicatorClass"
       :visible="indicatorVisible"
     />
+
+    <!-- 网页链接悬浮条（ADR-0067）：chip 与卡片/预览块共用一条 -->
+    <WebLinkToolbar />
 
     <!-- 块选区覆盖层（ADR-0065）：连续段合并成单层矩形，替代逐块的 `.cb-selected::after`。
          Teleport 到 body 同样是为了躲开 transform 祖先对 fixed 的困束（ADR-0032 铁律 2）。 -->
@@ -1341,14 +1612,17 @@ onBeforeUnmount(() => {
     <!-- 跨块文本选区工具条：选区由本组件持有（编辑器在拖拽越阈值后已失活），
          定位复用与高亮同一份矩形；格式按块回写 block.format.inlineMarks。 -->
     <InlineFormatToolbar
+      ref="toolbarRef"
       :range="selection.textRange.value"
       :range-rect="highlightRects[0] ?? null"
       :range-format="rangeFormat"
       :block-align="rangeAlign"
       :wrap-page-ref="wrapPageRefState"
+      :link="linkState"
       @apply-range="applyRangeMark"
       @apply-align="applyRangeAlign"
       @wrap-page-ref="wrapRangeAsPageRef"
+      @add-link="wrapRangeAsInlineLink"
     />
 
     <!-- 落点闪烁层（#109）：矩形与上一层同理 Teleport 到 body —— fixed 定位会被 transform 祖先困住。
@@ -1366,9 +1640,14 @@ onBeforeUnmount(() => {
 </template>
 
 <style lang="scss" scoped>
-.block-list {
+/* 根容器类名与列表行 `.block-list`（BulletRender 的 marker + 正文两列）彻底分开：
+   同名时全局列表行样式 `display:flex + align-items:baseline` 会把本容器当行处理，
+   底部留白与末尾空行都会被 baseline 行布局压掉。 */
+.block-root-list {
   padding-left: 0;
-  padding-bottom: 40px;
+  /* 40px 自身留白 + 原 .page-body 的 space-6 gap（已由 Backlinks 的 margin-top 承担，
+     见 _page.scss）——留白因此连续可命中，单击任意位置都能落到末尾空行。 */
+  padding-bottom: calc(40px + var(--space-6));
   min-height: 100px;
 }
 
@@ -1376,13 +1655,6 @@ onBeforeUnmount(() => {
    （bullet 列宽 20px − 圆点 6px 后居中 → 左缘 7px）；与下方列表间隔一个 space-3 */
 .block-list-task-progress {
   margin: var(--space-2) 0 var(--space-3) 0px;
-}
-
-.block-list-padding {
-  height: 40px;
-  user-select: none;
-  -webkit-user-select: none;
-  cursor: default;
 }
 
 /* 块选区覆盖层（ADR-0065）：一个连续段一条矩形，段内没有内部边界 —— DPR≠1 时

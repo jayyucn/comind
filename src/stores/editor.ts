@@ -33,6 +33,36 @@ export const useEditorStore = defineStore('editor', () => {
   const pendingArrowFocus = ref<{ x: number | null; line: 'first' | 'last' } | null>(null)
 
   /**
+   * 上一次编辑落点（ADR-0070）：「光标始终聚焦在块上」的恢复真源，常驻记录。
+   *
+   * - `pm`：活动块的 ProseMirror 编辑器。字符偏移**信任 PM 内部选区**——实例活着时
+   *   `commands.focus()` 就还原到光标最后所在字符位，不另记 pos（避免引入一份会随
+   *   撤销/粘贴过期的真源）。
+   * - `input`：pane 内的原生可编辑（字段输入框等）。DOM input 失焦后 selectionStart
+   *   虽也保留，但显式记录并回设，跨浏览器行为一致。元素用 WeakRef 防泄漏。
+   *
+   * paneId 用于「只在已激活的 pane 恢复」；作废由恢复门控隐式保证（块已不激活 /
+   * 元素已摘除 / pane 不匹配一律不恢复），显式清除只有 Esc 退出块激活这一处。
+   */
+  const lastEditPoint = ref<
+    | { kind: 'pm'; paneId: string | null; blockId: string; editor: unknown }
+    // 只记文本类输入框（记录侧用 isTextInput 收窄），类型照实声明：
+    // 宽成 HTMLElement 会让恢复侧拿不到 selectionStart / setSelectionRange。
+    | { kind: 'input'; paneId: string | null; el: WeakRef<HTMLInputElement | HTMLTextAreaElement>; start: number | null; end: number | null }
+    | null
+  >(null)
+
+  /** 记录上一次编辑落点（focusin 时由 useCaretPersistence 调用） */
+  function setLastEditPoint(point: NonNullable<typeof lastEditPoint.value>) {
+    lastEditPoint.value = point
+  }
+
+  /** 清除记录（Esc 退出块激活时调用） */
+  function clearLastEditPoint() {
+    lastEditPoint.value = null
+  }
+
+  /**
    * 撤销/重做恢复的选区范围。撤销要恢复的不只是「光标在哪」，还有「选中了哪段」——
    * 用户选中 D 删掉再撤销，必须回到「D 被选中」。单独一个 ref 而非复用 pendingCursorPos：
    * 后者是单点语义（点击/方向键/分块都在用），改它会污染所有既有落点。
@@ -429,6 +459,9 @@ export const useEditorStore = defineStore('editor', () => {
     consumeClickCoords,
     setArrowFocus,
     consumeArrowFocus,
+    lastEditPoint,
+    setLastEditPoint,
+    clearLastEditPoint,
     setSelectionRange,
     consumeSelectionRange,
     setTableCellFocus,

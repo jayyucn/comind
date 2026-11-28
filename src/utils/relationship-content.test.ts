@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import {
   decodeRelationshipContent,
   encodeRelationshipContent,
+  mapDecodedOffsetToEncoded,
   parseRelationshipSegment,
 } from './relationship-content'
 import { useRelationshipTypes } from '../composables/useRelationshipTypes'
@@ -190,5 +191,40 @@ describe('relationship-content decode/encode（round-trip）', () => {
     expect(encodeRelationshipContent(text, snapshot)).toBe(
       '((is-a))[[A]] 和 ((uses))[[B]] 和普通文本',
     )
+  })
+})
+
+describe('mapDecodedOffsetToEncoded', () => {
+  // `((是一个))` → `((is-a))`：doc 0-8 → encoded 0-4（8 字 ↔ 4 字）
+  const spans = [{ from: 0, to: 8, newFrom: 0, newTo: 4 }]
+
+  it('替换段之前的明文偏移逐字对应', () => {
+    expect(mapDecodedOffsetToEncoded([], 3, 10)).toBe(3)
+  })
+
+  it('替换段之后的偏移按长度差平移', () => {
+    // `((是一个))正文`（doc 8 处）→ `((is-a))正文`（encoded 4 处）
+    expect(mapDecodedOffsetToEncoded(spans, 8, 9)).toBe(4)
+    expect(mapDecodedOffsetToEncoded(spans, 10, 9)).toBe(6)
+  })
+
+  it('落进替换段内部：左半吸附段首，右半吸附段尾（拆分不得切进关系段）', () => {
+    expect(mapDecodedOffsetToEncoded(spans, 3, 9)).toBe(0)  // within 3 < ceil(8/2)
+    expect(mapDecodedOffsetToEncoded(spans, 5, 9)).toBe(4)  // within 5 ≥ ceil(8/2)
+  })
+
+  it('结果钳制到 encoded 长度内', () => {
+    expect(mapDecodedOffsetToEncoded([], 20, 10)).toBe(10)
+    expect(mapDecodedOffsetToEncoded(spans, 5, 3)).toBe(3)
+  })
+
+  it('多段替换：delta 逐段累加', () => {
+    // `((是一个))x((使用))y`：两段 8/6 字 → 4/4 字
+    const two = [
+      { from: 0, to: 8, newFrom: 0, newTo: 4 },
+      { from: 9, to: 15, newFrom: 5, newTo: 9 },
+    ]
+    expect(mapDecodedOffsetToEncoded(two, 16, 10)).toBe(10)  // 尾部 y 之后
+    expect(mapDecodedOffsetToEncoded(two, 12, 10)).toBe(9)   // 第二段内 → 吸附段尾
   })
 })

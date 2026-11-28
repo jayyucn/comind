@@ -10,6 +10,8 @@ import { usePageStore } from '../../../stores/pages'
 import type { Block } from '../../../types/block'
 import { getPrevSibling } from '../../../utils/block-helpers'
 import { decodeFieldValueData } from '../../../utils/field-value-codec'
+import { webLinkUrlOf } from '../../../utils/web-link'
+import { webLinkChipMarkdown } from '../../../utils/web-link-chip'
 
 /**
  * 块入口菜单的**动作层**：上下插入 / 缩进 / 复制 / 剪切 / 粘贴 / 重置为文本 / 删除，一份实现。
@@ -57,6 +59,15 @@ export function useBlockMenuActions(
 
   /** 顶级块没有「减少缩进」可言 */
   const canOutdent = computed(() => !!currentBlock.value?.parentId)
+
+  /**
+   * 「转为网页链接」只对**恰为一个 URL** 的文本块出现（ADR-0066 D10）：
+   * 正文里夹着 URL 的块不转 —— 块的 `content` 会整个被当 URL 用，夹文字就丢了。
+   */
+  const canConvertToWebLink = computed(() => {
+    const block = currentBlock.value
+    return !!block && block.type === 'text' && !!webLinkUrlOf(block.content)
+  })
 
   /** 字段值随行（与块复制同口径）：fieldValueStore 实时缓存优先，回退块上的快照 */
   function blockPropsRecord(block: Block): Record<string, { value: string; type: string }> | null {
@@ -165,6 +176,25 @@ export function useBlockMenuActions(
   }
 
   /**
+   * 就地把文本块转为网页链接块（ADR-0066 D10 的存量转换入口）。
+   *
+   * 与 `/web` 斜杠命令同一套步骤：转类型 → 写回 content（保持 segments 同步）→
+   * 落默认 format。元数据由 WebLinkBlock 挂载时按需抓取（D4），这里不发请求。
+   */
+  async function convertToWebLink(): Promise<void> {
+    const block = currentBlock.value
+    const url = block ? webLinkUrlOf(block.content) : null
+    if (!block || !url) return
+    editorStore.deactivateBlock()
+    await nextTick()
+    // ADR-0067：链接/标题是 text 块正文里的 markdown chip，不再是独立 web-link 块
+    await blockStore.updateBlockContent(
+      block.id,
+      webLinkChipMarkdown(new URL(url).hostname.replace(/^www\./, ''), url),
+    )
+  }
+
+  /**
    * 剪切 = 写「剪切」载荷 + 删块；先等剪贴板写完再删，写失败时块还在。
    *
    * 载荷带 `op: 'cut'`，所以粘贴时若这些块仍软删（本库、没被恢复），会被**搬走**
@@ -243,6 +273,7 @@ export function useBlockMenuActions(
   return {
     canIndent,
     canOutdent,
+    canConvertToWebLink,
     insertBlockAbove,
     insertBlockBelow,
     indentBlock,
@@ -250,6 +281,7 @@ export function useBlockMenuActions(
     copyBlock,
     cutBlock,
     pasteBlock,
+    convertToWebLink,
     resetToTextBlock,
     deleteBlock,
   }

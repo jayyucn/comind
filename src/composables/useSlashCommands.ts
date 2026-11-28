@@ -9,6 +9,8 @@ import { usePageStore } from '../stores/pages'
 import type { Command, CommandProps } from '../types/command'
 import { assetStorage } from '../utils/asset'
 import { openImageFileDialog } from '../utils/imagePicker'
+import { WEB_LINK_TYPE, webLinkUrlOf } from '../utils/web-link'
+import { webLinkChipMarkdown } from '../utils/web-link-chip'
 import { useTemplateRegistry } from './useTemplateRegistry'
 
 /**
@@ -185,8 +187,7 @@ function insertTag({ editor, range }: CommandProps) {
  * - 确认：保存 asset → 写 content → 切 image 类型 → 取消激活（始终渲染态）
  * - 取消：仅删去 /image 文本，块保持为空文本块
  */
-async function insertImage({ editor, range, blockId }: CommandProps) {
-  // 先删去 /image 文本；取消后块即保持为空文本块
+async function insertImage({ editor, range, blockId }: CommandProps) {  // 先删去 /image 文本；取消后块即保持为空文本块
   editor.chain()
     .deleteRange(range)
     .focus()
@@ -206,6 +207,34 @@ async function insertImage({ editor, range, blockId }: CommandProps) {
   await blockStore.updateBlockType(blockId, 'image')
   await blockStore.updateBlockContent(blockId, content)
   editorStore.deactivateBlock()
+}
+
+/**
+ * `/web` 转为网页链接块（ADR-0066）。
+ *
+ * 块正文就是 URL：原文本来就是一个网址则保留，否则清空 —— 不吞掉用户已经写下的文字。
+ * 转换后直接激活，让用户在行内输入框里粘贴网址（本块没有块编辑器，`focus` 由组件实现）。
+ */
+async function insertWebLink({ editor, range, blockId }: CommandProps) {
+  editor.chain()
+    .deleteRange(range)
+    .focus()
+    .run()
+
+  if (!blockId) return
+
+  const blockStore = useBlockStore()
+  const editorStore = useEditorStore()
+  const url = webLinkUrlOf(blockStore.getBlock(blockId)?.content)
+  if (!url) return
+
+  // ADR-0067：链接 chip 是 text 块正文的 markdown 片段；粘贴整段 URL 会自动转 chip，
+  // 命令主要服务「已写好 URL 的文本块就地转 chip」。
+  await blockStore.updateBlockContent(
+    blockId,
+    webLinkChipMarkdown(new URL(url).hostname.replace(/^www\./, ''), url),
+  )
+  editorStore.activateBlock(blockId)
 }
 
 /**
@@ -598,6 +627,15 @@ export const commands: Command[] = [
     icon: '🖼️',
     action: insertImage,
     convertBlockType: 'image'
+  },
+  {
+    id: 'web',
+    name: 'Web link',
+    alias: ['web', 'web-link', '网页链接', '链接卡片', 'link-card'],
+    group: '文本格式',
+    icon: '🔗',
+    action: insertWebLink,
+    convertBlockType: WEB_LINK_TYPE
   },
   {
     id: 'table',

@@ -16,9 +16,10 @@ function isInURL(doc: Node, pos: number): boolean {
     if (textAfter.match(/[^[\]]*\]\]/)) return true
   }
 
-  // 检查前面是否有 ://（URL 协议）
-  if (textBefore.match(/https?:\/\/[^\s]*$/)) return true
-  if (textBefore.match(/ftp:\/\/[^\s]*$/)) return true
+  // 检查前面是否有 ://（URL 协议）。键入网址时前两个 `/` 还没凑成 `//`，
+  // 只写 `https:` / `https:/` 也要认成「正在写网址」——否则 `https://` 里的斜杠
+  // 会把斜杠命令面板打开（模态层随后吞掉 Esc，块再也退不出编辑态）。
+  if (textBefore.match(/(?:https?|ftp):\/?[^\s]*$/)) return true
 
   // 检查是否在邮箱中
   if (textBefore.match(/[\w.-]+@[\w.-]+$/)) return true

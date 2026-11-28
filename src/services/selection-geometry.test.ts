@@ -23,7 +23,7 @@ import type { BlockOffset } from './text-range'
 
 /** 构造一页（数组下标 = 文档序），空串模拟空行 */
 function buildPage(contents: string[]): void {
-  document.body.innerHTML = `<div class="block-list">${contents
+  document.body.innerHTML = `<div class="block-root-list">${contents
     .map(
       (c, i) =>
         `<div data-block-id="b${i}" data-i="${i}"><div class="block-content"><div class="block-text"><span>${c}</span></div></div></div>`
@@ -167,7 +167,7 @@ describe('selectionClientRects - 无文本节点的块（空行 / 图片块）�
 
   test('图片块等有内嵌内容的块：保留整行色带，不收窄', () => {
     document.body.innerHTML =
-      '<div class="block-list"><div data-block-id="b0" data-i="0"><div class="block-content">' +
+      '<div class="block-root-list"><div data-block-id="b0" data-i="0"><div class="block-content">' +
       '<div class="image-block"><img src="x.png" alt=""></div></div></div></div>'
     expect(selectionClientRects(at(0, 0), at(0, 0))).toEqual([
       { left: 100, top: 0, width: 500, height: 24 },
@@ -252,7 +252,7 @@ describe('atomicUnitSpans - 内联原子单元区间', () => {
 
   function buildWith(innerHtml: string): void {
     document.body.innerHTML =
-      `<div class="block-list"><div data-block-id="b0"><div class="block-content">` +
+      `<div class="block-root-list"><div data-block-id="b0"><div class="block-content">` +
       `<div class="block-text">${innerHtml}</div></div></div></div>`
   }
 
@@ -282,7 +282,7 @@ describe('atomicUnitSpans - 内联原子单元区间', () => {
 
   test('编辑态（.ProseMirror 在 .block-content 内）同样量得到', () => {
     document.body.innerHTML =
-      `<div class="block-list"><div data-block-id="b0"><div class="block-content">` +
+      `<div class="block-root-list"><div data-block-id="b0"><div class="block-content">` +
       `<div class="tiptap ProseMirror"><p>ab <span class="block-tag">#任务</span> cd</p></div>` +
       `</div></div></div>`
     expect(atomicUnitSpans('b0')).toEqual([{ start: 3, end: 6 }])
@@ -310,7 +310,7 @@ describe('selectionClientRects - 行带归一化与叠层消重（chip 参与选
 
   function buildWithBlocks(spans: string[]): void {
     document.body.innerHTML =
-      '<div class="block-list">' +
+      '<div class="block-root-list">' +
       spans
         .map(
           (s, i) =>
@@ -413,7 +413,7 @@ describe('selectionClientRects - 行带归一化与叠层消重（chip 参与选
 /**
  * 多 pane 同页回归（2026-10-26 真机 bug：拖拽右侧内容、高亮错画到左侧）。
  *
- * 两个 `.block-list` 渲染相同的 `data-block-id`，但用不同 `data-i` 区分来源：
+ * 两个 `.block-root-list` 渲染相同的 `data-block-id`，但用不同 `data-i` 区分来源：
  * 左 pane = 真实块序号（0/1），右 pane = 100 + 序号（100/101）。`painted` 投影以
  * `top`（= data-i）为基准，故返回值直接暴露「矩形来自哪个 pane」。
  *
@@ -425,8 +425,8 @@ describe('selectionClientRects - 多 pane 同页作用域隔离', () => {
     const cell = (id: string, i: number, c: string) =>
       `<div data-block-id="${id}" data-i="${i}"><div class="block-content"><div class="block-text"><span>${c}</span></div></div></div>`
     document.body.innerHTML =
-      `<div class="block-list">${contents.map((c, i) => cell(`b${i}`, i, c)).join('')}</div>` +
-      `<div class="block-list">${contents.map((c, i) => cell(`b${i}`, 100 + i, c)).join('')}</div>`
+      `<div class="block-root-list">${contents.map((c, i) => cell(`b${i}`, i, c)).join('')}</div>` +
+      `<div class="block-root-list">${contents.map((c, i) => cell(`b${i}`, 100 + i, c)).join('')}</div>`
   }
 
   test('不传 scope：命中第一个（左 pane）实例 —— 这正是 bug 复现路径', () => {
@@ -438,13 +438,13 @@ describe('selectionClientRects - 多 pane 同页作用域隔离', () => {
 
   test('传右 pane root：高亮落在右 pane 实例（修复验证）', () => {
     buildTwoPanes(['abc', 'def'])
-    const rightRoot = document.querySelectorAll<HTMLElement>('.block-list')[1]
+    const rightRoot = document.querySelectorAll<HTMLElement>('.block-root-list')[1]
     expect(painted(selectionClientRects(at(0, 0), at(1, 1), rightRoot))).toEqual([[100, 3], [101, 1]])
   })
 
   test('端点判序在右 pane 作用域内仍然正确', () => {
     buildTwoPanes(['abc', 'def'])
-    const rightRoot = document.querySelectorAll<HTMLElement>('.block-list')[1]
+    const rightRoot = document.querySelectorAll<HTMLElement>('.block-root-list')[1]
     // 反向：head(b0,1) 在 anchor(b1,2) 之前 → start=b0,end=b1；矩形仍来自右 pane（100/101）。
     // b0 覆盖 "bc"(2)、b1 覆盖 "de"(2)。
     expect(painted(selectionClientRects(at(1, 2), at(0, 1), rightRoot))).toEqual([[100, 2], [101, 2]])
@@ -465,7 +465,7 @@ describe('selectionClientRects - 多 pane 同页作用域隔离', () => {
 describe('代码块 header（data-text-selection-ignore）不参与文本选区', () => {
   function buildCodeBlock(): void {
     document.body.innerHTML =
-      '<div class="block-list"><div data-block-id="b0" data-i="0"><div class="block-content">' +
+      '<div class="block-root-list"><div data-block-id="b0" data-i="0"><div class="block-content">' +
       '<div class="code-editor-wrapper">' +
       '<header class="code-header" data-text-selection-ignore>' +
       '<button class="code-toggle"><span>代码块</span></button>' +

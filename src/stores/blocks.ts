@@ -44,6 +44,7 @@ import {
 } from '../utils/inline-marks'
 import type { CoreClient } from '../wasm/client'
 import { initCoreClient, isTauriEnvironment, triggerSync } from '../wasm/client'
+import type { RenderSegment } from '../wasm/types'
 import { useBlockCardStore } from './blockCard'
 import { useEditorStore } from './editor'
 import { useFieldValueStore } from './fieldValue'
@@ -713,6 +714,7 @@ export const useBlockStore = defineStore('blocks', () => {
       pos: newPos,
       format: opts.format ?? {},
       type: opts.type ?? 'text',
+      renderSegments: opts.renderSegments,
       createdAt: Date.now(),
       updatedAt: Date.now()
     }
@@ -1799,7 +1801,7 @@ export const useBlockStore = defineStore('blocks', () => {
   async function updateBlockContent(
     blockId: string,
     content: string,
-    opts?: { commitTags?: boolean; inlineMarks?: InlineMarkRange[] },
+    opts?: { commitTags?: boolean; inlineMarks?: InlineMarkRange[]; renderSegments?: RenderSegment[] },
   ) {
     const block = blocks.value.find(b => b.id === blockId)
     if (!block) return
@@ -1860,7 +1862,9 @@ export const useBlockStore = defineStore('blocks', () => {
     // 新的 segments 将在 _doSave 成功返回后写入（_doSave 内 content 校验防竞态）。
     // 如果 save 返回旧格式（无 render_segments 字段），BulletRender 回退到纯文本渲染
     // （含 #tag 高亮），完整渲染在下一次 loadPageBlocks 时恢复。
-    block.renderSegments = undefined
+    // 例外：程序化改写（ADR-0067 视图切换等）可由调用方同拍携带本地补算好的段
+    // （utils/web-link-segments），裸文本窗口归零；save 返回段随后覆盖。
+    block.renderSegments = opts?.renderSegments
     _scheduleSave(block)
 
     const blockCardStore = useBlockCardStore()

@@ -13,7 +13,6 @@ import { useNavigateToPage } from '../../../composables/useNavigateToPage'
 import { useNavigateToTag } from '../../../composables/useNavigateToTag'
 import { useOpenPageInOtherPane } from '../../../composables/useOpenPageInOtherPane'
 import { useRelationshipMenu } from '../../../composables/useRelationshipMenu'
-import { renderedOffsetToEncodedOffset } from '../../../services/render-text'
 import { blockOffsetFromPoint, caretBlockOffsetFromDomSelection, SELECTION_IGNORE_SELECTOR } from '../../../services/selection-geometry'
 import type { useBlockStore } from '../../../stores/blocks'
 import type { useEditorStore } from '../../../stores/editor'
@@ -22,10 +21,13 @@ import { useTagsStore } from '../../../stores/tags'
 import type { BlockTypeEditorExposed } from '../../../types/block-type'
 import { calloutToneOf } from '../../../utils/callout'
 import { DATE_REF_AT_REGEX, type DateRefKind, normalizeRecurrence, type RecurrenceRule, serializeDateRef } from '../../../utils/date-ref'
+import { docToText } from '../../../utils/editor-text'
+import { openExternalUrl } from '../../../utils/external-link'
 import type { InlineMarkRange } from '../../../utils/inline-marks'
 import { mapInlineMarkOffsets, readInlineMarks } from '../../../utils/inline-marks'
 import {
   encodeRelationshipContentWithMeta,
+  mapDecodedOffsetToEncoded,
   takeRelationshipSnapshot,
 } from '../../../utils/relationship-content'
 
@@ -345,25 +347,29 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
         await blockStore.flushSave(blockId.value)
       }
 
-      // ── 坐标转换：ProseMirror 坐标基于编辑器显示的 decoded 文本，
-      //    但 block.content 是 encoded 文本。type/label 长度不同时偏移不匹配。
-      //    将 decoded 偏移转换为 encoded 偏移，确保拆分位置正确。
+      // ── 坐标转换：ProseMirror 坐标基于编辑器 doc 文本，block.content 是 encoded 文本。
+      //    换算必须走与 handleSave 同一条 encode 链（doc 文本 → encodeRelationship），
+      //    因为 chip / wiki link 的完整字面本就躺在 doc 里（与 content 一致），只有
+      //    关系单元的「中文 label ↔ 英文 type」长度不同。旧实现把 PM 坐标喂给了
+      //    render-text 的渲染坐标换算——chip 的渲染别名远短于字面，光标恒被判越界
+      //    钳到行尾，Enter 拆分就变成了「全部留在原块 + 下方多一个空块」。
       let effectivePos = cursorPosArg
       if (editorRef.value) {
-        const decodedText = editorRef.value.getText()
+        const ed = editorRef.value.getEditor?.()
+        const docText = ed ? docToText(ed.state.doc) : editorRef.value.getText()
         const decodedOffset = cursorPosArg > 0 ? cursorPosArg - 1 : 0  // pmPosToTextOffset
         const encodedContent = blockStore.getBlock(blockId.value)?.content ?? ''
-        if (decodedOffset >= decodedText.length) {
+        if (decodedOffset >= docText.length) {
           // 行尾：直接设为 encoded content 的行尾
           effectivePos = encodedContent.length + 1
         } else if (decodedOffset === 0) {
           // 行首：无需转换
           effectivePos = 1
         } else {
-          // 中间：decoded 文本即界面渲染文本（textContent），经 render-text.ts 单一 seam 换算为 encoded 偏移
-          const segments = blockStore.getBlock(blockId.value)?.renderSegments
-          const encodedOffset = renderedOffsetToEncodedOffset(encodedContent, segments, decodedOffset)
-          effectivePos = encodedOffset + 1  // 转回 ProseMirror 坐标
+          // 中间：doc 文本经 encode 链换算到 content 坐标；落进关系单元内部的
+          // 偏移吸附到段边界（与 render-text 的吸附规则同语义），不切残字面
+          const { spans } = encodeRelationshipContentWithMeta(docText, takeRelationshipSnapshot(blockId.value))
+          effectivePos = mapDecodedOffsetToEncoded(spans, decodedOffset, encodedContent.length) + 1  // 转回 ProseMirror 坐标
         }
       }
 
@@ -619,6 +625,13 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
   }
 
   // ── 鼠标交互 ──
+  /**
+   * 外链 chip 的按下记录（ADR-0069 D4）。URL 必须在 mousedown 就定住：读态一激活块，
+   * `BulletRender` 就被换成 `Editor`，之后 click 的 target 会退到公共祖先，那时已经
+   * 找不到 chip 了。落在隐藏语法格（`.pm-prefix-hidden`）不算点链接——视觉上那是链接外。
+   */
+  let linkPress: { url: string; x: number; y: number } | null = null
+
   /** mousedown：捕获点击坐标，在 tiptap 挂载前通知 editor store */
   function handleContentMousedown(e: MouseEvent) {
     const target = e.target as HTMLElement
@@ -628,6 +641,13 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
     // 不起文本选区，也不记录光标坐标——否则下拉/复制按钮会把块拉进编辑态，
     // 且 clickCoords 之后被 posAtCoords 换算成 header 处的错误光标位。
     if (target.closest(SELECTION_IGNORE_SELECTOR)) return
+    {
+      const chipEl = target.closest('.web-link-chip') as HTMLElement | null
+      const url = chipEl?.dataset.chipUrl
+      linkPress = chipEl && url && !target.closest('.pm-prefix-hidden')
+        ? { url, x: e.clientX, y: e.clientY }
+        : null
+    }
     // 表格块自带格选区（TableBlock 内实现）：内部拖拽不得进入跨块文本选区。
     // 表格的字符偏移是「所有单元格按行优先拼接」，跨格没有语义——从 A 格往下拖到
     // A 下方的格，在偏移坐标里已经越过整行后面的 B 格，于是 B 凭空入选；
@@ -644,7 +664,9 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
     // 本守卫只在**渲染态**生效：块激活后编辑器（.ProseMirror）在场，inline tag /
     // date-ref / wiki link 的编辑态装饰同样挂着这些类名 —— 此时提前 return 会跳过
     // 下方的 startTextTracking，从装饰字符内起拖将无法跨块选区（ADR-0035 老 bug 形态）。
-    if (!target.closest('.ProseMirror')) {
+    // 外链 chip 是例外（ADR-0069 D4）：读态点击同样要落光标（激活块）+ 抬起时打开，
+    // 因此 `linkPress` 命中时放行到下面的激活路径；wiki link 等其余 chip 仍走原来的一步跳转。
+    if (!target.closest('.ProseMirror') && !linkPress) {
       if (target.closest('.block-link')) return
       if (target.closest('.rel-type-label')) return
       if (target.closest('.date-ref')) return
@@ -710,6 +732,23 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
         selection.startTextTracking(anchor, { x: e.clientX, y: e.clientY })
       }
     }
+  }
+
+  /**
+   * 外链 chip 的抬起语义（ADR-0069 D4）：按下时登记的 chip 在抬起时才决定要不要打开。
+   * 四道门全过才开：左键、位移 ≤ 4px（起手拖选/跨块选区）、抬起时无选区（选词/拖选）、
+   * 按下落在可见别名上（隐藏语法格在 mousedown 时已排除）。
+   */
+  function handleContentMouseup(e: MouseEvent) {
+    const press = linkPress
+    linkPress = null
+    if (!press || e.button !== 0) return
+    // 双击的第二下（以及三击）：这一下是选词手势，不再重复打开
+    if (e.detail > 1) return
+    if (Math.abs(e.clientX - press.x) > 4 || Math.abs(e.clientY - press.y) > 4) return
+    const sel = window.getSelection()
+    if (sel && !sel.isCollapsed) return
+    void openExternalUrl(press.url)
   }
 
   function handleContentClick(e: MouseEvent) {
@@ -847,10 +886,8 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
     const link = target.closest('.block-link') as HTMLElement | null
     if (!link) return
 
-    if (link.dataset.external) {
-      window.open(link.dataset.external, '_blank', 'noopener,noreferrer')
-      return
-    }
+    // 外链 chip 的打开已上移到 mouseup（ADR-0069 D4）：这里再开一次会变成双开。
+    // wiki link 的导航仍在 click 处理。
     const pageName = link.dataset.page
     if (pageName) {
       // 对称 pane（ADR-0059）：Ctrl+Click（Mac ⌘+Click）→ 目标页在另一栏打开；
@@ -887,6 +924,7 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
     handleClear,
     handleCursorChange,
     handleContentMousedown,
+    handleContentMouseup,
     handleContentClick,
   }
 }
