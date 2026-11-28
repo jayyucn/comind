@@ -1,4 +1,5 @@
 import type { Block } from '../types/block'
+import { buildInlineLinkLiteral } from '../utils/inline-link'
 import type { InlineMarkRange } from '../utils/inline-marks'
 import { normalizeInlineMarks, readInlineMarks, shiftInlineMarks, sliceInlineMarks } from '../utils/inline-marks'
 import { renderedOffsetToEncodedOffset } from './render-text'
@@ -300,4 +301,47 @@ export function planTextRangeReplacement(
   )
 
   return { blockId: block.id, content, inlineMarks, caretOffset: lo + replacement.length }
+}
+
+/**
+ * 把单块内选区包成外链字面 `[标题](url)`。
+ *
+ * 与 `planTextRangeReplacement` 的差别只有一处，但必须单独写：后者丢弃被替换区间的
+ * marks（删除/覆盖语义下这是对的），而这里选区文字是被**搬进标题位**的 ——
+ * 加粗、颜色得跟着走，否则「选中加粗文字加链接」会静默掉格式。
+ *
+ * 坐标链与替换计划同源（渲染偏移 → 编码偏移），跨块与非 text 块返回 null。
+ */
+export function planTextRangeLinkWrap(
+  blocks: Block[],
+  range: TextRange,
+  title: string,
+  url: string,
+): TextRangeReplacement | null {
+  const { start, end } = normalizeTextRange(blocks, range)
+  if (start.blockId !== end.blockId) return null
+
+  const block = blocks.find(b => b.id === start.blockId)
+  if (!block || block.type !== 'text') return null
+
+  const lo = renderedOffsetToEncodedOffset(block.content, block.renderSegments, start.offset)
+  const hi = renderedOffsetToEncodedOffset(block.content, block.renderSegments, end.offset)
+  if (hi <= lo) return null
+
+  const literal = buildInlineLinkLiteral(title, url)
+  const content = block.content.slice(0, lo) + literal + block.content.slice(hi)
+  const marks = readInlineMarks(block.format, block.content.length)
+  // `[` 占 1 字符：标题位 = lo + 1；`](url)` 之后再接原后半段
+  const titleShift = lo + 1
+  const tailShift = lo + literal.length
+  const inlineMarks = normalizeInlineMarks(
+    [
+      ...sliceInlineMarks(marks, 0, lo),
+      ...shiftInlineMarks(sliceInlineMarks(marks, lo, hi), titleShift),
+      ...shiftInlineMarks(sliceInlineMarks(marks, hi, block.content.length), tailShift),
+    ],
+    content.length,
+  )
+
+  return { blockId: block.id, content, inlineMarks, caretOffset: lo + literal.length }
 }

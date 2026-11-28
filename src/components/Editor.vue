@@ -33,6 +33,7 @@ import { type BlockAlign,blockAlignOf } from '../utils/block-align'
 import type { DateRefKind } from '../utils/date-ref'
 import { debounce } from '../utils/debounce'
 import { docToText, HARD_BREAK_TEXT } from '../utils/editor-text'
+import { buildInlineLinkLiteral, linkTitleRejectionHint } from '../utils/inline-link'
 import type { InlineMarkAttrs, InlineMarkRange } from '../utils/inline-marks'
 import { inlineMarksToHtml, normalizeInlineMarks, sameInlineMarks } from '../utils/inline-marks'
 import { padUnitForDoc } from '../utils/inline-unit-pad'
@@ -127,6 +128,8 @@ const menuRange = ref({ from: 0, to: 0 })
 const menuAnchorEl = ref<HTMLElement | null>(null)
 const menuQuery = ref('')
 const menuRef = ref<InstanceType<typeof PageLinkMenu> | null>(null)
+/** 选区浮层句柄：Ctrl+K 经它打开链接面板（定位与二级互斥都在浮层内部） */
+const toolbarRef = ref<InstanceType<typeof InlineFormatToolbar> | null>(null)
 
 // tag 菜单（#tag 选择，类比 wiki-link）
 const tagMenuVisible = ref(false)
@@ -378,6 +381,79 @@ async function wrapSelectionAsPageRef() {
     .catch((err: unknown) =>
       useEditorStore().showToast(`页面「${name}」未能创建：${(err as Error).message}`, 'error'),
     )
+}
+
+/**
+ * 「添加链接」的三态（与 wrapPageRefState 同一套口径：不渲染 / 置灰 / 可点）。
+ *
+ * 编辑态只认**语法前缀**：文档里外链 chip 的语法字符是真实文本（D8 只做零宽隐藏），
+ * `textBetween` 会把 `[标题](url)` 整个带出来 —— 一眼认出 `[..](..)` 就直说
+ * 「选区包含已有链接」，而不是让用户去找屏幕上根本看不见的方括号。
+ * 标签/日期在编辑态就是普通文本（没有可读的原子边界），这一步不拦；
+ * 渲染态那边由 `firstNonPlainUnitInRange` 拦。
+ */
+const linkState = computed<{ enabled: boolean; hint?: string; text: string } | null>(() => {
+  void selectionRevision.value
+  const instance = editor.value
+  if (!instance) return null
+  const { from, to } = instance.state.selection
+  if (from === to) return null
+  // leafText 也传 `\n`：hardBreak 是 leaf 节点，默认不参与 textBetween，选中含硬换行的
+  // 文字会得到「看不见空档」的拼接结果 —— 判据失效，写回时还会把换行整段吃掉。
+  const raw = instance.state.doc.textBetween(from, to, '\n', '\n')
+  if (/\[[^[\]]*\]\(https?:\/\//.test(raw)) {
+    return { enabled: false, hint: '选区包含已有链接，不能再次包裹', text: raw }
+  }
+  const hint = linkTitleRejectionHint(raw)
+  return hint ? { enabled: false, hint, text: raw } : { enabled: true, text: raw }
+})
+
+/**
+ * 把当前选区包成 `[文字](url)`。
+ *
+ * 分三段插入而非整段插字面：语法字符（`[` 与 `](url)`）不继承选区的行内格式，
+ * 只有标题跟着原选区走 —— 与渲染态 `planTextRangeLinkWrap` 的 marks 切片同一口径，
+ * 「选中加粗文字加链接」在两条路径上产出同一份 inlineMarks。
+ *
+ * 替换用一次 `insertContentAt`（同 handleWikiLinkSelect）：拆成 delete + insert 时
+ * Enter 路径的 `tr.selection` 映射会落空。
+ */
+function applyInlineLink(title: string, url: string) {
+  const instance = editor.value
+  if (!instance) return
+  const { from, to } = instance.state.selection
+  if (from === to) return
+  const name = title.trim()
+  // 选区起点上的 marks：部分加粗的选区取到的是「起点所在段」的格式，够用且可预测
+  const marks = instance.state.doc.resolve(from).marks()
+  const markJson = marks.map(mark => ({ type: mark.type.name, attrs: mark.attrs }))
+  const tail = `](${url})`
+  const literal = buildInlineLinkLiteral(name, url)
+  instance.chain()
+    .focus()
+    .insertContentAt({ from, to }, [
+      { type: 'text', text: '[' },
+      { type: 'text', text: name, marks: markJson },
+      { type: 'text', text: tail },
+    ])
+    .setTextSelection(from + literal.length)
+    .run()
+}
+
+/**
+ * Ctrl/Cmd+K = 添加链接（ADR-0071）。
+ *
+ * 挂在 wrapper 而不是 document：编辑区的 keydown 会先冒到这里，`stopPropagation`
+ * 后 BlockList 的 document 监听就收不到，两条路径不会同时开花。
+ * 没有可用选区时不抢键 —— 静默放行，全局也没有第二个 Ctrl+K 消费者了。
+ */
+function onWrapperKeyDown(e: KeyboardEvent) {
+  const isLinkKey = (e.key === 'k' || e.key === 'K') && (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey
+  if (!isLinkKey) return
+  if (!linkState.value?.enabled) return
+  e.preventDefault()
+  e.stopPropagation()
+  toolbarRef.value?.openLinkEditor()
 }
 
 // 模板驱动的 tag 选择（由 TagMenu @select 触发）：确保标签实体存在并把
@@ -745,7 +821,10 @@ defineExpose({
 </script>
 
 <template>
-  <div class="editor-wrapper">
+  <div
+    class="editor-wrapper"
+    @keydown="onWrapperKeyDown"
+  >
     <div
       v-if="showFullPlaceholder && !hasContent"
       class="editor-placeholder"
@@ -780,12 +859,15 @@ defineExpose({
       @cancel="handleKindSelectCancel"
     />
     <InlineFormatToolbar
+      ref="toolbarRef"
       :editor="editor"
       :revision="selectionRevision"
       :block-align="blockAlignOf(props.blockFormat)"
       :wrap-page-ref="wrapPageRefState"
+      :link="linkState"
       @apply-align="emit('align', $event)"
       @wrap-page-ref="wrapSelectionAsPageRef"
+      @add-link="applyInlineLink"
     />
   </div>
 </template>

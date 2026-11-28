@@ -33,7 +33,7 @@ import {
   renderedOffsetToEncodedOffset,
 } from '../services/render-text'
 import { blockOffsetFromPoint, mergeSelectionRects, selectionClientRects, type SelectionRect } from '../services/selection-geometry'
-import { normalizeTextRange } from '../services/text-range'
+import { normalizeTextRange, planTextRangeLinkWrap } from '../services/text-range'
 import { fetchAndApplyChipMeta } from '../services/web-link-actions'
 import { useBlockStore } from '../stores/blocks'
 import { useEditorStore } from '../stores/editor'
@@ -41,6 +41,7 @@ import { usePageStore } from '../stores/pages'
 import type { Block, TreeNode } from '../types/block'
 import { type BlockAlign,blockAlignOf } from '../utils/block-align'
 import { sortByDocumentOrderIds } from '../utils/block-helpers'
+import { linkTitleRejectionHint } from '../utils/inline-link'
 import {
   clearInlineMarkRange,
   type InlineMarkAttrs,
@@ -435,6 +436,17 @@ async function handleDocKeyDown(e: KeyboardEvent) {
     pasteShiftHeld = e.shiftKey
   } else {
     pasteShiftHeld = false
+  }
+  // Ctrl/Cmd+K = 把当前文本选区包成外链（ADR-0071）。
+  // 编辑态在 Editor 的 wrapper 上就被拦下并 stopPropagation，走不到这里；
+  // 这一支只服务渲染态（编辑器已失活）的单块文本选区。
+  const isLinkKey = (e.key === 'k' || e.key === 'K') && (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey
+  if (isLinkKey) {
+    if (!linkState.value?.enabled) return
+    e.preventDefault()
+    e.stopPropagation()
+    toolbarRef.value?.openLinkEditor()
+    return
   }
   // Ctrl/Cmd+X（不带 Shift/Alt）：剪切的字面授权只有这一 chord，其余组合交还原生行为
   const isCutKey = (e.key === 'x' || e.key === 'X') && (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey
@@ -1210,6 +1222,73 @@ function applyRangeMark(key: InlineMarkKey, token: string | null) {  for (const 
   }
 }
 
+/** 选区浮层句柄：Ctrl+K 经它打开链接面板（定位与二级互斥都在浮层内部） */
+const toolbarRef = ref<InstanceType<typeof InlineFormatToolbar> | null>(null)
+
+/**
+ * 「添加链接」的三态（与 wrapPageRefState 同一条判据链）。
+ *
+ * 差别只有两处：标题判据换 `linkTitleRejectionHint`（`|` 在链接标题里合法，页名不行）；
+ * 置灰文案说「链接文字」而不是「页面名」。「覆盖已渲染单元」照旧拦 —— 把一段已有
+ * chip / 标签包进标题位，产出的字面里带语法字符，渲染时必定断链。
+ */
+const linkState = computed<{ enabled: boolean; hint?: string; text: string } | null>(() => {
+  const tr = selection.textRange.value
+  if (!tr) return null
+  if (tr.anchor.blockId !== tr.head.blockId) return null
+
+  const block = blockStore.getBlock(tr.anchor.blockId)
+  if (!block || block.type !== 'text') return null
+
+  const lo = Math.min(tr.anchor.offset, tr.head.offset)
+  const hi = Math.max(tr.anchor.offset, tr.head.offset)
+  if (hi <= lo) return null
+
+  const blocker = firstNonPlainUnitInRange(block.content, block.renderSegments, lo, hi)
+  if (blocker) {
+    const label = NON_PLAIN_UNIT_LABEL[blocker.kind]
+    const named = blocker.visible ? ` ${blocker.visible}` : ''
+    return { enabled: false, hint: `选区覆盖了${label}${named}，不能作为链接文字`, text: '' }
+  }
+
+  // 标题判的是**要写进 `[ ]` 的那份原文**（编码切片），不是屏幕上的渲染字面
+  const encLo = renderedOffsetToEncodedOffset(block.content, block.renderSegments, lo)
+  const encHi = renderedOffsetToEncodedOffset(block.content, block.renderSegments, hi)
+  const raw = block.content.slice(encLo, encHi)
+  const hint = linkTitleRejectionHint(raw)
+  return hint ? { enabled: false, hint, text: raw } : { enabled: true, text: raw }
+})
+
+/**
+ * 把渲染态的单块选区包成 `[文字](url)`。
+ *
+ * 与 wrapRangeAsPageRef 同一条写回链，只把规划器换成 `planTextRangeLinkWrap`
+ * （那个保留选区的行内格式）。收场同样必须 flushSave：写回时 `renderSegments`
+ * 已过时被清掉，不立刻落库的话块会停在裸字面态，用户以为没生效。
+ */
+async function wrapRangeAsInlineLink(title: string, url: string) {
+  const tr = selection.textRange.value
+  if (!tr) return
+  const plan = planTextRangeLinkWrap(blockStore.getBlocksByPage(props.pageId), tr, title, url)
+  if (!plan) return
+
+  await blockStore.updateBlockContent(plan.blockId, plan.content, { inlineMarks: plan.inlineMarks })
+
+  // 收场与 wrapRangeAsPageRef 同口径：结束选区（浮条随之关闭）、光标落 `)` 之后。
+  // `caretOffset` 是**内容偏移**（`lo + 字面长度` = `)` 的下一位），而 `activateBlock`
+  // 收的是 **ProseMirror 文档位置**（首位之前 = 1），所以必须 +1；少这一步光标停在
+  // 隐藏尾巴 `(` 前面，虽看着在 chip 末尾，接着打字却写进了隐藏语法里。
+  //
+  // 先丢掉拖选留下的点击坐标：`focusActiveEditor` 的优先级是「点击坐标 > cursorPos」，
+  // 而这份坐标来自**选区起点那次 mousedown**（渲染态拖选必然留下它，键盘选则没有）。
+  // 不清的话本轮 cursorPos 直接被它顶掉，光标落在鼠标按下处，`consumeCursorPos` 也
+  // 不会被消费（`pendingCursorPos` 一直挂着）。
+  selection.clearTextSelection()
+  editorStore.consumeClickCoords()
+  editorStore.activateBlock(plan.blockId, plan.caretOffset + 1)
+  void blockStore.flushSave(plan.blockId)
+}
+
 /**
  * 「转为页面引用」按钮的状态（D1/D2/D3）。
  *
@@ -1286,8 +1365,10 @@ async function wrapRangeAsPageRef() {
   const result = await blockStore.replaceTextRange(props.pageId, tr, padded)
   if (!result) return
 
-  // 收场：结束选区（浮条随之关闭）、光标落 `]]` 之后，可直接接着写
+  // 收场：结束选区（浮条随之关闭）、光标落 `]]` 之后，可直接接着写。
+  // 丢掉拖选留下的点击坐标：它比 cursorPos 优先，不清会让光标落回鼠标按下处。
   selection.clearTextSelection()
+  editorStore.consumeClickCoords()
   editorStore.activateBlock(result.id, result.cursorPos)
 
   // 立刻落库，不等 300ms 防抖：写回时 `renderSegments` 被清空（索引已过时），
@@ -1452,14 +1533,17 @@ onBeforeUnmount(() => {
     <!-- 跨块文本选区工具条：选区由本组件持有（编辑器在拖拽越阈值后已失活），
          定位复用与高亮同一份矩形；格式按块回写 block.format.inlineMarks。 -->
     <InlineFormatToolbar
+      ref="toolbarRef"
       :range="selection.textRange.value"
       :range-rect="highlightRects[0] ?? null"
       :range-format="rangeFormat"
       :block-align="rangeAlign"
       :wrap-page-ref="wrapPageRefState"
+      :link="linkState"
       @apply-range="applyRangeMark"
       @apply-align="applyRangeAlign"
       @wrap-page-ref="wrapRangeAsPageRef"
+      @add-link="wrapRangeAsInlineLink"
     />
 
     <!-- 落点闪烁层（#109）：矩形与上一层同理 Teleport 到 body —— fixed 定位会被 transform 祖先困住。

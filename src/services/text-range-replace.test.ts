@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { planTextRangeReplacement } from './text-range'
+import { planTextRangeLinkWrap, planTextRangeReplacement } from './text-range'
 import type { Block } from '../types/block'
 
 /**
@@ -122,5 +122,73 @@ describe('planTextRangeReplacement — 拒绝面', () => {
 
   it('折叠区间返回 null（没有可替换的文字）', () => {
     expect(planTextRangeReplacement([block()], sameBlockRange(2, 2), '[[X]]')).toBeNull()
+  })
+})
+
+/**
+ * 「添加链接」的写回路径。
+ *
+ * 与替换计划的差别只有一处、但必须单测钉住：**选区文字被搬进标题位，格式得跟着走**。
+ * 复用替换计划会让「选中加粗文字加链接」静默掉格式 —— 屏幕上看不出来，直到用户
+ * 切视图或改别名才发现。
+ */
+describe('planTextRangeLinkWrap — 包裹外链', () => {
+  it('字面写回，caret 落在右括号之后', () => {
+    const plan = planTextRangeLinkWrap([block()], sameBlockRange(2, 5), '项目A', 'https://a.com')
+    expect(plan).not.toBeNull()
+    expect(plan!.content).toBe('我看[项目A](https://a.com)了')
+    expect(plan!.caretOffset).toBe(2 + '[项目A](https://a.com)'.length)
+  })
+
+  it('标题两端的空白不进字面', () => {
+    const plan = planTextRangeLinkWrap([block()], sameBlockRange(2, 5), '  项目A ', 'https://a.com')
+    expect(plan!.content).toBe('我看[项目A](https://a.com)了')
+  })
+
+  it('选区的行内格式搬到标题位（不是整段，也不是丢弃）', () => {
+    const marked = block({
+      content: 'abcdef',
+      format: { inlineMarks: [{ start: 2, end: 4, bold: true }] },
+    })
+    const plan = planTextRangeLinkWrap([marked], sameBlockRange(2, 4), 'cd', 'https://a.com')
+    expect(plan!.content).toBe('ab[cd](https://a.com)ef')
+    // `[` 占 1 字符 → 标题位从 3 开始；语法字符本身不带格式
+    expect(plan!.inlineMarks).toEqual([{ start: 3, end: 5, bold: true }])
+  })
+
+  it('右侧 marks 按整个字面长度平移', () => {
+    const marked = block({
+      content: 'abcdef',
+      format: { inlineMarks: [{ start: 4, end: 6, italic: true }] },
+    })
+    const literal = '[cd](https://a.com)'
+    const plan = planTextRangeLinkWrap([marked], sameBlockRange(2, 4), 'cd', 'https://a.com')
+    expect(plan!.inlineMarks).toEqual([
+      { start: 2 + literal.length, end: 4 + literal.length, italic: true },
+    ])
+  })
+})
+
+describe('planTextRangeLinkWrap — 拒绝面', () => {
+  it('跨块返回 null（链接标题没有跨块语义）', () => {
+    const blocks = [block(), block({ id: 'b2', pos: 2000, content: '第二块' })]
+    expect(
+      planTextRangeLinkWrap(
+        blocks,
+        { anchor: { blockId: 'b1', offset: 1 }, head: { blockId: 'b2', offset: 2 } },
+        'X',
+        'https://a.com',
+      ),
+    ).toBeNull()
+  })
+
+  it('表格块返回 null', () => {
+    expect(
+      planTextRangeLinkWrap([block({ type: 'table', content: '' })], sameBlockRange(0, 1), 'X', 'https://a.com'),
+    ).toBeNull()
+  })
+
+  it('折叠区间返回 null', () => {
+    expect(planTextRangeLinkWrap([block()], sameBlockRange(2, 2), 'X', 'https://a.com')).toBeNull()
   })
 })
