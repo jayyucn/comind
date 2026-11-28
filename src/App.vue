@@ -53,6 +53,7 @@ import { emitLayoutChange, observeLayoutRoot } from './services/layout-change'
 import { useEditorStore } from './stores/editor'
 import { usePageStore } from './stores/pages'
 import { currentView, usePanesStore } from './stores/panes'
+import { isBlankSurfaceDoubleClick } from './utils/blank-double-click'
 import { openExternalUrl } from './utils/external-link'
 import { resolveUndoScopeBlockPage, takeOverUndoRedo } from './utils/undo-chord'
 import { isTauriEnvironment } from './wasm/tauri-platform'
@@ -240,6 +241,8 @@ onMounted(async () => {
   document.addEventListener('keydown', handleGlobalUndoRedoKeyDown, true)
   // Alt+←/→ 活动 pane 后退/前进
   document.addEventListener('keydown', handlePaneNavKeydown)
+  // 页面留白双击不选词（见 isBlankSurfaceDoubleClick）
+  document.addEventListener('mousedown', handleBlankSurfaceMousedown, true)
   // 孤儿查询块视图核销：首屏之后空闲时跑（后台数据卫生，不占启动关键路径）
   scheduleOrphanViewCleanup()
 })
@@ -253,6 +256,7 @@ onBeforeUnmount(() => {
   document.removeEventListener('keydown', handleGlobalKeydownCapture, true)
   document.removeEventListener('keydown', handleGlobalUndoRedoKeyDown, true)
   document.removeEventListener('keydown', handlePaneNavKeydown)
+  document.removeEventListener('mousedown', handleBlankSurfaceMousedown, true)
 })
 
 /**
@@ -308,6 +312,17 @@ function handleGlobalExternalAnchorClick(e: MouseEvent) {
   if (!/^https?:\/\//i.test(href)) return
   e.preventDefault()
   void openExternalUrl(href)
+}
+
+/**
+ * 页面留白双击不选词（ADR-0070 D7 补丁）。
+ *
+ * 浏览器双击落点不在文本上时，会把选区扩展到「最近的词」：块列表两侧留白双击会选中
+ * 页面标题或「反向链接」里的两个字。底部留白早由 BlockList 的 mousedown 拦截兜住，
+ * 两侧留白没有那层，规律一样地漏。选词从第二次 mousedown 起算，只在这一处能拦住。
+ */
+function handleBlankSurfaceMousedown(e: MouseEvent) {
+  if (isBlankSurfaceDoubleClick(e)) e.preventDefault()
 }
 </script>
 

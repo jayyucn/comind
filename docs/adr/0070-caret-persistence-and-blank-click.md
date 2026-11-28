@@ -109,6 +109,28 @@
 - 查询投影已有空卡片过滤（`excludeEmptyCards`）、TOC 只取标题块，二者不受影响。
 - 回归面：`BlockList.selection-orchestration` / `keyboard-delete` / `undo-redo` 的夹具显式补末尾空块，块集合断言按新语义取值。
 
+### D8 页面留白双击不选词
+
+浏览器双击落点不在文本上时，会把选区扩展到「最近的词」：块列表两侧留白双击会选中页面标题或下方「反向链接」里的两个字。底部留白此前已因 D7 的 mousedown 拦截不受影响（`target === .block-root-list`），两侧留白落在页面壳容器上，因此漏网。
+
+决策：`document` 捕获阶段监听 mousedown，同时满足以下条件时 `preventDefault`：
+
+- `detail >= 2`（双击第二下起）——选词在这一刻起算；`dblclick` / `selectionchange` 之后再清选区会先闪一帧高亮；
+- 命中元素位于 `.pane-body` 内（页面内容区；侧栏、顶栏、Teleport 弹层不参与）；
+- 命中元素自身没有任何非空直接文本节点（与浏览器就近选词的入口条件一致）；
+- 命中元素不在 `[data-block-id]` / `.ProseMirror` / `[contenteditable]` / 表单控件 / `.cm-editor` 内——空段落没有文本节点，一并拦截会连「双击空块放光标」一起废掉。
+
+已否决提案存档：
+
+- 页面壳 `user-select: none` + 文本容器白名单 `text`：能挡住空白选词，但实测会改变块内的选择边界，块内双击退化为整段选中。
+- `dblclick` / `selectionchange` 后清空选区：选词已发生在第二次 mousedown，补救会先出现一帧选中高亮，且会误清真实拖动选区的结果。
+
+后果：
+
+- 实现：`src/utils/blank-double-click.ts`（判定单源）、`App.vue`（document 捕获注册）。
+- 回归面：`src/utils/blank-double-click.test.ts`（判定边界 6 例）、`tests/blank-area-dblclick.spec.ts`（两侧留白无选中 / 双击标题仍选词）。
+- 可编辑标题（`.page-title` 双击进编辑）不受影响：双击目标带文本，判定直接放行。
+
 ## 后果
 
 - ADR-0069 D4 的登记机制（`requestCaretRestore` / 2 分钟时效 / 一次性消费）废弃删除，其「打开外链回来能接着敲」的目标由本决策的常驻恢复覆盖。
