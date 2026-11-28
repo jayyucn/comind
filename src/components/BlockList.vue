@@ -1030,7 +1030,12 @@ function handleViewportChange() {
  * 网页链接 chip 的悬浮条触发（ADR-0067 D2）：chip 是 v-html 出来的裸 span，
  * 没法在组件里绑事件，只能在列表根上做委托。
  */
-const { show: showChipToolbar, scheduleHide: hideChipToolbar } = useWebLinkChipToolbar()
+const {
+  show: showChipToolbar,
+  scheduleHide: hideChipToolbar,
+  hide: hideChipToolbarNow,
+  setRangeSelectionActive: setChipRangeSelection,
+} = useWebLinkChipToolbar()
 
 function onChipMouseOver(e: MouseEvent): void {
   const target = e.target as HTMLElement | null
@@ -1066,7 +1071,16 @@ function onChipMouseOut(e: MouseEvent): void {
 /** 布局变更（折叠侧栏 / 侧栏开合 / 拖 pane 分隔条）：不派发 window resize，但视口矩形已失效 */
 let offLayoutChange: (() => void) | null = null
 
-watch(() => selection.textRange.value, () => refreshTextHighlight())
+/**
+ * 跨块文本选区：拖选越过 chip 后编辑器已失活，DOM 的 `selectionchange` 不再可靠，
+ * 这条 range 是「选区存在」的唯一信号 —— 同步给悬浮条（选区在则让位给 InlineFormatToolbar），
+ * 并当场收掉可能已浮出的那条。
+ */
+watch(() => selection.textRange.value, (tr) => {
+  refreshTextHighlight()
+  setChipRangeSelection(!!tr)
+  if (tr) hideChipToolbarNow()
+})
 
 // 选中集合变化（含拖拽 tracking 阶段逐帧变化）：块渲染可能同帧还没落地，故 post 刷。
 // 用 id 串做签名而不是 watch 同一个 Set：state 每次转移都换新对象，但只有「哪些块被选中」

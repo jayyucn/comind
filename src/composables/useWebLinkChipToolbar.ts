@@ -39,9 +39,30 @@ let pinned = false
 /** 视图切换下拉的开合（悬浮条内部状态，独立导出供全局关闭） */
 const viewMenuOpen = ref(false)
 
+/**
+ * 跨块 / 外部文本选区是否活跃。这类选区在编辑器失活后收不到稳定的 `selectionchange`
+ * 信号，只能由宿主（BlockList 的 `crossBlockSelection.textRange`）写进来。
+ */
+let rangeSelectionActive = false
+
+/**
+ * 文本选区活跃 ⇒ 悬浮条让位。
+ *
+ * 选区存在时正文上方已经浮着 InlineFormatToolbar，两条浮条叠在同一段文字上互相遮挡，
+ * 而选区的动作（加粗/颜色/加链接）与链接菜单毫无关系。块选区不在此列：那种状态没有
+ * 浮条竞争，块内 hover 照旧浮出。
+ */
+function textSelectionActive(): boolean {
+  if (rangeSelectionActive) return true
+  // 单块内的拖选读 DOM 真实选区（TipTap 与本项目渲染态都用原生 selection）
+  const sel = window.getSelection()
+  return !!sel && sel.rangeCount > 0 && !sel.isCollapsed
+}
+
 export function useWebLinkChipToolbar() {
   function show(next: WebLinkToolbarTarget): void {
     if (pinned) return
+    if (textSelectionActive()) return
     if (hideTimer) {
       clearTimeout(hideTimer)
       hideTimer = undefined
@@ -94,5 +115,21 @@ export function useWebLinkChipToolbar() {
     return target.value?.blockId === blockId
   }
 
-  return { target, show, scheduleHide, hide, cancelHide, setPinned, isFor, viewMenuOpen }
+  /** 跨块 / 外部选区由宿主同步进来（见 rangeSelectionActive） */
+  function setRangeSelectionActive(active: boolean): void {
+    rangeSelectionActive = active
+  }
+
+  return {
+    target,
+    show,
+    scheduleHide,
+    hide,
+    cancelHide,
+    setPinned,
+    isFor,
+    viewMenuOpen,
+    textSelectionActive,
+    setRangeSelectionActive,
+  }
 }

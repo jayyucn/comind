@@ -9,7 +9,7 @@
  * 视图切换在本条内展开（不套第二层浮层），避免二级 Teleport 的定位抖动。
  */
 import { Check, ChevronDown, Copy, Link2Off, PencilLine } from 'lucide-vue-next'
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import { useWebLinkChipToolbar } from '../../../../composables/useWebLinkChipToolbar'
 import {
@@ -31,7 +31,7 @@ import {
 } from '../../../../utils/web-link'
 import { chipAliasForView, chipMetaTitleOf, findWebLinkChip, webLinkChipMarkdown } from '../../../../utils/web-link-chip'
 
-const { target, hide, cancelHide, scheduleHide, setPinned, viewMenuOpen } = useWebLinkChipToolbar()
+const { target, hide, cancelHide, scheduleHide, setPinned, viewMenuOpen, textSelectionActive } = useWebLinkChipToolbar()
 
 const editing = ref(false)
 const draftTitle = ref('')
@@ -110,8 +110,21 @@ watch(editing, (on) => {
   else document.removeEventListener('mousedown', onDocMouseDown, true)
 })
 
+/**
+ * 拖选文字 → 正文上方浮出 InlineFormatToolbar，悬浮条必须同期收起：
+ * 两条浮条贴在同一段文字上会互相遮挡，且选区内指针仍停在 chip 上时不会有新的 mouseenter
+ * 来纠正（`show` 的选区闸门只挡「新浮出」，已浮出的得在这里收）。
+ */
+function onSelectionChange(): void {
+  if (!target.value) return
+  if (textSelectionActive()) hide()
+}
+
+onMounted(() => document.addEventListener('selectionchange', onSelectionChange))
+
 onBeforeUnmount(() => {
   document.removeEventListener('mousedown', onDocMouseDown, true)
+  document.removeEventListener('selectionchange', onSelectionChange)
   // 编辑态钉住的是模块级 pinned 状态：组件卸载（切页 / 关 pane）不收拾，后续悬浮条会被永久冻结
   if (!editing.value) return
   editing.value = false
