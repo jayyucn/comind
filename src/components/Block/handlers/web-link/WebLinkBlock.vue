@@ -23,11 +23,11 @@ import {
   clampPreviewHeight,
   DEFAULT_PREVIEW_HEIGHT,
   domainOf,
-  isPlaceholderWebLinkTitle,
   patchWebLink,
   previewSandboxFor,
   readWebLink,
   WEB_LINK_ERROR_TEXT,
+  webLinkNeedsFetch,
   webLinkSummary,
   webLinkTitle,
   webLinkUrlOf,
@@ -61,16 +61,9 @@ const errorText = computed(() => (meta.value?.error ? WEB_LINK_ERROR_TEXT[meta.v
 
 /**
  * 没抓到真标题的才自动抓（D6：已失败的留给「重试」，不自动循环发请求）。
- *
- * 判据不能是「meta 存在」：从还没抓到标题的 chip 切过来的卡片，meta.title 就是 URL
- * 原文（种子），只看存在性会让这张卡永远顶着网址当标题、再也不抓。
+ * 判据见 `webLinkNeedsFetch`：标题不是唯一条件 —— chip 带过来的种子标题也没有摘要与图标。
  */
-const needsFetch = computed(() => {
-  if (!url.value) return false
-  if (!meta.value) return true
-  if (meta.value.error) return false
-  return isPlaceholderWebLinkTitle(url.value, meta.value.title)
-})
+const needsFetch = computed(() => webLinkNeedsFetch(url.value, meta.value))
 
 // ── 资产 ──
 const iconSrc = ref('')

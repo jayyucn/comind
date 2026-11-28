@@ -175,6 +175,26 @@ export function isPlaceholderWebLinkTitle(url: string, title: string | null | un
   return !trimmed || trimmed === url.trim() || trimmed === domainOf(url)
 }
 
+/**
+ * 卡片挂载时是否还要抓一次元数据（自动抓取开关在外层判，这里只回答「缺不缺」）。
+ *
+ * 「有真标题」不等于「抓过」：chip → 卡片会把 chip 存档里抓到的标题当种子写进
+ * `meta.title`（`convertChipToCard`），这种 meta 只有 title + domain —— 摘要、图标、
+ * 封面一个都没有，也没有 `error`。只看标题就会把它当成「已经抓完」，卡片永远停在
+ * 「标题 + 兜底图标」，摘要位空着、连失败文案与重试入口都不会出现。
+ *
+ * 判据落在 `fetchedAt`：它只由 `normalizeWebLinkMetadata` 在抓取成功时写入，是
+ * 「这份 meta 真的过过一次抓取」的唯一证据。带 `error` 的不自动重抓（失败是常态
+ * 分支，留着卡片的「重试」按钮），避免挂载即循环发请求。
+ */
+export function webLinkNeedsFetch(url: string, meta: WebLinkMeta | null | undefined): boolean {
+  if (!url) return false
+  if (!meta) return true
+  if (meta.error) return false
+  if (!meta.fetchedAt) return true
+  return isPlaceholderWebLinkTitle(url, meta.title)
+}
+
 /** 摘要：只保留抓取值，抓不到返回空串（由调用方渲染失败文案，不在此处编造） */
 export function webLinkSummary(meta: WebLinkMeta | null | undefined): string {
   return meta?.desc?.trim() ?? ''

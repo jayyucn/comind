@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 
 import { useBlockStore } from '../stores/blocks'
+import { readWebLink, webLinkNeedsFetch } from '../utils/web-link'
 import { applyFetchedChipMeta, convertCardToChip, convertChipToCard, switchChipTextView } from './web-link-actions'
 
 const URL_ = 'https://www.doubao.com/chat/123'
@@ -176,5 +177,35 @@ describe('convertChipToCard（卡片标题种子）', () => {
     const link = card.format.link as { meta: { title?: string } }
     expect(link.meta.title).toBe('豆包对话')
     expect(card.format.webLinkMetas?.[URL_]).toBe('豆包对话')
+  })
+})
+
+/**
+ * 种子标题 ≠ 抓取结果（2026-11-28 用户报障）：手动键入网址得到的卡片只有标题，
+ * 摘要在、图标在、失败文案与重试都没有 —— 因为 chip 阶段抓到的标题被种进 meta.title
+ * 后，卡片把自己当成「已经抓完」，摘要与 favicon 永远补不上。
+ *
+ * 回归锚在 `webLinkNeedsFetch`：卡片挂载时读的就是它，判 true 才会补抓一次全量元数据。
+ */
+describe('chip → 卡片：种子标题不得冒充抓取结果', () => {
+  it('chip 带真标题进来，卡片仍要判为待抓取（摘要/图标还没拿过）', async () => {
+    const { store, block } = await chipBlock(`[豆包对话](${URL_})`, {
+      webLinkMetas: { [URL_]: '豆包对话' },
+    })
+    const cardId = (await convertChipToCard(block.id, 'card'))!
+    const card = store.getBlock(cardId)!
+    const settings = readWebLink(card.format)
+    expect(settings.meta?.title).toBe('豆包对话')
+    expect(settings.meta?.desc).toBeUndefined()
+    expect(settings.meta?.iconAssetId).toBeUndefined()
+    expect(webLinkNeedsFetch(card.content, settings.meta)).toBe(true)
+  })
+
+  it('抓取成功后（有 fetchedAt）不再重抓：标题是真的就不用再发请求', () => {
+    expect(webLinkNeedsFetch(URL_, { fetchedAt: Date.now(), title: '豆包对话', desc: '摘要' })).toBe(false)
+  })
+
+  it('抓取失败过（带 error）不自动重抓：留给卡片的「重试」', () => {
+    expect(webLinkNeedsFetch(URL_, { title: '豆包对话', error: 'timeout' })).toBe(false)
   })
 })
