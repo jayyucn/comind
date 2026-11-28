@@ -19,6 +19,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch 
 import { useTheme } from '../../../../composables/useTheme'
 import BasePopover from '../../../common/BasePopover.vue'
 import { codeCollapseState } from './code-collapse-state'
+import { codeHoverState } from './code-hover-state'
 import { codeTitleFocus } from './code-title-focus'
 
 const props = withDefaults(defineProps<{
@@ -53,6 +54,7 @@ const emit = defineEmits<{
 }>()
 
 const editorRef = ref<HTMLDivElement | null>(null)
+const wrapperRef = ref<HTMLDivElement | null>(null)
 const view = shallowRef<EditorView | null>(null)
 const langButtonRef = ref<HTMLButtonElement | null>(null)
 const showLangMenu = ref(false)
@@ -64,6 +66,21 @@ const { resolvedTheme } = useTheme()
 /** 折叠（chevron 切换）：按 blockId 持久化到模块级 Map，本页面内组件重挂载后状态不丢失 */
 const collapsed = ref(codeCollapseState.get(props.blockId) ?? false)
 watch(collapsed, (v) => codeCollapseState.set(props.blockId, v))
+
+/**
+ * 指针悬停：让 toolbar 的可见性不只依赖 `:hover`。
+ * 激活/失活会整体重挂载本组件，`:hover` 要等下一次鼠标事件才重算 —— 中间那一拍
+ * 工具栏会掉下去再浮上来（激活时「闪一下」）。悬停态记在模块级，新实例读回即显示。
+ */
+const hovered = ref(codeHoverState.get(props.blockId))
+function onPointerEnter() {
+  hovered.value = true
+  codeHoverState.enter(props.blockId)
+}
+function onPointerLeave() {
+  hovered.value = false
+  codeHoverState.leave(props.blockId, wrapperRef.value?.isConnected === true)
+}
 /** 自动换行：仅本地状态，刷新块即重置 */
 const wrap = ref(false)
 
@@ -447,6 +464,11 @@ watch(collapsed, (isCollapsed) => {
 })
 
 onMounted(() => {
+  // 重挂载时把悬停态接回来（`:hover` 此刻还没重算，读它只能兜底）。
+  if (codeHoverState.get(props.blockId) || wrapperRef.value?.matches(':hover')) {
+    hovered.value = true
+    codeHoverState.enter(props.blockId)
+  }
   createEditor()
   // 由「点标题激活」进来的：焦点归标题输入框，别让编辑器抢走。
   // 必须排在 `Block.focusActiveEditor`（nextTick → rAF → focus）之后 —— 它是父组件
@@ -558,8 +580,11 @@ defineExpose({ syncContent, focus, focusRange, getText, markSaved, getEditor })
 
 <template>
   <div
+    ref="wrapperRef"
     class="code-editor-wrapper"
-    :class="{ 'is-collapsed': collapsed, 'is-menu-open': showLangMenu }"
+    :class="{ 'is-collapsed': collapsed, 'is-menu-open': showLangMenu, 'is-hovered': hovered }"
+    @pointerenter="onPointerEnter"
+    @pointerleave="onPointerLeave"
   >
     <header
       class="code-header"
@@ -804,7 +829,9 @@ defineExpose({ syncContent, focus, focusRange, getText, markSaved, getEditor })
 /* 右侧工具栏：hover 才显示（与原来 hover 浮层一致）。
  * visibility 随 opacity 一起隐藏，否则 opacity:0 的按钮仍可 Tab 聚焦。
  * 语言菜单 Teleport 到 body —— 指针移进菜单就不再 hover 本 wrapper，若不额外兜住，
- * 工具栏会在菜单展开期间整条消失，锚点按钮跟着没了。 */
+ * 工具栏会在菜单展开期间整条消失，锚点按钮跟着没了。
+ * is-hovered 是 `:hover` 的跨重挂载副本：激活/失活会换掉整个节点，`:hover` 要等下一次
+ * 鼠标事件才重算，只靠伪类会闪一下。 */
 .code-toolbar {
   display: inline-flex;
   align-items: center;
@@ -816,6 +843,7 @@ defineExpose({ syncContent, focus, focusRange, getText, markSaved, getEditor })
 }
 
 .code-editor-wrapper:hover .code-toolbar,
+.code-editor-wrapper.is-hovered .code-toolbar,
 .code-editor-wrapper.is-menu-open .code-toolbar {
   opacity: 1;
   visibility: visible;

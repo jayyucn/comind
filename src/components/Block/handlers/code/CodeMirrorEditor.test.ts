@@ -797,3 +797,56 @@ describe('CodeMirrorEditor — 标题占位（空标题的两态文案）', () =
     second.unmount()
   })
 })
+
+describe('CodeMirrorEditor — 工具条 hover 态跨重挂载保持（激活不闪）', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('悬停中从渲染态切到编辑态（重挂载），新实例仍带 is-hovered', async () => {
+    const blockId = `test-block-hover-${++blockIdCounter}`
+    const first = mount(CodeMirrorEditor, {
+      props: { blockId, content: 'const x = 1;', language: 'javascript', readonly: true, blockFormat: {} },
+      attachTo: document.body,
+    })
+    await flushPromises()
+
+    await first.find('.code-editor-wrapper').trigger('pointerenter')
+    expect(first.find('.code-editor-wrapper').classes()).toContain('is-hovered')
+
+    // 激活 = 走另一个 v-if 分支 ⇒ 组件整体重建（DOM 被替换）
+    first.unmount()
+    const second = mount(CodeMirrorEditor, {
+      props: { blockId, content: 'const x = 1;', language: 'javascript', readonly: false, blockFormat: {} },
+      attachTo: document.body,
+    })
+    await flushPromises()
+
+    expect(second.find('.code-editor-wrapper').classes()).toContain('is-hovered')
+    second.unmount()
+  })
+
+  it('指针真的移开后，重挂载不再带 is-hovered', async () => {
+    const blockId = `test-block-hover-${++blockIdCounter}`
+    const first = mount(CodeMirrorEditor, {
+      props: { blockId, content: 'const x = 1;', language: 'javascript', readonly: true, blockFormat: {} },
+      attachTo: document.body,
+    })
+    await flushPromises()
+
+    const wrapper = first.find('.code-editor-wrapper')
+    await wrapper.trigger('pointerenter')
+    await wrapper.trigger('pointerleave')
+    expect(wrapper.classes()).not.toContain('is-hovered')
+
+    first.unmount()
+    const second = mount(CodeMirrorEditor, {
+      props: { blockId, content: 'const x = 1;;', language: 'javascript', readonly: false, blockFormat: {} },
+      attachTo: document.body,
+    })
+    await flushPromises()
+
+    expect(second.find('.code-editor-wrapper').classes()).not.toContain('is-hovered')
+    second.unmount()
+  })
+})
