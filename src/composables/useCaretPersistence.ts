@@ -27,7 +27,8 @@ const RESTORE_EXCLUDE_SELECTOR =
 function isEditable(el: Element | null): boolean {
   if (!el) return false
   if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) return true
-  if (el.isContentEditable) return true
+  // isContentEditable 只声明在 HTMLElement 上；SVG/MathML 元素没有 contenteditable 语义
+  if (el instanceof HTMLElement && el.isContentEditable) return true
   return false
 }
 

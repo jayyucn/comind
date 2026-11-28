@@ -263,7 +263,10 @@ export function collapsedRangeAtBlockOffset(blockId: string, offset: number, sco
 
   const root = contentRoot(blockEl)
   let remaining = Math.max(0, offset)
-  let target: { node: Text; offset: number } | null = null
+  // 落点用对象字段带出：赋值发生在 walkTextNodes 的回调里，而 TS 的控制流分析
+  // 不把回调内的赋值算进外层的窄化 —— 写成 `let target: T | null = null` 会让
+  // `if (target)` 的真分支被推成 never（运行时本来就对，只是类型看不见）。
+  const hit: { at: { node: Text; offset: number } | null } = { at: null }
   // 与 textNodeOffsetInRoot 同一遍历口径：选择忽略区（代码块 header）整棵跳过。
   // 否则 offset 0 会落到 header 首个文本节点（「代码块」），高亮色带铺到工具栏按钮上。
   walkTextNodes(root, (node) => {
@@ -271,16 +274,17 @@ export function collapsedRangeAtBlockOffset(blockId: string, offset: number, sco
     // 零长文本节点不能作为落点：其上的 Range 量不出矩形（空块渲染态中确实存在这种节点）
     if (len === 0) return
     if (remaining <= len) {
-      target = { node, offset: remaining }
+      hit.at = { node, offset: remaining }
       return false
     }
     remaining -= len
   })
 
-  if (target) {
+  const at = hit.at
+  if (at) {
     const range = document.createRange()
-    range.setStart(target.node, target.offset)
-    range.setEnd(target.node, target.offset)
+    range.setStart(at.node, at.offset)
+    range.setEnd(at.node, at.offset)
     return range
   }
 

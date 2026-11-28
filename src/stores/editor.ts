@@ -46,7 +46,9 @@ export const useEditorStore = defineStore('editor', () => {
    */
   const lastEditPoint = ref<
     | { kind: 'pm'; paneId: string | null; blockId: string; editor: unknown }
-    | { kind: 'input'; paneId: string | null; el: WeakRef<HTMLElement>; start: number | null; end: number | null }
+    // 只记文本类输入框（记录侧用 isTextInput 收窄），类型照实声明：
+    // 宽成 HTMLElement 会让恢复侧拿不到 selectionStart / setSelectionRange。
+    | { kind: 'input'; paneId: string | null; el: WeakRef<HTMLInputElement | HTMLTextAreaElement>; start: number | null; end: number | null }
     | null
   >(null)
 
