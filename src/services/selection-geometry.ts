@@ -297,9 +297,9 @@ export function collapsedRangeAtBlockOffset(blockId: string, offset: number, sco
   return range
 }
 
-/** 同一 `.block-list` 子树内的全部块元素，文档序 */
+/** 同一 `.block-root-list` 子树内的全部块元素，文档序 */
 function orderedBlockElements(scope: HTMLElement): HTMLElement[] {
-  const listRoot = scope.closest('.block-list') ?? document
+  const listRoot = scope.closest('.block-root-list') ?? document
   return Array.from(listRoot.querySelectorAll<HTMLElement>('[data-block-id]'))
 }
 

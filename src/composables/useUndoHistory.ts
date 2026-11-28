@@ -265,6 +265,27 @@ export function ensureStack(pageId: string): void {
 }
 
 /**
+ * 把「程序性补出的空块」并入**栈顶快照**：只追加这一个块，绝不覆盖快照里的其它内容。
+ *
+ * 用途：末尾空块补齐。这类写不是用户动作，但必须存在于历史里 —— 否则撤销回到旧快照
+ * 时页面没有续写入口，补块又会自成一步，形成「撤销一次、多一步」的抖动。
+ *
+ * 刻意不做「捕获整个当前状态再覆盖栈顶」：补块是 await 的，await 期间用户完全可能
+ * 继续编辑，整状态覆盖会把那些**尚未封口**的用户改动写进上一条快照，撤销就回不到
+ * 上一状态（实测症状：撤销后内容不变）。
+ */
+export function absorbTrailingBlock(pageId: string, block: Block): void {
+  const ps = pageStacks.get(pageId)
+  if (!ps) return
+  const cur = ps.stack[ps.cursor]
+  if (!cur) return
+  if (cur.blocks.some((b) => b.id === block.id)) return
+  totalBytes -= byteSize(cur)
+  cur.blocks = [...cur.blocks, cloneBlockSlim(block)]
+  totalBytes += byteSize(cur)
+}
+
+/**
  * 立即封口（不等 idle）：取消该页的防抖定时器 + 立刻把当前状态压入栈。
  *
  * 供键盘接管在撤销/重做之前调用。成因：用户「最后一段输入」有两种未成步形态 ——

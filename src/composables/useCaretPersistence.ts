@@ -19,9 +19,13 @@ import { isTauriEnvironment } from '../wasm/tauri-platform'
 /** 点击恢复的位移阈值，与 ADR-0069 D4 外链打开、selection-geometry 跨块选区同口径 */
 const CLICK_DRAG_THRESHOLD_PX = 4
 
-/** 恢复让位的区域：块内（块有自己的点击语义）、右栏、两类弹层（BasePopover / BlockModal） */
+/**
+ * 恢复让位的区域：块内（块有自己的点击语义）、右栏、两类弹层（BasePopover / BlockModal）、
+ * 块列表根（ADR-0070 D7：根上的落点只可能是底部 padding 留白，那一片的单击语义是
+ * 「光标落到末尾空块」，由 BlockList 接管，恢复逻辑不得与之竞争）。
+ */
 const RESTORE_EXCLUDE_SELECTOR =
-  '.block, .right-sidebar, .base-popover-overlay, .block-modal-overlay'
+  '.block, .block-root-list, .right-sidebar, .base-popover-overlay, .block-modal-overlay'
 
 /** 可编辑元素：原生表单控件 + contenteditable（含 PM 根） */
 function isEditable(el: Element | null): boolean {

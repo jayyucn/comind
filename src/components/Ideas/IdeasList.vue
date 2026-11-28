@@ -1,7 +1,9 @@
 <script setup lang="ts">
+import { computed, onMounted, ref } from 'vue'
+
 import { useRelationshipMenu } from '@/composables/useRelationshipMenu'
 import { useBlockStore } from '@/stores/blocks'
-import { computed, onMounted, ref } from 'vue'
+
 import { usePageStore } from '../../stores/pages'
 import type { Page } from '../../types/page'
 import FieldValueEditor from '../Block/FieldValueEditor.vue'
@@ -153,7 +155,7 @@ const todayTitle = computed(() => {
 }
 
 /* BlockList 填满 today-body */
-.today-body :deep(.block-list) {
+.today-body :deep(.block-root-list) {
   flex: 1;
 }
 

@@ -210,7 +210,7 @@ function stubInkRects(onMeasure?: (region: Element) => void): () => void {
   }
   const indexOf = (region: Element): number => {
     const blockEl = region.closest('[data-block-id]')
-    const list = blockEl?.closest('.block-list')
+    const list = blockEl?.closest('.block-root-list')
     const all = list ? [...list.querySelectorAll('[data-block-id]')] : []
     return all.indexOf(blockEl as Element) + 1
   }
@@ -1107,6 +1107,9 @@ describe('F. 字节预算裁切', () => {
     const wrapper = await mountBlockList(pageId)
 
     // 以「一份快照的实测字节数」标定预算：容得下约 2 份 ⇒ 后续必然触发裁切
+    // 先等末尾空块补齐落地：补块会并入栈顶快照，标定必须取稳定形态，
+    // 否则取到的是补块前的单块快照，预算被标小到容不下任何一步（canUndo 恒 false）。
+    await settleStep()
     const oneSnapshot = _debugStats().totalBytes
     expect(oneSnapshot).toBeGreaterThan(0)
     configureUndoHistory({ maxBytes: Math.ceil(oneSnapshot * 2.5) })

@@ -399,7 +399,9 @@ watch(
      使「反向链接」标题左缘与页面标题/正文左缘对齐（窄 pane 下也不贴边）。 */
   max-width: var(--max-width);
   width: 100%;
-  margin: 0 auto;
+  /* 顶部间距原为 .page-body 的 flex gap（gap 区不属于任何元素的盒，点不中）；
+     下移到这里的 margin-top，视觉不变，但块列表底部的留白因此能连成一片。 */
+  margin: var(--space-6) auto 0;
   padding: 0 var(--space-6);
   box-sizing: border-box;
 }

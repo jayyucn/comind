@@ -7,7 +7,9 @@
   flex-direction: column;
   min-width: 0;
   min-height: 100%;
-  gap: var(--space-6);
+  // 原 gap: space-6 下移到 .backlinks-panel 的 margin-top：容器之间的间距不属于任何
+  // 元素的盒，点不中；改由 BlockList 的 padding-bottom 与 Backlinks 的 margin-top 分摊，
+  // 块列表底部就成一整片可命中的留白（单击进末尾空行）。
   padding-top: var(--space-6);
   padding-bottom: var(--space-6);
 }

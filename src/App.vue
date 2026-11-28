@@ -258,7 +258,7 @@ onBeforeUnmount(() => {
 /**
  * 全局 Ctrl+A 兜底（document 捕获阶段，晚于 BlockList 的监听注册顺序执行）。
  * - 目标在 input/textarea/contenteditable（含 CodeMirror 编辑区）→ 放行，保留控件自身全选
- * - 目标在 .block-list 内 → 放行，由 BlockList 捕获监听决定全选/仅屏蔽
+ * - 目标在 .block-root-list 内 → 放行，由 BlockList 捕获监听决定全选/仅屏蔽
  * - 其余区域（页面空白、侧边栏、弹层、图谱画布等）→ 屏蔽浏览器默认，无操作
  */
 function handleGlobalKeydownCapture(e: KeyboardEvent) {
@@ -266,7 +266,7 @@ function handleGlobalKeydownCapture(e: KeyboardEvent) {
   const target = e.target as HTMLElement | null
   if (target && typeof target.closest === 'function') {
     if (target.closest('input, textarea, [contenteditable="true"]')) return
-    if (target.closest('.block-list')) return
+    if (target.closest('.block-root-list')) return
   }
   e.preventDefault()
   e.stopPropagation()

@@ -20,7 +20,7 @@ import { buildTree, syncTreeToStore } from '../composables/useBlockTree'
 import type { CrossBlockSelection } from '../composables/useCrossBlockSelection'
 import { useCrossBlockSelection } from '../composables/useCrossBlockSelection'
 import { UNDO_FLASH_MS, useRestoreFlash } from '../composables/useRestoreFlash'
-import { ensureStack } from '../composables/useUndoHistory'
+import { absorbTrailingBlock, ensureStack } from '../composables/useUndoHistory'
 import { linkCrossPageMove, runUndoOrRedo } from '../composables/useUndoRestore'
 import { useWebLinkChipToolbar } from '../composables/useWebLinkChipToolbar'
 import { CHIP_CREATED_EVENT } from '../extensions/WebLinkChipExtension'
@@ -125,18 +125,68 @@ function handleDragEnd(intent?: DragEndIntent | null) {
   blockStore.scheduleOrderedListReindex(props.pageId, { parents: touchedParents })
 }
 
-// ── 双击底部留白区域创建新 block ──
-async function handleCreateBlock() {
-  const newBlock = await blockStore.createBlock({
-    pageId: props.pageId,
-    parentId: rootBlockId.value,
-    content: '',
-    format: {}
-  })
-
-  if (newBlock) {
-    editorStore.activateBlock(newBlock.id, 1)
+// ── 末尾空块（续写入口）与底部留白单击 ──
+// 页面末尾常驻恰一个空块，它是唯一的续写入口：单击底部留白把光标送进去。
+// 不变量：根级末块非空 ⇒ 补一个；末块已空 ⇒ 复用。
+// 恒为普通段落（不继承 ol/ul）：有序列表的序号是 content 字面前缀，若让空块参与列表，
+// 序号写回会把空块变成非空，进而反复触发「补空块」，形成补块循环。
+const trailingState = computed<'loading' | 'empty-page' | 'empty' | 'filled'>(() => {
+  if (!blockStore.isPageFullyLoaded(props.pageId)) return 'loading'
+  const last = tree.value[tree.value.length - 1]
+  if (!last) {
+    // store 已有块而树还没同步（setup 首拍 syncFromStore 尚未跑）不是「空页」：
+    // 按 empty-page 处理会在挂载瞬间多补一个空块。等结构签名把树建起来再判。
+    return blockStore.getBlocksByPage(props.pageId).length === 0 ? 'empty-page' : 'loading'
   }
+  return last.block.content.trim() === '' ? 'empty' : 'filled'
+})
+
+/** 取根级末位的空块；没有就补一个（并发保护：同一拍只建一个） */
+let ensuringTrailing = false
+async function ensureTrailingEmptyBlock(): Promise<Block | null> {
+  const last = tree.value[tree.value.length - 1]
+  if (last && last.block.content.trim() === '') return last.block
+  if (ensuringTrailing) return null
+  ensuringTrailing = true
+  try {
+    const created = await blockStore.createBlock({
+      pageId: props.pageId,
+      parentId: rootBlockId.value,
+      content: '',
+      format: {},
+    })
+    // 程序性补块不是用户动作：只把它追加进栈顶快照，不新增可撤销的一步
+    // （否则撤销一步后 redo 分支被这次补块截断，第一下 Ctrl+Z 撤掉的是用户没见过的空块）。
+    absorbTrailingBlock(props.pageId, created)
+    return created
+  } finally {
+    ensuringTrailing = false
+  }
+}
+
+watch(
+  trailingState,
+  (state, prev) => {
+    // 进页补齐：loading 落定后末块非空 / 页面为空
+    // 写入后补：末块由空转实
+    if (state === 'empty-page' || (state === 'filled' && prev !== 'filled')) {
+      void ensureTrailingEmptyBlock()
+    }
+  },
+  { immediate: true },
+)
+
+/**
+ * 单击底部留白：光标落到末尾空块。
+ * ADR-0070 D7：留白区的单击语义由本函数独占——光标恢复（D4）已把 `.block-root-list`
+ * 排除在可恢复区之外，两者不再竞争同一次点击。
+ */
+async function handleBlankAreaClick(e: MouseEvent) {
+  // 只接管落在根容器自身留白（padding-bottom）上的点击：
+  // 块正文、表格、查询视图、入口胶囊等内部点击一律不抢。
+  if (e.target !== rootEl.value) return
+  const target = await ensureTrailingEmptyBlock()
+  if (target) editorStore.activateBlock(target.id, 1)
 }
 
 // ── 跨 Block 选区事件处理 ──
@@ -971,7 +1021,7 @@ const highlightRects = ref<SelectionRect[]>([])
 
 function refreshTextHighlight() {
   const tr = selection.textRange.value
-  // 传入本 pane 的 .block-list 根作为作用域：多 pane 同页时同一 data-block-id 有多份 DOM，
+  // 传入本 pane 的 .block-root-list 根作为作用域：多 pane 同页时同一 data-block-id 有多份 DOM，
   // 不限定作用域会经 document.querySelector 命中第一个（左侧）实例，高亮错画到左 pane。
   highlightRects.value = tr ? selectionClientRects(tr.anchor, tr.head, rootEl.value) : []
 }
@@ -1486,7 +1536,8 @@ onBeforeUnmount(() => {
 <template>
   <div
     ref="rootEl"
-    class="block-list"
+    class="block-root-list"
+    @click="handleBlankAreaClick"
   >
     <!-- 根级任务进度条：顶层 block（页面根 block 的子 block）含任务项时显示在列表顶部 -->
     <TaskProgressBar
@@ -1505,11 +1556,8 @@ onBeforeUnmount(() => {
       :depth="0"
       @drag-end="handleDragEnd"
     />
-    <!-- 底部留白：双击创建新 block -->
-    <div
-      class="block-list-padding"
-      @dblclick="handleCreateBlock"
-    />
+    <!-- 底部留白由根容器自身的 padding-bottom 承担（单击落在根上即进末尾空块），
+         不再单独渲染命中层：单独一层会被根容器的布局压掉宽度。 -->
 
     <!-- 拖放指示器：模块级共享状态，整个 BlockList 只渲染一次。
          由各 Block 的 useBlockDragDrop.handleDragMove 写入共享 ref。 -->
@@ -1575,9 +1623,14 @@ onBeforeUnmount(() => {
 </template>
 
 <style lang="scss" scoped>
-.block-list {
+/* 根容器类名与列表行 `.block-list`（BulletRender 的 marker + 正文两列）彻底分开：
+   同名时全局列表行样式 `display:flex + align-items:baseline` 会把本容器当行处理，
+   底部留白与末尾空行都会被 baseline 行布局压掉。 */
+.block-root-list {
   padding-left: 0;
-  padding-bottom: 40px;
+  /* 40px 自身留白 + 原 .page-body 的 space-6 gap（已由 Backlinks 的 margin-top 承担，
+     见 _page.scss）——留白因此连续可命中，单击任意位置都能落到末尾空行。 */
+  padding-bottom: calc(40px + var(--space-6));
   min-height: 100px;
 }
 
@@ -1585,13 +1638,6 @@ onBeforeUnmount(() => {
    （bullet 列宽 20px − 圆点 6px 后居中 → 左缘 7px）；与下方列表间隔一个 space-3 */
 .block-list-task-progress {
   margin: var(--space-2) 0 var(--space-3) 0px;
-}
-
-.block-list-padding {
-  height: 40px;
-  user-select: none;
-  -webkit-user-select: none;
-  cursor: default;
 }
 
 /* 块选区覆盖层（ADR-0065）：一个连续段一条矩形，段内没有内部边界 —— DPR≠1 时
