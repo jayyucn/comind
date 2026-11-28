@@ -189,6 +189,22 @@ async function handleBlankAreaClick(e: MouseEvent) {
   if (target) editorStore.activateBlock(target.id, 1)
 }
 
+/**
+ * 留白按下：拦掉浏览器默认的焦点转移。
+ *
+ * 留白不是可聚焦元素，默认行为会在 mousedown 时把焦点交给 body。若末尾空块**本来就是**
+ * 活动块，`activateBlock` 前后 `isActive` 无变化 ⇒ `focusActiveEditor` 不重跑 ⇒ 光标再也
+ * 回不来（表现为「点第一次进得去，点第二次就失焦」）。焦点根本没离开过编辑器时，
+ * 这里只做「什么也不发生」，反而正是想要的语义。
+ *
+ * 第一次点击不受影响：那时编辑器尚未激活，拦截后由 `activateBlock` 触发的 watch 正常聚焦。
+ * 同理不影响其他可聚焦元素（标题输入框等）的保存——焦点最终被编辑器接管时 blur 照常派发。
+ */
+function handleBlankAreaMousedown(e: MouseEvent) {
+  if (e.target !== rootEl.value) return
+  e.preventDefault()
+}
+
 // ── 跨 Block 选区事件处理 ──
 const TEXT_DRAG_THRESHOLD_PX = 4
 
@@ -1537,6 +1553,7 @@ onBeforeUnmount(() => {
   <div
     ref="rootEl"
     class="block-root-list"
+    @mousedown="handleBlankAreaMousedown"
     @click="handleBlankAreaClick"
   >
     <!-- 根级任务进度条：顶层 block（页面根 block 的子 block）含任务项时显示在列表顶部 -->

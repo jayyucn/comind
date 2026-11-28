@@ -161,3 +161,42 @@ describe('底部留白单击', () => {
     expect(editor.activeBlockId).not.toBe(rootBlocks(pageId)[1].id)
   })
 })
+
+describe('留白按下（焦点守卫）', () => {
+  /**
+   * 留白不可聚焦，浏览器默认会在 mousedown 时把焦点交给 body。末尾空块本来就是活动块时
+   * `isActive` 无变化 ⇒ 聚焦逻辑不重跑 ⇒ 光标回不来（点第二次就失焦）。
+   * 拦截默认行为后焦点从未离开编辑器，这正是要的语义。
+   */
+  test('留白 mousedown 阻止默认焦点转移', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-trailing-mousedown'
+    await store.createBlock({ pageId, content: 'aaa' })
+    await store.createBlock({ pageId, content: '' })
+
+    const w = await mountList(pageId)
+    const root = w.element as HTMLElement
+
+    const ev = new MouseEvent('mousedown', { bubbles: true, cancelable: true })
+    root.dispatchEvent(ev)
+
+    expect(ev.defaultPrevented).toBe(true)
+  })
+
+  test('块内部 mousedown 不拦截（不破坏块自己的按下语义）', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-trailing-mousedown-inner'
+    const a = await store.createBlock({ pageId, content: 'aaa' })
+    await store.createBlock({ pageId, content: '' })
+
+    const w = await mountList(pageId)
+    const wrapperEl = (w.element as HTMLElement).querySelector<HTMLElement>(
+      `[data-block-id="${a.id}"]`,
+    )!
+
+    const ev = new MouseEvent('mousedown', { bubbles: true, cancelable: true })
+    wrapperEl.dispatchEvent(ev)
+
+    expect(ev.defaultPrevented).toBe(false)
+  })
+})
