@@ -855,6 +855,17 @@ async function onLanguageChange(lang: string) {
   }
 }
 
+/** 代码块标题：落 `format.codeTitle`（块行 JSON 内，不新增字段定义） */
+async function onCodeTitleChange(title: string) {
+  await blockStore.updateBlockFormat(blockId.value, { codeTitle: title })
+}
+
+/** 渲染态点代码块标题：只激活块。焦点由标题输入框自己认领
+ *  （CodeMirrorEditor 用 codeTitleFocus 把意图带到重挂载后的实例）。 */
+function onCodeTitleActivate() {
+  editorStore.activateBlock(blockId.value)
+}
+
 /** 开本块菜单：菜单本体归外壳，锚点就是入口胶囊 */
 function showEntryMenu(anchorEl: HTMLElement) {
   clearEntryMenuTimers()
@@ -1128,6 +1139,8 @@ watch(isActive, (active) => {
               @selection-change="handleSelectionChange"
               @align="onContentAlign"
               @language-change="onLanguageChange"
+              @title-change="onCodeTitleChange"
+              @request-activate="onCodeTitleActivate"
             />
             <component
               :is="handler.renderComponent"
@@ -1141,6 +1154,7 @@ watch(isActive, (active) => {
               :readonly="true"
               @content-click="onContentClick"
               @language-change="onLanguageChange"
+              @request-activate="onCodeTitleActivate"
               @clear="handleClear"
             />
             <div

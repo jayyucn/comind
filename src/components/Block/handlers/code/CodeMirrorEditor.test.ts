@@ -81,14 +81,15 @@ describe('CodeMirrorEditor — Header 工具栏', () => {
     expect(header.isVisible()).toBe(true)
   })
 
-  it('header 左侧显示折叠按钮 + 代码块标签', async () => {
+  it('header 左侧显示折叠按钮 + 可编辑标题', async () => {
     const wrapper = mountEditor()
     await flushPromises()
     await nextTick()
 
     const toggle = wrapper.find('.code-toggle')
     expect(toggle.exists()).toBe(true)
-    expect(toggle.text()).toContain('代码块')
+    // 「代码块」文字位已由可编辑标题取代（标题真源 format.codeTitle）
+    expect(wrapper.find('input.code-title').exists()).toBe(true)
   })
 
   it('header 右侧渲染语言、换行、复制三个按钮', async () => {
@@ -504,6 +505,31 @@ describe('CodeMirrorEditor — 编程语言选择（选中后保存）', () => {
     // currentLang 已是 javascript，与 props.language 相同 → 不 emit
     expect(emitted).toBeUndefined()
   })
+
+  it('语言菜单展开期间工具栏不隐藏（菜单 Teleport 到 body，指针已离开 wrapper）', async () => {
+    const wrapper = mountEditor({ readonly: true, language: 'javascript' })
+    await flushPromises()
+    await nextTick()
+
+    const outer = wrapper.find('.code-editor-wrapper')
+    expect(outer.classes()).not.toContain('is-menu-open')
+
+    const langBtn = getToolbarButtons(wrapper)[0]
+    await langBtn.trigger('click')
+    await flushPromises()
+    await nextTick()
+
+    // is-menu-open 让 CSS 的 hover 规则之外多一条可见性来源
+    expect(outer.classes()).toContain('is-menu-open')
+
+    const jsItem = Array.from(document.body.querySelectorAll('.lang-item'))
+      .find(el => el.textContent?.includes('JavaScript'))
+    ;(jsItem as HTMLElement).click()
+    await flushPromises()
+    await nextTick()
+
+    expect(outer.classes()).not.toContain('is-menu-open')
+  })
 })
 
 describe('CodeMirrorEditor — 跨块方向键导航（边界 emit）', () => {
@@ -628,5 +654,146 @@ describe('CodeMirrorEditor — 跨块方向键导航（边界 emit）', () => {
     pressKey(view, 'Backspace')
 
     expect(wrapper.emitted('backspace-empty')).toBeFalsy()
+  })
+})
+
+describe('CodeMirrorEditor — 代码块标题（format.codeTitle）', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('从 blockFormat.codeTitle 回显标题', async () => {
+    const wrapper = mountEditor({ blockFormat: { codeTitle: '入口文件' } })
+    await flushPromises()
+
+    const input = wrapper.find('input.code-title')
+    expect((input.element as HTMLInputElement).value).toBe('入口文件')
+  })
+
+  it('失焦时 emit title-change（原样保存到 format）', async () => {
+    const wrapper = mountEditor({ readonly: false, blockFormat: {} })
+    await flushPromises()
+
+    const input = wrapper.find('input.code-title')
+    await input.setValue('  工具函数  ')
+    await input.trigger('blur')
+
+    const events = wrapper.emitted('title-change')
+    expect(events).toBeTruthy()
+    // 提交时去首尾空格
+    expect(events![0]).toEqual(['工具函数'])
+  })
+
+  it('值未变化时不 emit（避免空写）', async () => {
+    const wrapper = mountEditor({ readonly: false, blockFormat: { codeTitle: '已有标题' } })
+    await flushPromises()
+
+    const input = wrapper.find('input.code-title')
+    await input.trigger('blur')
+
+    expect(wrapper.emitted('title-change')).toBeFalsy()
+  })
+
+  it('卸载时补一次提交（切块不会丢标题）', async () => {
+    const wrapper = mountEditor({ readonly: false, blockFormat: {} })
+    await flushPromises()
+
+    await wrapper.find('input.code-title').setValue('未提交的标题')
+    wrapper.unmount()
+
+    const events = wrapper.emitted('title-change')
+    expect(events).toBeTruthy()
+    expect(events![0]).toEqual(['未提交的标题'])
+  })
+
+  it('readonly 时不 emit（渲染态不可改标题）', async () => {
+    const wrapper = mountEditor({ readonly: true, blockFormat: {} })
+    await flushPromises()
+
+    const input = wrapper.find('input.code-title')
+    await input.setValue('偷偷改')
+    await input.trigger('blur')
+
+    expect(wrapper.emitted('title-change')).toBeFalsy()
+  })
+})
+
+describe('CodeMirrorEditor — 标题占位（空标题的两态文案）', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('空标题未聚焦 → 占位显示「代码块」（当类型标签用）', async () => {
+    const wrapper = mountEditor({ blockFormat: {} })
+    await flushPromises()
+
+    const input = wrapper.find('input.code-title')
+    expect(input.attributes('placeholder')).toBe('代码块')
+    expect(input.classes()).not.toContain('is-hint')
+  })
+
+  it('编辑态聚焦 → 占位切成「请输入代码块名称」', async () => {
+    const wrapper = mountEditor({ readonly: false, blockFormat: {} })
+    await flushPromises()
+
+    const input = wrapper.find('input.code-title')
+    await input.trigger('focus')
+
+    expect(input.attributes('placeholder')).toBe('请输入代码块名称')
+    expect(input.classes()).toContain('is-hint')
+  })
+
+  it('编辑态失焦后回到「代码块」', async () => {
+    const wrapper = mountEditor({ readonly: false, blockFormat: {} })
+    await flushPromises()
+
+    const input = wrapper.find('input.code-title')
+    await input.trigger('focus')
+    await input.trigger('blur')
+
+    expect(input.attributes('placeholder')).toBe('代码块')
+  })
+
+  it('渲染态即便被程序聚焦也保持「代码块」', async () => {
+    const wrapper = mountEditor({ readonly: true, blockFormat: {} })
+    await flushPromises()
+
+    const input = wrapper.find('input.code-title')
+    await input.trigger('focus')
+
+    expect(input.attributes('placeholder')).toBe('代码块')
+    expect(input.classes()).not.toContain('is-hint')
+  })
+
+  it('渲染态点标题 → emit request-activate（header 在选区忽略区，Block 不会自己激活）', async () => {
+    const wrapper = mountEditor({ readonly: true, blockFormat: {} })
+    await flushPromises()
+
+    await wrapper.find('input.code-title').trigger('mousedown')
+
+    expect(wrapper.emitted('request-activate')).toBeTruthy()
+  })
+
+  it('点标题激活后，重挂载的编辑态实例把焦点落到标题输入框', async () => {
+    const blockId = `test-block-focus-${++blockIdCounter}`
+    const first = mount(CodeMirrorEditor, {
+      props: { blockId, content: 'const x = 1;', language: 'javascript', readonly: true, blockFormat: {} },
+      attachTo: document.body,
+    })
+    await flushPromises()
+    await first.find('input.code-title').trigger('mousedown')
+    first.unmount()
+
+    const second = mount(CodeMirrorEditor, {
+      props: { blockId, content: 'const x = 1;', language: 'javascript', readonly: false, blockFormat: {} },
+      attachTo: document.body,
+    })
+    await flushPromises()
+    // 焦点请求排在「Block.focusActiveEditor 的 nextTick → rAF」之后，这里等两帧
+    await nextTick()
+    await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+
+    expect(document.activeElement).toBe(second.find('input.code-title').element)
+    second.unmount()
   })
 })

@@ -13,21 +13,25 @@ import { EditorState } from '@codemirror/state'
 import { oneDark, oneDarkHighlightStyle } from '@codemirror/theme-one-dark'
 import { EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers } from '@codemirror/view'
 import { tags } from '@lezer/highlight'
+import { ChevronDown, TextWrap } from 'lucide-vue-next'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 
-import { useBlockRegistry } from '../../../../composables/useBlockRegistry'
 import { useTheme } from '../../../../composables/useTheme'
 import BasePopover from '../../../common/BasePopover.vue'
 import { codeCollapseState } from './code-collapse-state'
+import { codeTitleFocus } from './code-title-focus'
 
 const props = withDefaults(defineProps<{
   blockId: string
   content: string
   language?: string
   readonly?: boolean
+  /** 块 format 原样（标题存 `format.codeTitle`，不新增字段定义） */
+  blockFormat?: Record<string, unknown>
 }>(), {
   language: 'plain',
   readonly: false,
+  blockFormat: () => ({}),
 })
 
 const emit = defineEmits<{
@@ -44,6 +48,8 @@ const emit = defineEmits<{
   (e: 'cursor-change', pos: number): void
   (e: 'selection-change', payload: { from: number; to: number; contentChanged: boolean }): void
   (e: 'language-change', lang: string): void
+  (e: 'title-change', title: string): void
+  (e: 'request-activate'): void
 }>()
 
 const editorRef = ref<HTMLDivElement | null>(null)
@@ -61,9 +67,46 @@ watch(collapsed, (v) => codeCollapseState.set(props.blockId, v))
 /** 自动换行：仅本地状态，刷新块即重置 */
 const wrap = ref(false)
 
-// header 左侧的代码块类型标签，从 registry 取；fallback 是为了应付未注册等异常路径
-const { getHandler } = useBlockRegistry()
-const headerLabel = computed(() => getHandler('code')?.label ?? '代码块')
+// 代码块标题：真源在 `format.codeTitle`，本地 v-model 只在提交（失焦 / Enter / 卸载）时回写。
+// 不回写就会出现「编辑完切走标题消失」——组件随 isActive 切换而重挂载，本地 ref 必丢。
+const savedTitle = computed(() => {
+  const t = props.blockFormat?.codeTitle
+  return typeof t === 'string' ? t : ''
+})
+const headerLabel = ref(savedTitle.value)
+const titleInputRef = ref<HTMLInputElement | null>(null)
+
+// 外部改动（撤销/多栏同步）回灌到输入框；正在输入时不打断
+watch(savedTitle, (v) => {
+  if (document.activeElement === titleInputRef.value) return
+  if (v !== headerLabel.value) headerLabel.value = v
+})
+
+function commitTitle() {
+  if (props.readonly) return
+  const next = headerLabel.value.trim()
+  if (next !== headerLabel.value) headerLabel.value = next
+  if (next === savedTitle.value) return
+  emit('title-change', next)
+}
+
+/** 标题聚焦态：空白标题在未聚焦时显示「代码块」（充当类型标签），
+ *  聚焦后才露出输入提示，避免每个空标题都顶着一句"请输入…"当装饰。 */
+const titleFocused = ref(false)
+const titlePlaceholder = computed(() => {
+  if (!props.readonly && titleFocused.value) return '请输入代码块名称'
+  return '代码块'
+})
+
+/** 渲染态点标题：整个 header 都在选区忽略区里，mousedown 会被 Block 层守卫挡掉
+ *  （不激活块），标题必须自己请求激活，并把「聚焦我」的意图带到重挂载后的新实例。 */
+function onTitleMousedown(e: MouseEvent) {
+  if (!props.readonly) return
+  e.preventDefault()
+  e.stopPropagation()
+  codeTitleFocus.request(props.blockId)
+  emit('request-activate')
+}
 
 const languages = [
   { id: 'plain', label: 'Plain Text' },
@@ -405,12 +448,23 @@ watch(collapsed, (isCollapsed) => {
 
 onMounted(() => {
   createEditor()
+  // 由「点标题激活」进来的：焦点归标题输入框，别让编辑器抢走。
+  // 必须排在 `Block.focusActiveEditor`（nextTick → rAF → focus）之后 —— 它是父组件
+  // watch(isActive) 起的链路，注册更早；同一帧内 rAF 按注册顺序执行，所以这里再让一层。
+  if (codeTitleFocus.consume(props.blockId)) {
+    nextTick(() => {
+      requestAnimationFrame(() => titleInputRef.value?.focus())
+    })
+    return
+  }
   if (view.value) {
     view.value.focus()
   }
 })
 
 onBeforeUnmount(() => {
+  // 卸载不会派发 input 的 change 事件（切块 / 失活重挂载），这里补一次提交
+  commitTitle()
   if (view.value) {
     view.value.destroy()
   }
@@ -505,26 +559,44 @@ defineExpose({ syncContent, focus, focusRange, getText, markSaved, getEditor })
 <template>
   <div
     class="code-editor-wrapper"
-    :class="{ 'is-collapsed': collapsed }"
+    :class="{ 'is-collapsed': collapsed, 'is-menu-open': showLangMenu }"
   >
     <header
       class="code-header"
       data-text-selection-ignore
     >
-      <button
-        type="button"
-        class="code-toggle"
-        :aria-expanded="!collapsed"
-        aria-label="折叠代码块"
-        @mousedown.stop
-        @click.stop="collapsed = !collapsed"
-      >
-        <span
-          class="code-toggle-chevron"
-          :class="{ 'is-collapsed': collapsed }"
-        >▾</span>
-        <span class="code-toggle-label">{{ headerLabel }}</span>
-      </button>
+      <div class="left-content">
+        <button
+          type="button"
+          class="code-toggle"
+          :aria-expanded="!collapsed"
+          aria-label="折叠代码块"
+          @mousedown.stop
+          @click.stop="collapsed = !collapsed"
+        >
+          <span
+            class="code-toggle-chevron"
+            :class="{ 'is-collapsed': collapsed }"
+          ><ChevronDown /></span>
+        </button>
+        <input
+          ref="titleInputRef"
+          v-model="headerLabel"
+          type="text"
+          class="code-title"
+          :class="{ 'is-hint': !readonly && titleFocused }"
+          :readonly="readonly"
+          :tabindex="readonly ? -1 : 0"
+          aria-label="代码块标题"
+          :placeholder="titlePlaceholder"
+          @mousedown="onTitleMousedown"
+          @focus="titleFocused = true"
+          @change="commitTitle"
+          @blur="titleFocused = false; commitTitle()"
+          @keydown.enter.prevent="($event.target as HTMLInputElement).blur()"
+        >
+      </div>
+
       <div class="code-toolbar">
         <button
           ref="langButtonRef"
@@ -546,6 +618,7 @@ defineExpose({ syncContent, focus, focusRange, getText, markSaved, getEditor })
           :aria-pressed="wrap"
           @click.stop="wrap = !wrap"
         >
+          <TextWrap :size="14" />
           自动换行
         </button>
         <span
@@ -647,6 +720,57 @@ defineExpose({ syncContent, focus, focusRange, getText, markSaved, getEditor })
   border-bottom: 1px solid var(--border);
 }
 
+/* ── Left content ── */
+.left-content {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1, 4px);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* 标题输入：外观就是 header 上的一段文字（无边框、无底色、无轮廓），
+ * 否则会落回原生 input 的白底 + 灰框，暗色主题下尤其刺眼。
+ * 宽度吃满 header 剩余空间（左侧只有折叠按钮，右侧让给工具栏）。 */
+.code-title {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  padding: 2px 4px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  outline: none;
+  appearance: none;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: var(--text-xs);
+  line-height: inherit;
+}
+
+/* 空标题：未聚焦时占位文字当类型标签用（与 header 同色），
+ * 聚焦后才是弱化提示（--text-tertiary） */
+.code-title::placeholder {
+  color: var(--text-secondary);
+}
+
+.code-title.is-hint::placeholder {
+  color: var(--text-tertiary);
+}
+
+.code-title:focus {
+  color: var(--text-primary);
+}
+
+/* 渲染态：标题作为「进编辑态」的入口可点，但不接受 Tab 聚焦（readonly 元素默认进
+ * 键盘序列，会平白多一个焦点停靠点） */
+.code-title[readonly] {
+  cursor: text;
+  caret-color: transparent;
+}
+
+
+
 /* 左侧折叠按钮 */
 .code-toggle {
   display: inline-flex;
@@ -678,17 +802,21 @@ defineExpose({ syncContent, focus, focusRange, getText, markSaved, getEditor })
 }
 
 /* 右侧工具栏：hover 才显示（与原来 hover 浮层一致）。
- * visibility 随 opacity 一起隐藏，否则 opacity:0 的按钮仍可 Tab 聚焦。 */
+ * visibility 随 opacity 一起隐藏，否则 opacity:0 的按钮仍可 Tab 聚焦。
+ * 语言菜单 Teleport 到 body —— 指针移进菜单就不再 hover 本 wrapper，若不额外兜住，
+ * 工具栏会在菜单展开期间整条消失，锚点按钮跟着没了。 */
 .code-toolbar {
   display: inline-flex;
   align-items: center;
+  flex: 0 0 auto;
   gap: var(--space-1, 4px);
   opacity: 0;
   visibility: hidden;
   transition: opacity var(--dur-base), visibility var(--dur-base);
 }
 
-.code-editor-wrapper:hover .code-toolbar {
+.code-editor-wrapper:hover .code-toolbar,
+.code-editor-wrapper.is-menu-open .code-toolbar {
   opacity: 1;
   visibility: visible;
 }

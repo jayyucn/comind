@@ -1,9 +1,10 @@
 import { defineComponent, h, type PropType } from 'vue'
+
 import { useBlockRegistry } from '../../../../composables/useBlockRegistry'
 import { useFieldValueStore } from '../../../../stores/fieldValue'
-import { decodeFieldValueData } from '../../../../utils/field-value-codec'
 import type { SubtreeNode } from '../../../../types/block'
 import type { FieldValueData } from '../../../../types/field-definition'
+import { decodeFieldValueData } from '../../../../utils/field-value-codec'
 
 const SubtreeRenderer = defineComponent({
   name: 'SubtreeRenderer',
@@ -75,6 +76,7 @@ const SubtreeRenderer = defineComponent({
           h('div', { class: 'embed-block-content' }, [
             h(handler.renderComponent, {
               content: node.block.content,
+              blockFormat: node.block.format,
               fieldValues: getBlockFieldValuesMap(node.block.id),
               showPlaceholder: false,
               readonly: true,
